@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+
+# Single source of truth for shared dev-dependency versions.
+# Packages reference these with "typescript": "catalog:" etc.
+catalog:
+  typescript: ^5.9.2
+  vitest: ^3.2.4

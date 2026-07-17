@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+*.tsbuildinfo
+.env
+.env.*
+
+# Haia Trace local store (product artifact, never committed)
+.trace/
