@@ -51,6 +51,24 @@ by `check-types`) and `tsconfig.build.json` (excludes tests, used by `build` so
   Cross-package imports use the bare specifier: `from "@usehaia/trace-core"`.
 - TypeScript **strict** (plus `noUncheckedIndexedAccess`); see `tsconfig.base.json`.
 - Tests are co-located as `src/*.test.ts` and use `vitest`.
+- **Comments are public-facing.** This repo is public — every comment must make
+  sense to an outside reader with no access to internal material. Do not cite
+  private design docs, internal spec section numbers (`§7.1`), tickets, or
+  private URLs; state the rationale inline instead. Link only to public
+  references (e.g. the x402 docs).
+
+## Commits
+
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+`<type>(<optional scope>): <description>`, subject in imperative mood.
+
+- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`.
+- Scope is usually the package: `feat(x402): ...`, `fix(core): ...`.
+- Breaking change: `!` after the type/scope (`feat(core)!: ...`) and/or a
+  `BREAKING CHANGE:` footer.
+- Keep the subject short (≤ 72 chars) and human-readable — a plain summary of
+  the change, not an exhaustive changelog. Add a body only when the *why* isn't
+  obvious from the subject.
 
 ## Adding a package
 
