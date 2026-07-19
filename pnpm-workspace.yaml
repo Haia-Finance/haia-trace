@@ -6,3 +6,4 @@ packages:
 catalog:
   typescript: ^5.9.2
   vitest: ^3.2.4
+  "@types/node": ^20.19.0
