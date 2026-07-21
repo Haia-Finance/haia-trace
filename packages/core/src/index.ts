@@ -5,3 +5,4 @@
  */
 export * from "./event.js";
 export * from "./recorder.js";
+export * from "./template.js";
