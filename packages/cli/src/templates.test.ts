@@ -1,0 +1,42 @@
+import { describe, expect, it } from "vitest";
+
+import { listTemplates, loadTemplate, parseTemplate } from "./index.js";
+
+describe("template loading", () => {
+  it("lists the templates shipped with the CLI", () => {
+    expect(listTemplates()).toContain("x402-payment");
+  });
+
+  it("loads and validates the canonical x402-payment template", () => {
+    const template = loadTemplate("x402-payment");
+    expect(template.template).toBe("x402-payment");
+    expect(template.stages.map((s) => s.id)).toEqual([
+      "intent",
+      "payment",
+      "settlement",
+      "paid_action",
+      "business_record",
+    ]);
+    expect(template.exceptions).toContain("x402.verify.failed");
+  });
+
+  it("keeps the settlement match-set as an OR of witnesses", () => {
+    const settlement = loadTemplate("x402-payment").stages.find((s) => s.id === "settlement");
+    expect(settlement?.match.map((m) => m.event)).toEqual([
+      "x402.payment.responded",
+      "x402.settle.ok",
+      "chain.transfer.confirmed",
+    ]);
+  });
+
+  it("throws a clear error for an unknown template name", () => {
+    expect(() => loadTemplate("does-not-exist")).toThrow(/template not found: does-not-exist/);
+  });
+
+  it("rejects malformed template yaml", () => {
+    // Valid yaml, but not a valid template (no stages) — must fail loudly.
+    expect(() => parseTemplate("template: x\nversion: 1\n", "broken.yaml")).toThrow(
+      /invalid template \(broken\.yaml\): `stages` must be a non-empty list/,
+    );
+  });
+});

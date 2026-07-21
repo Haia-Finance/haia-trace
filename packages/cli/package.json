@@ -12,7 +12,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "templates"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check-types": "tsc -p tsconfig.json --noEmit",
@@ -20,9 +20,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@usehaia/trace-core": "workspace:*"
+    "@usehaia/trace-core": "workspace:*",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

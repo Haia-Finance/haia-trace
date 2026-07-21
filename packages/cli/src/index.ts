@@ -12,3 +12,5 @@ import type { TraceEvent } from "@usehaia/trace-core";
 export type CliEventHandler = (event: TraceEvent) => void;
 
 export const CLI_PLACEHOLDER = "trace-cli/ready" as const;
+
+export * from "./templates.js";

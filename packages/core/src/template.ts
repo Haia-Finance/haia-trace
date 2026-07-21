@@ -66,3 +66,58 @@ export interface OperationTemplate {
    */
   exceptions?: EventType[];
 }
+
+/**
+ * Validate an untrusted value — typically the result of parsing a template file —
+ * into an `OperationTemplate`, throwing a sourced `Error` on the first mismatch.
+ *
+ * Kept here beside the type, and deliberately pure (no filesystem, no parser), so
+ * every loader in every language-neutral surface validates the contract the same
+ * way. A malformed template must fail loudly rather than silently produce a wrong
+ * receipt — this is a receipt-integrity guarantee, not a convenience check.
+ */
+export function assertOperationTemplate(value: unknown, source = "<template>"): OperationTemplate {
+  const fail = (why: string): never => {
+    throw new Error(`invalid template (${source}): ${why}`);
+  };
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return fail("expected a mapping at the top level");
+  }
+  const t = value as Record<string, unknown>;
+
+  if (typeof t.template !== "string") fail("`template` must be a string");
+  if (typeof t.version !== "number") fail("`version` must be a number");
+  if (!Array.isArray(t.stages) || t.stages.length === 0) {
+    fail("`stages` must be a non-empty list");
+  }
+
+  (t.stages as unknown[]).forEach((raw, i) => {
+    const at = `stage ${i}`;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      fail(`${at}: expected a mapping`);
+    }
+    const s = raw as Record<string, unknown>;
+    if (typeof s.id !== "string") fail(`${at}: \`id\` must be a string`);
+    if (typeof s.required !== "boolean") fail(`stage ${s.id ?? i}: \`required\` must be a boolean`);
+    if (!Array.isArray(s.match) || s.match.length === 0) {
+      fail(`stage ${s.id ?? i}: \`match\` must be a non-empty list`);
+    }
+    (s.match as unknown[]).forEach((m, j) => {
+      if (typeof m !== "object" || m === null || typeof (m as Record<string, unknown>).event !== "string") {
+        fail(`stage ${s.id ?? i}, match ${j}: \`event\` must be a string`);
+      }
+    });
+    if (s.missing_explanation !== undefined && typeof s.missing_explanation !== "string") {
+      fail(`stage ${s.id ?? i}: \`missing_explanation\` must be a string`);
+    }
+  });
+
+  if (t.exceptions !== undefined) {
+    if (!Array.isArray(t.exceptions) || t.exceptions.some((e) => typeof e !== "string")) {
+      fail("`exceptions` must be a list of strings");
+    }
+  }
+
+  return value as OperationTemplate;
+}
