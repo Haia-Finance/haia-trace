@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { listTemplates, loadTemplate, parseTemplate } from "./index.js";
+import { listTemplates, loadTemplate, loadTemplateFile, parseTemplate } from "./index.js";
 
 describe("template loading", () => {
   it("lists the templates shipped with the CLI", () => {
@@ -33,10 +33,26 @@ describe("template loading", () => {
     expect(() => loadTemplate("does-not-exist")).toThrow(/template not found: does-not-exist/);
   });
 
+  it("rejects a name that tries to escape the templates directory", () => {
+    // A traversal name must be treated as unknown, never joined onto the path.
+    expect(() => loadTemplate("../../../../etc/passwd")).toThrow(/template not found/);
+    expect(() => loadTemplate("../secret")).toThrow(/template not found/);
+  });
+
   it("rejects malformed template yaml", () => {
     // Valid yaml, but not a valid template (no stages) — must fail loudly.
     expect(() => parseTemplate("template: x\nversion: 1\n", "broken.yaml")).toThrow(
       /invalid template \(broken\.yaml\): `stages` must be a non-empty list/,
     );
+  });
+
+  it("attaches the source to a yaml syntax error", () => {
+    expect(() => parseTemplate("stages: [unclosed", "bad.yaml")).toThrow(/invalid template \(bad\.yaml\)/);
+  });
+
+  it("reports a read error other than a missing file", () => {
+    // Reading a directory ("." — the cwd) is an EISDIR, not a missing file, so it
+    // must not be reported as "template not found".
+    expect(() => loadTemplateFile(".")).toThrow(/could not read template/);
   });
 });

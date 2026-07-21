@@ -92,24 +92,33 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
     fail("`stages` must be a non-empty list");
   }
 
+  const seenIds = new Set<string>();
   (t.stages as unknown[]).forEach((raw, i) => {
-    const at = `stage ${i}`;
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-      fail(`${at}: expected a mapping`);
+      fail(`stage #${i}: expected a mapping`);
     }
     const s = raw as Record<string, unknown>;
-    if (typeof s.id !== "string") fail(`${at}: \`id\` must be a string`);
-    if (typeof s.required !== "boolean") fail(`stage ${s.id ?? i}: \`required\` must be a boolean`);
+    const id = s.id;
+    // Label by id, falling back to the index when the id is missing or blank, so
+    // the error always points somewhere the author can locate.
+    const at = typeof id === "string" && id !== "" ? `stage ${id}` : `stage #${i}`;
+    if (typeof id !== "string" || id === "") fail(`${at}: \`id\` must be a non-empty string`);
+    const stageId = id as string;
+    // Stage ids must be unique — the assembler keys milestones by id, so a
+    // duplicate would silently close the wrong stage.
+    if (seenIds.has(stageId)) fail(`${at}: duplicate stage id`);
+    seenIds.add(stageId);
+    if (typeof s.required !== "boolean") fail(`${at}: \`required\` must be a boolean`);
     if (!Array.isArray(s.match) || s.match.length === 0) {
-      fail(`stage ${s.id ?? i}: \`match\` must be a non-empty list`);
+      fail(`${at}: \`match\` must be a non-empty list`);
     }
     (s.match as unknown[]).forEach((m, j) => {
       if (typeof m !== "object" || m === null || typeof (m as Record<string, unknown>).event !== "string") {
-        fail(`stage ${s.id ?? i}, match ${j}: \`event\` must be a string`);
+        fail(`${at}, match ${j}: \`event\` must be a string`);
       }
     });
     if (s.missing_explanation !== undefined && typeof s.missing_explanation !== "string") {
-      fail(`stage ${s.id ?? i}: \`missing_explanation\` must be a string`);
+      fail(`${at}: \`missing_explanation\` must be a string`);
     }
   });
 

@@ -120,4 +120,21 @@ describe("assertOperationTemplate", () => {
     };
     expect(() => assertOperationTemplate(bad)).toThrow(/stage intent, match 0: `event` must be a string/);
   });
+
+  it("rejects duplicate stage ids", () => {
+    const dup = {
+      template: "x",
+      version: 1,
+      stages: [
+        { id: "settlement", required: true, match: [{ event: "a" }] },
+        { id: "settlement", required: true, match: [{ event: "b" }] },
+      ],
+    };
+    expect(() => assertOperationTemplate(dup)).toThrow(/stage settlement: duplicate stage id/);
+  });
+
+  it("locates a blank-id stage by its index", () => {
+    const blank = { template: "x", version: 1, stages: [{ id: "", required: true, match: [{ event: "a" }] }] };
+    expect(() => assertOperationTemplate(blank)).toThrow(/stage #0: `id` must be a non-empty string/);
+  });
 });
