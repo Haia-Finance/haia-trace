@@ -6,6 +6,9 @@
  * exists to wire this package to `@usehaia/trace-core` while there is no product
  * code yet.
  */
-import { CORE_PLACEHOLDER } from "@usehaia/trace-core";
+import type { TraceEvent } from "@usehaia/trace-core";
 
-export const CLI_PLACEHOLDER = `${CORE_PLACEHOLDER}/cli` as const;
+/** Placeholder command-handler shape, proving the core type dependency resolves. */
+export type CliEventHandler = (event: TraceEvent) => void;
+
+export const CLI_PLACEHOLDER = "trace-cli/ready" as const;
