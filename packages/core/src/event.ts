@@ -28,7 +28,7 @@ export type Role = string;
 
 /** One normalized observation of a payment operation — the unit the assembler reads. */
 export interface TraceEvent {
-  /** Unique id for this event; a uuidv7 is a good default. Ordering is by `seq`. */
+  /** Any collision-resistant unique id; `crypto.randomUUID()` is the default. Ordering is by `seq`, not this. */
   event_id: string;
   /** Namespaced event name; templates match on this. */
   event_type: EventType;

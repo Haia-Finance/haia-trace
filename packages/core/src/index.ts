@@ -4,3 +4,4 @@
  * assembler build on top of it.
  */
 export * from "./event.js";
+export * from "./recorder.js";
