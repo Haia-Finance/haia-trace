@@ -22,7 +22,12 @@ import { assertOperationTemplate, type OperationTemplate } from "@usehaia/trace-
 
 const TEMPLATE_EXT = ".yaml";
 
-/** A shipped template is referenced by a bare slug — letters, digits, `-`, `_`. */
+/**
+ * A shipped template is referenced by a bare slug — letters, digits, `-`, `_`.
+ * This is the single contract for what counts as a shipped template name: it
+ * gates both what `loadTemplate` will load and what `listTemplates` surfaces, so
+ * the two can never disagree (every listed name is loadable).
+ */
 const TEMPLATE_NAME = /^[A-Za-z0-9_-]+$/;
 
 /**
@@ -50,6 +55,11 @@ export function listTemplates(): string[] {
   return entries
     .filter((file) => file.endsWith(TEMPLATE_EXT))
     .map((file) => file.slice(0, -TEMPLATE_EXT.length))
+    // Surface only names that `loadTemplate` can actually load — the same
+    // bare-slug contract — so enumerating and then loading by the listed name
+    // never disagree. A shipped `.yaml` whose base name isn't a slug (a `.`, a
+    // space) isn't a referenceable template, so it is not listed.
+    .filter((name) => TEMPLATE_NAME.test(name))
     .sort();
 }
 

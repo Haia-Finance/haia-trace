@@ -29,6 +29,17 @@ describe("template loading", () => {
     ]);
   });
 
+  it("only lists templates that can be loaded by their listed name", () => {
+    // listTemplates() and loadTemplate() share one bare-slug contract, so
+    // enumerate-then-load never disagrees: every listed name resolves without a
+    // spurious "not found".
+    const names = listTemplates();
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(() => loadTemplate(name)).not.toThrow();
+    }
+  });
+
   it("throws a clear error for an unknown template name", () => {
     expect(() => loadTemplate("does-not-exist")).toThrow(/template not found: does-not-exist/);
   });
