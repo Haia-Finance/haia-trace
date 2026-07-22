@@ -204,6 +204,12 @@ function finalize(draft: Draft): Receipt {
  * fixed-width, zero-padded form. An adapter that emitted some other valid ISO form
  * (an offset instead of `Z`, a different fraction width) would break that; the
  * contract is what this relies on, not the parser.
+ *
+ * Each event is assumed to appear at most once. The assembler does not dedupe by
+ * `event_id`: a genuine duplicate would be counted twice (its id on a stage's
+ * `events` and a second copy in `receipt.events`). Since `event_id` is unique, a
+ * duplicate means the same event was fed in twice — e.g. one sink file read or
+ * merged more than once — which is the caller's job to avoid, not ordering's.
  */
 function orderEvents(events: readonly TraceEvent[]): TraceEvent[] {
   const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -327,6 +333,9 @@ export function* assembleReceiptsProgressively(
   // event touches. Re-finalizing every operation on every event would be
   // quadratic over a whole run; a snapshot then just collects the cached
   // receipts (fresh objects, so already-yielded snapshots keep their values).
+  // Collecting them is still O(operations) per event, so the whole stream is
+  // O(events · operations) — cheap for a CLI progress view over a normal run,
+  // but worth knowing before reusing this on a run with very many operations.
   const receipts = new Map<string, Receipt>();
   const unassigned: TraceEvent[] = [];
   // Rebuilt only when an unassigned event arrives; shared by reference between

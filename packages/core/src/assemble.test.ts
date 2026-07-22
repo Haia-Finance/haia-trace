@@ -160,6 +160,26 @@ describe("assembleReceipt", () => {
     expect(stage(receipt, "settlement")?.events).toEqual(["evt-2", "evt-3"]);
   });
 
+  it("records a single witness even when a type is listed twice in one match-set", () => {
+    // A malformed-but-typed template repeating an event in its match-set must not
+    // double-count the one event that closes the stage.
+    const dupMatch: OperationTemplate = {
+      template: "dup-match",
+      version: 1,
+      stages: [
+        {
+          id: "only",
+          required: true,
+          match: [{ event: "some.milestone.reached" }, { event: "some.milestone.reached" }],
+        },
+      ],
+    };
+
+    const receipt = assembleReceipt(makeEvents(["some.milestone.reached"]), dupMatch);
+    expect(receipt.completeness).toBe("full");
+    expect(stage(receipt, "only")?.events).toEqual(["evt-0"]);
+  });
+
   it("surfaces a fault and holds the operation to partial even if stages closed", () => {
     const events = makeEvents([...REQUIRED_HAPPY_PATH, "x402.settle.failed"]);
     const receipt = assembleReceipt(events, x402Payment);
