@@ -86,7 +86,7 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
   }
   const t = value as Record<string, unknown>;
 
-  if (typeof t.template !== "string") fail("`template` must be a string");
+  if (typeof t.template !== "string" || t.template === "") fail("`template` must be a non-empty string");
   if (typeof t.version !== "number") fail("`version` must be a number");
   if (!Array.isArray(t.stages) || t.stages.length === 0) {
     fail("`stages` must be a non-empty list");
@@ -113,8 +113,14 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
       fail(`${at}: \`match\` must be a non-empty list`);
     }
     (s.match as unknown[]).forEach((m, j) => {
-      if (typeof m !== "object" || m === null || typeof (m as Record<string, unknown>).event !== "string") {
-        fail(`${at}, match ${j}: \`event\` must be a string`);
+      const event = typeof m === "object" && m !== null ? (m as Record<string, unknown>).event : undefined;
+      // The witness is matched by equality against `TraceEvent.event_type`. An
+      // empty string can never equal a real (namespaced) event type, so a
+      // required stage carrying it could never close — the assembler would report
+      // a permanent gap for an operation that actually completed. Reject it as
+      // loudly as a missing event, the same as the non-empty `id` rule above.
+      if (typeof event !== "string" || event === "") {
+        fail(`${at}, match ${j}: \`event\` must be a non-empty string`);
       }
     });
     if (s.missing_explanation !== undefined && typeof s.missing_explanation !== "string") {
@@ -123,8 +129,10 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
   });
 
   if (t.exceptions !== undefined) {
-    if (!Array.isArray(t.exceptions) || t.exceptions.some((e) => typeof e !== "string")) {
-      fail("`exceptions` must be a list of strings");
+    // Exceptions are event types too, matched the same way — an empty one is
+    // unmatchable noise, so hold them to the same non-empty rule.
+    if (!Array.isArray(t.exceptions) || t.exceptions.some((e) => typeof e !== "string" || e === "")) {
+      fail("`exceptions` must be a list of non-empty strings");
     }
   }
 

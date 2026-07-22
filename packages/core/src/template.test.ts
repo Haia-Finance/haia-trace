@@ -118,7 +118,45 @@ describe("assertOperationTemplate", () => {
       version: 1,
       stages: [{ id: "intent", required: true, match: [{ notEvent: "oops" }] }],
     };
-    expect(() => assertOperationTemplate(bad)).toThrow(/stage intent, match 0: `event` must be a string/);
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /stage intent, match 0: `event` must be a non-empty string/,
+    );
+  });
+
+  it("rejects an empty-string event witness (a stage that could never close)", () => {
+    const blankEvent = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "" }] }],
+    };
+    expect(() => assertOperationTemplate(blankEvent)).toThrow(
+      /stage intent, match 0: `event` must be a non-empty string/,
+    );
+  });
+
+  it("rejects an empty-string template id", () => {
+    const blank = { template: "", version: 1, stages: [{ id: "intent", required: true, match: [{ event: "a" }] }] };
+    expect(() => assertOperationTemplate(blank)).toThrow(/`template` must be a non-empty string/);
+  });
+
+  it("rejects an empty-string exception witness", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+      exceptions: ["x402.settle.failed", ""],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(/`exceptions` must be a list of non-empty strings/);
+  });
+
+  it("rejects a non-number version", () => {
+    const bad = { template: "x", version: "1", stages: [{ id: "intent", required: true, match: [{ event: "a" }] }] };
+    expect(() => assertOperationTemplate(bad)).toThrow(/`version` must be a number/);
+  });
+
+  it("rejects a non-boolean required flag", () => {
+    const bad = { template: "x", version: 1, stages: [{ id: "intent", required: "yes", match: [{ event: "a" }] }] };
+    expect(() => assertOperationTemplate(bad)).toThrow(/stage intent: `required` must be a boolean/);
   });
 
   it("rejects duplicate stage ids", () => {
