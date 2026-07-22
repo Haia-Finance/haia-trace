@@ -9,8 +9,16 @@ describe("Template Contract", () => {
     template: "x402-payment",
     version: 1,
     stages: [
-      { id: "intent", required: true, match: [{ event: "x402.payment.required" }] },
-      { id: "payment", required: true, match: [{ event: "x402.payment.submitted" }] },
+      {
+        id: "intent",
+        required: true,
+        match: [{ event: "x402.payment.required" }],
+      },
+      {
+        id: "payment",
+        required: true,
+        match: [{ event: "x402.payment.submitted" }],
+      },
       {
         id: "settlement",
         required: true,
@@ -24,12 +32,24 @@ describe("Template Contract", () => {
       {
         id: "paid_action",
         required: true,
-        match: [{ event: "x402.paid_action.executed" }, { event: "http.response.delivered" }],
-        missing_explanation: "settlement confirmed, but the paid action's result was not observed",
+        match: [
+          { event: "x402.paid_action.executed" },
+          { event: "http.response.delivered" },
+        ],
+        missing_explanation:
+          "settlement confirmed, but the paid action's result was not observed",
       },
-      { id: "business_record", required: false, match: [{ event: "file.order.recorded" }] },
+      {
+        id: "business_record",
+        required: false,
+        match: [{ event: "file.order.recorded" }],
+      },
     ],
-    exceptions: ["x402.verify.failed", "x402.settle.failed", "x402.payment.creation_failed"],
+    exceptions: [
+      "x402.verify.failed",
+      "x402.settle.failed",
+      "x402.payment.creation_failed",
+    ],
   };
 
   it("expresses the canonical x402-payment template", () => {
@@ -49,7 +69,9 @@ describe("Template Contract", () => {
 
   it("carries optional stages and an explanation for an unclosed milestone", () => {
     const paidAction = x402Payment.stages.find((s) => s.id === "paid_action");
-    const businessRecord = x402Payment.stages.find((s) => s.id === "business_record");
+    const businessRecord = x402Payment.stages.find(
+      (s) => s.id === "business_record",
+    );
     expect(paidAction?.missing_explanation).toMatch(/not observed/);
     expect(businessRecord?.required).toBe(false);
   });
@@ -62,13 +84,18 @@ describe("Template Contract", () => {
       template: "nanopayment-arc",
       version: 1,
       stages: [
-        { id: "authorization", required: true, match: [{ event: "x402.payment.submitted" }] },
+        {
+          id: "authorization",
+          required: true,
+          match: [{ event: "x402.payment.submitted" }],
+        },
         {
           id: "settlement",
           required: true,
           // One batch confirmation settles many payments at once.
           match: [{ event: "chain.transfer.confirmed" }],
-          missing_explanation: "authorization signed, but the settlement batch was not confirmed",
+          missing_explanation:
+            "authorization signed, but the settlement batch was not confirmed",
         },
       ],
     };
@@ -82,11 +109,18 @@ describe("assertOperationTemplate", () => {
     template: "x402-payment",
     version: 1,
     stages: [
-      { id: "intent", required: true, match: [{ event: "x402.payment.required" }] },
+      {
+        id: "intent",
+        required: true,
+        match: [{ event: "x402.payment.required" }],
+      },
       {
         id: "settlement",
         required: true,
-        match: [{ event: "x402.settle.ok" }, { event: "chain.transfer.confirmed" }],
+        match: [
+          { event: "x402.settle.ok" },
+          { event: "chain.transfer.confirmed" },
+        ],
         missing_explanation: "settlement not observed",
       },
     ],
@@ -107,9 +141,9 @@ describe("assertOperationTemplate", () => {
   });
 
   it("rejects a template with no stages", () => {
-    expect(() => assertOperationTemplate({ template: "x", version: 1, stages: [] })).toThrow(
-      /`stages` must be a non-empty list/,
-    );
+    expect(() =>
+      assertOperationTemplate({ template: "x", version: 1, stages: [] }),
+    ).toThrow(/`stages` must be a non-empty list/);
   });
 
   it("rejects a stage whose match entries lack an event string", () => {
@@ -135,8 +169,14 @@ describe("assertOperationTemplate", () => {
   });
 
   it("rejects an empty-string template id", () => {
-    const blank = { template: "", version: 1, stages: [{ id: "intent", required: true, match: [{ event: "a" }] }] };
-    expect(() => assertOperationTemplate(blank)).toThrow(/`template` must be a non-empty string/);
+    const blank = {
+      template: "",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+    };
+    expect(() => assertOperationTemplate(blank)).toThrow(
+      /`template` must be a non-empty string/,
+    );
   });
 
   it("rejects an empty-string exception witness", () => {
@@ -146,22 +186,42 @@ describe("assertOperationTemplate", () => {
       stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
       exceptions: ["x402.settle.failed", ""],
     };
-    expect(() => assertOperationTemplate(bad)).toThrow(/`exceptions` must be a list of non-empty strings/);
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /`exceptions` must be a list of non-empty strings/,
+    );
   });
 
   it("rejects a non-number version", () => {
-    const bad = { template: "x", version: "1", stages: [{ id: "intent", required: true, match: [{ event: "a" }] }] };
-    expect(() => assertOperationTemplate(bad)).toThrow(/`version` must be a finite number/);
+    const bad = {
+      template: "x",
+      version: "1",
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /`version` must be a finite number/,
+    );
   });
 
   it("rejects a NaN version (typeof NaN is 'number')", () => {
-    const bad = { template: "x", version: NaN, stages: [{ id: "intent", required: true, match: [{ event: "a" }] }] };
-    expect(() => assertOperationTemplate(bad)).toThrow(/`version` must be a finite number/);
+    const bad = {
+      template: "x",
+      version: NaN,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /`version` must be a finite number/,
+    );
   });
 
   it("rejects a non-boolean required flag", () => {
-    const bad = { template: "x", version: 1, stages: [{ id: "intent", required: "yes", match: [{ event: "a" }] }] };
-    expect(() => assertOperationTemplate(bad)).toThrow(/stage intent: `required` must be a boolean/);
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: "yes", match: [{ event: "a" }] }],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /stage intent: `required` must be a boolean/,
+    );
   });
 
   it("rejects duplicate stage ids", () => {
@@ -173,11 +233,19 @@ describe("assertOperationTemplate", () => {
         { id: "settlement", required: true, match: [{ event: "b" }] },
       ],
     };
-    expect(() => assertOperationTemplate(dup)).toThrow(/stage settlement: duplicate stage id/);
+    expect(() => assertOperationTemplate(dup)).toThrow(
+      /stage settlement: duplicate stage id/,
+    );
   });
 
   it("locates a blank-id stage by its index", () => {
-    const blank = { template: "x", version: 1, stages: [{ id: "", required: true, match: [{ event: "a" }] }] };
-    expect(() => assertOperationTemplate(blank)).toThrow(/stage #0: `id` must be a non-empty string/);
+    const blank = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "", required: true, match: [{ event: "a" }] }],
+    };
+    expect(() => assertOperationTemplate(blank)).toThrow(
+      /stage #0: `id` must be a non-empty string/,
+    );
   });
 });

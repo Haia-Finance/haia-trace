@@ -28,38 +28,38 @@
 // still ships zero runtime dependencies and never imports x402 at runtime. These
 // only shape the context each handler is handed; detection stays pure duck-typing.
 import type {
-  PaymentCreationContext,
-  PaymentCreatedContext,
-  PaymentCreationFailureContext,
-  PaymentResponseContext,
   // HTTP-client `onPaymentRequired` context; distinct from the MCP one below.
   PaymentRequiredContext as HttpPaymentRequiredContext,
+  PaymentCreatedContext,
+  PaymentCreationContext,
+  PaymentCreationFailureContext,
+  PaymentResponseContext,
 } from "@x402/core/client";
 import type {
-  VerifyContext,
-  VerifyResultContext,
-  VerifyFailureContext,
-  SettleContext,
-  SettleResultContext,
-  SettleFailureContext,
-  VerifiedPaymentCanceledContext,
-} from "@x402/core/server";
-import type {
-  FacilitatorVerifyContext,
-  FacilitatorVerifyResultContext,
-  FacilitatorVerifyFailureContext,
   FacilitatorSettleContext,
-  FacilitatorSettleResultContext,
   FacilitatorSettleFailureContext,
+  FacilitatorSettleResultContext,
+  FacilitatorVerifyContext,
+  FacilitatorVerifyFailureContext,
+  FacilitatorVerifyResultContext,
 } from "@x402/core/facilitator";
 import type { HTTPRequestContext } from "@x402/core/http";
 import type {
-  PaymentRequestedContext,
-  // MCP-client `onPaymentRequired` context; distinct from the HTTP one above.
-  PaymentRequiredContext as McpPaymentRequiredContext,
+  SettleContext,
+  SettleFailureContext,
+  SettleResultContext,
+  VerifiedPaymentCanceledContext,
+  VerifyContext,
+  VerifyFailureContext,
+  VerifyResultContext,
+} from "@x402/core/server";
+import type {
   // `onAfterPayment`'s context is an inline anonymous type in the SDK, not a
   // named export — recover it from the hook signature.
   AfterPaymentHook,
+  // MCP-client `onPaymentRequired` context; distinct from the HTTP one above.
+  PaymentRequiredContext as McpPaymentRequiredContext,
+  PaymentRequestedContext,
 } from "@x402/mcp";
 
 // Per-instance hook groups: each of the six covered x402 instance types, mapped
@@ -214,7 +214,10 @@ const MCP_CLIENT_METHODS = keysOf<McpClientHooks>({
 });
 
 /** The hook set registered for each recognized kind. */
-const HOOKS_BY_KIND: Record<TraceInstanceKind, readonly (keyof HookContextMap)[]> = {
+const HOOKS_BY_KIND: Record<
+  TraceInstanceKind,
+  readonly (keyof HookContextMap)[]
+> = {
   client: CLIENT_METHODS,
   httpClient: HTTP_CLIENT_METHODS,
   resourceServer: RESOURCE_SERVER_METHODS,
@@ -301,7 +304,9 @@ const traced = new WeakMap<object, TraceAttestation>();
 function isDisabled(): boolean {
   // `process` may be absent in browser/edge runtimes (where HTTP clients run);
   // reading it unguarded would throw ReferenceError straight out of trace().
-  return typeof process !== "undefined" && process.env.HAIA_TRACE_DISABLE === "1";
+  return (
+    typeof process !== "undefined" && process.env.HAIA_TRACE_DISABLE === "1"
+  );
 }
 
 /** An attestation for a run that never wired up (disabled, or non-instance input). */
@@ -317,14 +322,21 @@ function inertAttestation(): TraceAttestation {
  * `undefined`, so multi-registration alongside the user's own hooks never changes
  * the payment outcome. Idempotent per instance; a no-op when `HAIA_TRACE_DISABLE=1`.
  */
-export function trace(instance: unknown, options: TraceOptions = {}): TraceAttestation {
-  const log = options.log ?? ((line: TraceLogLine) => console.log("[trace-x402]", line));
+export function trace(
+  instance: unknown,
+  options: TraceOptions = {},
+): TraceAttestation {
+  const log =
+    options.log ?? ((line: TraceLogLine) => console.log("[trace-x402]", line));
   const onError = options.onError;
 
   if (isDisabled()) return inertAttestation();
   // Accept objects and callable objects (an instance may be a function with hook
   // methods hanging off it); reject only null/undefined and primitives.
-  if (instance === null || (typeof instance !== "object" && typeof instance !== "function")) {
+  if (
+    instance === null ||
+    (typeof instance !== "object" && typeof instance !== "function")
+  ) {
     return inertAttestation();
   }
 
@@ -361,7 +373,9 @@ export function trace(instance: unknown, options: TraceOptions = {}): TraceAttes
   // nothing to attach and the run reports `trace.attach_failed` below.
   const override = options.kind;
   const kind: TraceKind =
-    override !== undefined && KNOWN_INSTANCE_KINDS.has(override) ? override : resolveKind(target);
+    override !== undefined && KNOWN_INSTANCE_KINDS.has(override)
+      ? override
+      : resolveKind(target);
   const role = ROLE_BY_KIND[kind];
   const methods: readonly (keyof HookContextMap)[] =
     kind === "unknown" ? [] : HOOKS_BY_KIND[kind];
@@ -388,10 +402,9 @@ export function trace(instance: unknown, options: TraceOptions = {}): TraceAttes
         const handler = makeLogger(name) as (context: unknown) => undefined;
         // x402 hooks are chainable and support multiple registrations, so
         // adding our logger runs alongside — never displaces — the user's hooks.
-        (register as (handler: (context: unknown) => undefined) => unknown).call(
-          target,
-          handler,
-        );
+        (
+          register as (handler: (context: unknown) => undefined) => unknown
+        ).call(target, handler);
         attached.push(name);
       } catch (err) {
         reportError(err);
@@ -407,7 +420,12 @@ export function trace(instance: unknown, options: TraceOptions = {}): TraceAttes
     context: { attached, kind },
   });
 
-  const result: TraceAttestation = { attached, ok: attached.length > 0, kind, role };
+  const result: TraceAttestation = {
+    attached,
+    ok: attached.length > 0,
+    kind,
+    role,
+  };
   traced.set(target, result);
   return result;
 }

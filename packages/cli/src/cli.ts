@@ -23,7 +23,11 @@ import { color } from "./ui.js";
  * read here rather than imported.
  */
 function readVersion(): string {
-  const manifest = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+  const manifest = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "package.json",
+  );
   return JSON.parse(readFileSync(manifest, "utf8")).version as string;
 }
 
@@ -31,7 +35,9 @@ const program = new Command();
 
 program
   .name("trace")
-  .description("Haia Trace — build an Operation Receipt for a payment operation.")
+  .description(
+    "Haia Trace — build an Operation Receipt for a payment operation.",
+  )
   .version(readVersion(), "-v, --version", "Print the version and exit");
 
 for (const command of commands) {
@@ -43,6 +49,8 @@ try {
 } catch (err) {
   // A last-resort net so an unhandled command error prints a clean line and a
   // non-zero exit, instead of a raw stack trace.
-  console.error(`${color.red("error:")} ${err instanceof Error ? err.message : String(err)}`);
+  console.error(
+    `${color.red("error:")} ${err instanceof Error ? err.message : String(err)}`,
+  );
   process.exitCode = 1;
 }

@@ -12,13 +12,14 @@
  * has them without a network fetch.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import {
+  assertOperationTemplate,
+  type OperationTemplate,
+} from "@usehaia/trace-core";
 import { parse } from "yaml";
-
-import { assertOperationTemplate, type OperationTemplate } from "@usehaia/trace-core";
 
 const TEMPLATE_EXT = ".yaml";
 
@@ -35,11 +36,19 @@ const TEMPLATE_NAME = /^[A-Za-z0-9_-]+$/;
  * same path works in dev (`src/`), after build (`dist/`), and once installed —
  * each is one level below the package root, next to a sibling `templates/`.
  */
-const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "templates");
+const TEMPLATES_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "templates",
+);
 
 /** Whether an error is a Node filesystem error carrying the given `code`. */
 function isErrno(err: unknown, code: string): boolean {
-  return typeof err === "object" && err !== null && (err as NodeJS.ErrnoException).code === code;
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as NodeJS.ErrnoException).code === code
+  );
 }
 
 /** Names of the templates shipped with the CLI, sorted — e.g. `["x402-payment"]`. */
@@ -49,18 +58,21 @@ export function listTemplates(): string[] {
     entries = readdirSync(TEMPLATES_DIR);
   } catch (err) {
     // A missing shipped-templates directory means a broken install, not "none".
-    if (isErrno(err, "ENOENT")) throw new Error(`templates directory not found: ${TEMPLATES_DIR}`);
+    if (isErrno(err, "ENOENT"))
+      throw new Error(`templates directory not found: ${TEMPLATES_DIR}`);
     throw err;
   }
-  return entries
-    .filter((file) => file.endsWith(TEMPLATE_EXT))
-    .map((file) => file.slice(0, -TEMPLATE_EXT.length))
-    // Surface only names that `loadTemplate` can actually load — the same
-    // bare-slug contract — so enumerating and then loading by the listed name
-    // never disagree. A shipped `.yaml` whose base name isn't a slug (a `.`, a
-    // space) isn't a referenceable template, so it is not listed.
-    .filter((name) => TEMPLATE_NAME.test(name))
-    .sort();
+  return (
+    entries
+      .filter((file) => file.endsWith(TEMPLATE_EXT))
+      .map((file) => file.slice(0, -TEMPLATE_EXT.length))
+      // Surface only names that `loadTemplate` can actually load — the same
+      // bare-slug contract — so enumerating and then loading by the listed name
+      // never disagree. A shipped `.yaml` whose base name isn't a slug (a `.`, a
+      // space) isn't a referenceable template, so it is not listed.
+      .filter((name) => TEMPLATE_NAME.test(name))
+      .sort()
+  );
 }
 
 /** Load a shipped template by name. Throws if the name is unknown or the file is malformed. */
@@ -77,7 +89,10 @@ export function loadTemplate(name: string): OperationTemplate {
  * user-authored template outside the shipped set. `name` only shapes error
  * messages; it defaults to the path.
  */
-export function loadTemplateFile(path: string, name?: string): OperationTemplate {
+export function loadTemplateFile(
+  path: string,
+  name?: string,
+): OperationTemplate {
   const source = name ?? path;
   let text: string;
   try {
@@ -85,14 +100,20 @@ export function loadTemplateFile(path: string, name?: string): OperationTemplate
   } catch (err) {
     // Only a genuinely absent file is "not found"; a present-but-unreadable file
     // (permissions, a directory) must report the real error, not a false absence.
-    if (isErrno(err, "ENOENT")) throw new Error(`template not found: ${source}`);
-    throw new Error(`could not read template (${source}): ${(err as Error).message}`);
+    if (isErrno(err, "ENOENT"))
+      throw new Error(`template not found: ${source}`);
+    throw new Error(
+      `could not read template (${source}): ${(err as Error).message}`,
+    );
   }
   return parseTemplate(text, source);
 }
 
 /** Parse and validate template YAML text into an `OperationTemplate`. */
-export function parseTemplate(text: string, source = "<inline>"): OperationTemplate {
+export function parseTemplate(
+  text: string,
+  source = "<inline>",
+): OperationTemplate {
   let parsed: unknown;
   try {
     parsed = parse(text);

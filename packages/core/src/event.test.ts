@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type TraceEvent } from "./index.js";
+import type { TraceEvent } from "./index.js";
 
 describe("Event Contract", () => {
   // The agnosticism gate: an x402 event and an MPP-style event both satisfy
@@ -42,8 +42,18 @@ describe("Event Contract", () => {
       role: "client",
       payload: { resource: "/api/foo" },
     } as const;
-    const a: TraceEvent = { ...common, event_id: "evt-a", seq: 10, context_id: "ctx-a" };
-    const b: TraceEvent = { ...common, event_id: "evt-b", seq: 11, context_id: "ctx-b" };
+    const a: TraceEvent = {
+      ...common,
+      event_id: "evt-a",
+      seq: 10,
+      context_id: "ctx-a",
+    };
+    const b: TraceEvent = {
+      ...common,
+      event_id: "evt-b",
+      seq: 11,
+      context_id: "ctx-b",
+    };
     expect(a.context_id).not.toBe(b.context_id);
   });
 

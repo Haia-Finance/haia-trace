@@ -11,9 +11,12 @@
     "build": "pnpm -r run build",
     "test": "pnpm run build && pnpm -r run test",
     "check-types": "pnpm run build && pnpm -r run check-types",
-    "clean": "pnpm -r run clean"
+    "clean": "pnpm -r run clean",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

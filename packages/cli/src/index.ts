@@ -6,6 +6,6 @@
  * without spawning the process: template loading and the command registry.
  */
 
-export * from "./templates.js";
-export { commands } from "./commands/index.js";
 export type { TraceCommand } from "./commands/index.js";
+export { commands } from "./commands/index.js";
+export * from "./templates.js";

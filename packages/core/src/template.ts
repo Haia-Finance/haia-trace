@@ -76,7 +76,10 @@ export interface OperationTemplate {
  * way. A malformed template must fail loudly rather than silently produce a wrong
  * receipt — this is a receipt-integrity guarantee, not a convenience check.
  */
-export function assertOperationTemplate(value: unknown, source = "<template>"): OperationTemplate {
+export function assertOperationTemplate(
+  value: unknown,
+  source = "<template>",
+): OperationTemplate {
   const fail = (why: string): never => {
     throw new Error(`invalid template (${source}): ${why}`);
   };
@@ -86,7 +89,8 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
   }
   const t = value as Record<string, unknown>;
 
-  if (typeof t.template !== "string" || t.template === "") fail("`template` must be a non-empty string");
+  if (typeof t.template !== "string" || t.template === "")
+    fail("`template` must be a non-empty string");
   // `Number.isFinite` also rejects NaN (which `typeof` reports as "number") and
   // ±Infinity, so a YAML `version: .nan` can't pass as a valid version.
   if (typeof t.version !== "number" || !Number.isFinite(t.version)) {
@@ -105,19 +109,25 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
     const id = s.id;
     // Label by id, falling back to the index when the id is missing or blank, so
     // the error always points somewhere the author can locate.
-    const at = typeof id === "string" && id !== "" ? `stage ${id}` : `stage #${i}`;
-    if (typeof id !== "string" || id === "") fail(`${at}: \`id\` must be a non-empty string`);
+    const at =
+      typeof id === "string" && id !== "" ? `stage ${id}` : `stage #${i}`;
+    if (typeof id !== "string" || id === "")
+      fail(`${at}: \`id\` must be a non-empty string`);
     const stageId = id as string;
     // Stage ids must be unique — the assembler keys milestones by id, so a
     // duplicate would silently close the wrong stage.
     if (seenIds.has(stageId)) fail(`${at}: duplicate stage id`);
     seenIds.add(stageId);
-    if (typeof s.required !== "boolean") fail(`${at}: \`required\` must be a boolean`);
+    if (typeof s.required !== "boolean")
+      fail(`${at}: \`required\` must be a boolean`);
     if (!Array.isArray(s.match) || s.match.length === 0) {
       fail(`${at}: \`match\` must be a non-empty list`);
     }
     (s.match as unknown[]).forEach((m, j) => {
-      const event = typeof m === "object" && m !== null ? (m as Record<string, unknown>).event : undefined;
+      const event =
+        typeof m === "object" && m !== null
+          ? (m as Record<string, unknown>).event
+          : undefined;
       // The witness is matched by equality against `TraceEvent.event_type`. An
       // empty string can never equal a real (namespaced) event type, so a
       // required stage carrying it could never close — the assembler would report
@@ -127,7 +137,10 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
         fail(`${at}, match ${j}: \`event\` must be a non-empty string`);
       }
     });
-    if (s.missing_explanation !== undefined && typeof s.missing_explanation !== "string") {
+    if (
+      s.missing_explanation !== undefined &&
+      typeof s.missing_explanation !== "string"
+    ) {
       fail(`${at}: \`missing_explanation\` must be a string`);
     }
   });
@@ -135,7 +148,10 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
   if (t.exceptions !== undefined) {
     // Exceptions are event types too, matched the same way — an empty one is
     // unmatchable noise, so hold them to the same non-empty rule.
-    if (!Array.isArray(t.exceptions) || t.exceptions.some((e) => typeof e !== "string" || e === "")) {
+    if (
+      !Array.isArray(t.exceptions) ||
+      t.exceptions.some((e) => typeof e !== "string" || e === "")
+    ) {
       fail("`exceptions` must be a list of non-empty strings");
     }
   }

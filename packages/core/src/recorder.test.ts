@@ -28,7 +28,10 @@ describe("createRecorder", () => {
 
   it("omits optional fields when not supplied rather than setting them undefined", () => {
     const rec = createRecorder({ adapter: "trace-x402" });
-    const e = rec.event({ event_type: "chain.transfer.confirmed", payload: {} });
+    const e = rec.event({
+      event_type: "chain.transfer.confirmed",
+      payload: {},
+    });
     expect("context_id" in e).toBe(false);
     expect("role" in e).toBe(false);
   });
@@ -50,7 +53,10 @@ describe("createRecorder", () => {
   it("defaults event_id to a unique uuid per event", () => {
     const rec = createRecorder({ adapter: "trace-x402" });
     const ids = new Set(
-      Array.from({ length: 100 }, () => rec.event({ event_type: "x402.settle.ok", payload: {} }).event_id),
+      Array.from(
+        { length: 100 },
+        () => rec.event({ event_type: "x402.settle.ok", payload: {} }).event_id,
+      ),
     );
     expect(ids.size).toBe(100);
   });
@@ -59,6 +65,8 @@ describe("createRecorder", () => {
     const one = createRecorder({ adapter: "trace-x402" });
     const two = createRecorder({ adapter: "trace-x402" });
     one.event({ event_type: "x402.settle.ok", payload: {} });
-    expect(two.event({ event_type: "x402.settle.ok", payload: {} }).seq).toBe(0);
+    expect(two.event({ event_type: "x402.settle.ok", payload: {} }).seq).toBe(
+      0,
+    );
   });
 });

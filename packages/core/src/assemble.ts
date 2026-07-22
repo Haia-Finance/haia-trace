@@ -23,8 +23,8 @@
  */
 
 import type { EventType, TraceEvent } from "./event.js";
-import type { OperationTemplate } from "./template.js";
 import type { Receipt, ReceiptException, ReceiptStage } from "./receipt.js";
+import type { OperationTemplate } from "./template.js";
 
 /** Optional operation identity, passed straight onto the receipt — never invented. */
 export interface AssembleOptions {
@@ -94,7 +94,10 @@ interface Draft {
 }
 
 /** Build the initial reducer state and precompute the match lookups. */
-function startDraft(template: OperationTemplate, options: AssembleOptions): Draft {
+function startDraft(
+  template: OperationTemplate,
+  options: AssembleOptions,
+): Draft {
   const typeToStages = new Map<EventType, number[]>();
   template.stages.forEach((stage, index) => {
     for (const witness of stage.match) {
@@ -134,7 +137,10 @@ function applyEvent(draft: Draft, event: TraceEvent): void {
   }
 
   if (draft.exceptionTypes.has(event.event_type)) {
-    draft.exceptions.push({ event_type: event.event_type, event_id: event.event_id });
+    draft.exceptions.push({
+      event_type: event.event_type,
+      event_id: event.event_id,
+    });
   }
 }
 
@@ -159,7 +165,9 @@ function finalize(draft: Draft): Receipt {
       {
         stage: stage.id,
         expected_events: stage.match.map((m) => m.event),
-        ...(stage.missing_explanation !== undefined ? { why: stage.missing_explanation } : {}),
+        ...(stage.missing_explanation !== undefined
+          ? { why: stage.missing_explanation }
+          : {}),
       },
     ];
   });
@@ -170,18 +178,23 @@ function finalize(draft: Draft): Receipt {
   // at-least-one-confirmed clause stops a template with no required stages plus an
   // empty capture from reading as a clean completion of nothing observed.
   const allRequiredConfirmed = template.stages.every(
-    (stage, index) => !stage.required || (draft.stageEvents[index]?.length ?? 0) > 0,
+    (stage, index) =>
+      !stage.required || (draft.stageEvents[index]?.length ?? 0) > 0,
   );
   const anyConfirmed = stages.some((s) => s.state === "confirmed");
   const completeness: Receipt["completeness"] =
-    allRequiredConfirmed && anyConfirmed && draft.exceptions.length === 0 ? "full" : "partial";
+    allRequiredConfirmed && anyConfirmed && draft.exceptions.length === 0
+      ? "full"
+      : "partial";
 
   return {
     operation: {
       template: template.template,
       version: template.version,
       ...(options.title !== undefined ? { title: options.title } : {}),
-      ...(options.operation_id !== undefined ? { operation_id: options.operation_id } : {}),
+      ...(options.operation_id !== undefined
+        ? { operation_id: options.operation_id }
+        : {}),
     },
     completeness,
     stages,
@@ -214,7 +227,10 @@ function finalize(draft: Draft): Receipt {
 function orderEvents(events: readonly TraceEvent[]): TraceEvent[] {
   const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
   return [...events].sort(
-    (a, b) => cmp(a.occurred_at, b.occurred_at) || a.seq - b.seq || cmp(a.event_id, b.event_id),
+    (a, b) =>
+      cmp(a.occurred_at, b.occurred_at) ||
+      a.seq - b.seq ||
+      cmp(a.event_id, b.event_id),
   );
 }
 
@@ -224,7 +240,9 @@ function orderEvents(events: readonly TraceEvent[]): TraceEvent[] {
  * template contract applies to unmatchable empty event types.
  */
 function operationKey(event: TraceEvent): string | undefined {
-  return event.context_id === undefined || event.context_id === "" ? undefined : event.context_id;
+  return event.context_id === undefined || event.context_id === ""
+    ? undefined
+    : event.context_id;
 }
 
 /** Fold an already-ordered event sequence into a receipt. The one place the reducer runs. */

@@ -20,7 +20,9 @@ import type { EventType, Role, TraceEvent } from "./event.js";
  * `lib: ["DOM"]` nor `@types/node` — keeping it runtime-agnostic and dependency-free.
  */
 function randomUUID(): string {
-  return (globalThis as unknown as { crypto: { randomUUID: () => string } }).crypto.randomUUID();
+  return (
+    globalThis as unknown as { crypto: { randomUUID: () => string } }
+  ).crypto.randomUUID();
 }
 
 /** The per-event fields an adapter provides; the recorder stamps the rest. */
@@ -74,7 +76,9 @@ export function createRecorder(options: RecorderOptions): EventRecorder {
         event_id: newId(),
         event_type: input.event_type,
         occurred_at: now(),
-        ...(input.context_id !== undefined ? { context_id: input.context_id } : {}),
+        ...(input.context_id !== undefined
+          ? { context_id: input.context_id }
+          : {}),
         seq: seq++,
         adapter,
         ...(input.role !== undefined ? { role: input.role } : {}),

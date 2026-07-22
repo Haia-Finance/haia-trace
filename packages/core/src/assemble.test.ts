@@ -16,8 +16,16 @@ const x402Payment: OperationTemplate = {
   template: "x402-payment",
   version: 1,
   stages: [
-    { id: "intent", required: true, match: [{ event: "x402.payment.required" }] },
-    { id: "payment", required: true, match: [{ event: "x402.payment.submitted" }] },
+    {
+      id: "intent",
+      required: true,
+      match: [{ event: "x402.payment.required" }],
+    },
+    {
+      id: "payment",
+      required: true,
+      match: [{ event: "x402.payment.submitted" }],
+    },
     {
       id: "settlement",
       required: true,
@@ -30,12 +38,24 @@ const x402Payment: OperationTemplate = {
     {
       id: "paid_action",
       required: true,
-      match: [{ event: "x402.paid_action.executed" }, { event: "http.response.delivered" }],
-      missing_explanation: "settlement confirmed, but the paid action's result was not observed",
+      match: [
+        { event: "x402.paid_action.executed" },
+        { event: "http.response.delivered" },
+      ],
+      missing_explanation:
+        "settlement confirmed, but the paid action's result was not observed",
     },
-    { id: "business_record", required: false, match: [{ event: "file.order.recorded" }] },
+    {
+      id: "business_record",
+      required: false,
+      match: [{ event: "file.order.recorded" }],
+    },
   ],
-  exceptions: ["x402.verify.failed", "x402.settle.failed", "x402.payment.creation_failed"],
+  exceptions: [
+    "x402.verify.failed",
+    "x402.settle.failed",
+    "x402.payment.creation_failed",
+  ],
 };
 
 /**
@@ -116,7 +136,11 @@ describe("assembleReceipt", () => {
 
   it("reports a missing required stage with its explanation -> partial", () => {
     // Settlement confirmed, but the paid action was never observed (the demo fail-case).
-    const events = makeEvents(["x402.payment.required", "x402.payment.submitted", "x402.settle.ok"]);
+    const events = makeEvents([
+      "x402.payment.required",
+      "x402.payment.submitted",
+      "x402.settle.ok",
+    ]);
     const receipt = assembleReceipt(events, x402Payment);
 
     expect(receipt.completeness).toBe("partial");
@@ -125,12 +149,17 @@ describe("assembleReceipt", () => {
     expect(receipt.missing).toEqual([
       {
         stage: "paid_action",
-        expected_events: ["x402.paid_action.executed", "http.response.delivered"],
+        expected_events: [
+          "x402.paid_action.executed",
+          "http.response.delivered",
+        ],
         why: "settlement confirmed, but the paid action's result was not observed",
       },
     ]);
     // The optional business_record is never listed as missing.
-    expect(receipt.missing.some((m) => m.stage === "business_record")).toBe(false);
+    expect(receipt.missing.some((m) => m.stage === "business_record")).toBe(
+      false,
+    );
   });
 
   it("closes a stage on any one witness from its OR match-set", () => {
@@ -170,12 +199,18 @@ describe("assembleReceipt", () => {
         {
           id: "only",
           required: true,
-          match: [{ event: "some.milestone.reached" }, { event: "some.milestone.reached" }],
+          match: [
+            { event: "some.milestone.reached" },
+            { event: "some.milestone.reached" },
+          ],
         },
       ],
     };
 
-    const receipt = assembleReceipt(makeEvents(["some.milestone.reached"]), dupMatch);
+    const receipt = assembleReceipt(
+      makeEvents(["some.milestone.reached"]),
+      dupMatch,
+    );
     expect(receipt.completeness).toBe("full");
     expect(stage(receipt, "only")?.events).toEqual(["evt-0"]);
   });
@@ -185,9 +220,15 @@ describe("assembleReceipt", () => {
     const receipt = assembleReceipt(events, x402Payment);
 
     // Every required stage is confirmed, but an observed fault keeps it from `full`.
-    expect(receipt.stages.filter((s) => s.required).every((s) => s.state === "confirmed")).toBe(true);
+    expect(
+      receipt.stages
+        .filter((s) => s.required)
+        .every((s) => s.state === "confirmed"),
+    ).toBe(true);
     expect(receipt.completeness).toBe("partial");
-    expect(receipt.exceptions).toEqual([{ event_type: "x402.settle.failed", event_id: "evt-4" }]);
+    expect(receipt.exceptions).toEqual([
+      { event_type: "x402.settle.failed", event_id: "evt-4" },
+    ]);
   });
 
   it("keeps an unmatched event in the receipt without attributing it to a stage", () => {
@@ -195,10 +236,14 @@ describe("assembleReceipt", () => {
     const receipt = assembleReceipt(events, x402Payment);
 
     expect(receipt.events).toHaveLength(5);
-    const unknown = receipt.events.find((e) => e.event_type === "some.unknown.event");
+    const unknown = receipt.events.find(
+      (e) => e.event_type === "some.unknown.event",
+    );
     expect(unknown).toBeDefined();
     // No stage references the unmatched event's id.
-    expect(receipt.stages.every((s) => !s.events.includes(unknown!.event_id))).toBe(true);
+    expect(
+      receipt.stages.every((s) => !s.events.includes(unknown!.event_id)),
+    ).toBe(true);
   });
 
   it("records one event on every stage whose match-set contains its type", () => {
@@ -209,8 +254,16 @@ describe("assembleReceipt", () => {
       template: "shared-witness",
       version: 1,
       stages: [
-        { id: "first", required: true, match: [{ event: "shared.signal.seen" }] },
-        { id: "second", required: true, match: [{ event: "shared.signal.seen" }] },
+        {
+          id: "first",
+          required: true,
+          match: [{ event: "shared.signal.seen" }],
+        },
+        {
+          id: "second",
+          required: true,
+          match: [{ event: "shared.signal.seen" }],
+        },
       ],
     };
 
@@ -226,7 +279,10 @@ describe("assembleReceipt", () => {
     expect(bare.operation.title).toBeUndefined();
     expect(bare.operation.operation_id).toBeUndefined();
 
-    const titled = assembleReceipt(events, x402Payment, { title: "GET /api/data", operation_id: "op-7" });
+    const titled = assembleReceipt(events, x402Payment, {
+      title: "GET /api/data",
+      operation_id: "op-7",
+    });
     expect(titled.operation).toEqual({
       template: "x402-payment",
       version: 1,
@@ -241,14 +297,23 @@ describe("assembleReceipt", () => {
     const allOptional: OperationTemplate = {
       template: "all-optional",
       version: 1,
-      stages: [{ id: "note", required: false, match: [{ event: "some.note.recorded" }] }],
+      stages: [
+        {
+          id: "note",
+          required: false,
+          match: [{ event: "some.note.recorded" }],
+        },
+      ],
     };
 
     const empty = assembleReceipt([], allOptional);
     expect(empty.completeness).toBe("partial");
 
     // Once its optional stage is actually witnessed, there is evidence to stand on.
-    const witnessed = assembleReceipt(makeEvents(["some.note.recorded"]), allOptional);
+    const witnessed = assembleReceipt(
+      makeEvents(["some.note.recorded"]),
+      allOptional,
+    );
     expect(witnessed.completeness).toBe("full");
   });
 
@@ -279,8 +344,14 @@ describe("assembleReceipt", () => {
       newId: () => "evt-chain",
     });
     // Both events get seq 0 and the same occurred_at — only event_id breaks the tie.
-    const clientEvent = client.event({ event_type: "x402.settle.ok", payload: {} });
-    const chainEvent = chain.event({ event_type: "chain.transfer.confirmed", payload: {} });
+    const clientEvent = client.event({
+      event_type: "x402.settle.ok",
+      payload: {},
+    });
+    const chainEvent = chain.event({
+      event_type: "chain.transfer.confirmed",
+      payload: {},
+    });
     expect(clientEvent.seq).toBe(chainEvent.seq);
 
     const forward = assembleReceipt([clientEvent, chainEvent], x402Payment);
@@ -305,7 +376,9 @@ describe("assembleProgressively", () => {
 
     // The baseline receipt has folded nothing in.
     expect(snapshots[0]!.receipt.events).toEqual([]);
-    expect(snapshots[0]!.receipt.stages.every((s) => s.state === "not_confirmed")).toBe(true);
+    expect(
+      snapshots[0]!.receipt.stages.every((s) => s.state === "not_confirmed"),
+    ).toBe(true);
   });
 
   it("ends at exactly the eager receipt (the reducer/generator agree)", () => {
@@ -361,7 +434,9 @@ describe("assembleReceipts", () => {
 
     expect(unassigned.map((e) => e.event_type)).toEqual(["trace.attached"]);
     const attestationId = unassigned[0]!.event_id;
-    const onSomeReceipt = receipts.some((r) => r.events.some((e) => e.event_id === attestationId));
+    const onSomeReceipt = receipts.some((r) =>
+      r.events.some((e) => e.event_id === attestationId),
+    );
     expect(onSomeReceipt).toBe(false);
   });
 
@@ -373,18 +448,24 @@ describe("assembleReceipts", () => {
   });
 
   it("returns empty on empty input and buckets an all-attestation run", () => {
-    expect(assembleReceipts([], x402Payment)).toEqual({ receipts: [], unassigned: [] });
+    expect(assembleReceipts([], x402Payment)).toEqual({
+      receipts: [],
+      unassigned: [],
+    });
 
     const onlyAttestations = makeRun([
       [undefined, "trace.attached"],
       [undefined, "trace.attach_failed"],
     ]);
-    const { receipts, unassigned } = assembleReceipts(onlyAttestations, x402Payment);
+    const { receipts, unassigned } = assembleReceipts(
+      onlyAttestations,
+      x402Payment,
+    );
     expect(receipts).toEqual([]);
     expect(unassigned).toHaveLength(2);
   });
 
-  it("treats an empty-string context_id as no operation, not a group keyed by \"\"", () => {
+  it('treats an empty-string context_id as no operation, not a group keyed by ""', () => {
     // An empty context_id cannot identify an operation (the same rule the template
     // contract applies to unmatchable empty event types), so it goes to unassigned
     // rather than opening a receipt keyed by "".
@@ -395,7 +476,9 @@ describe("assembleReceipts", () => {
     const { receipts, unassigned } = assembleReceipts(events, x402Payment);
 
     expect(receipts.map((r) => r.operation.operation_id)).toEqual(["a"]);
-    expect(unassigned.map((e) => e.event_type)).toEqual(["x402.payment.required"]);
+    expect(unassigned.map((e) => e.event_type)).toEqual([
+      "x402.payment.required",
+    ]);
   });
 });
 
@@ -417,7 +500,9 @@ describe("assembleReceiptsProgressively", () => {
     const snapshots = [...assembleReceiptsProgressively(events, x402Payment)];
 
     expect(snapshots).toHaveLength(events.length + 1);
-    expect(snapshots.map((s) => s.processed)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(snapshots.map((s) => s.processed)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 8,
+    ]);
     expect(snapshots.every((s) => s.total === events.length)).toBe(true);
 
     // The baseline has nothing folded in.
@@ -429,25 +514,43 @@ describe("assembleReceiptsProgressively", () => {
     const snapshots = [...assembleReceiptsProgressively(run(), x402Payment)];
 
     // op a's first event opens one operation; op b's first event opens the second.
-    expect(snapshots[1]!.receipts.map((r) => r.operation.operation_id)).toEqual(["a"]);
-    expect(snapshots[2]!.receipts.map((r) => r.operation.operation_id)).toEqual(["a", "b"]);
+    expect(snapshots[1]!.receipts.map((r) => r.operation.operation_id)).toEqual(
+      ["a"],
+    );
+    expect(snapshots[2]!.receipts.map((r) => r.operation.operation_id)).toEqual(
+      ["a", "b"],
+    );
     // The attestation (last event) lands in unassigned, not on a receipt.
-    expect(snapshots.at(-1)!.unassigned.map((e) => e.event_type)).toEqual(["trace.attached"]);
+    expect(snapshots.at(-1)!.unassigned.map((e) => e.event_type)).toEqual([
+      "trace.attached",
+    ]);
   });
 
   it("ends at exactly the eager split (progressive and assembleReceipts agree)", () => {
     const events = run();
-    const last = [...assembleReceiptsProgressively(events, x402Payment)].at(-1)!;
+    const last = [...assembleReceiptsProgressively(events, x402Payment)].at(
+      -1,
+    )!;
     const eager = assembleReceipts(events, x402Payment);
 
-    expect(last).toMatchObject({ processed: events.length, total: events.length });
-    expect({ receipts: last.receipts, unassigned: last.unassigned }).toEqual(eager);
+    expect(last).toMatchObject({
+      processed: events.length,
+      total: events.length,
+    });
+    expect({ receipts: last.receipts, unassigned: last.unassigned }).toEqual(
+      eager,
+    );
   });
 
   it("handles an empty run with a single baseline snapshot", () => {
     const snapshots = [...assembleReceiptsProgressively([], x402Payment)];
 
     expect(snapshots).toHaveLength(1);
-    expect(snapshots[0]).toEqual({ processed: 0, total: 0, receipts: [], unassigned: [] });
+    expect(snapshots[0]).toEqual({
+      processed: 0,
+      total: 0,
+      receipts: [],
+      unassigned: [],
+    });
   });
 });

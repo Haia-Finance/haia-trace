@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { trace, type TraceLogLine } from "./index.js";
+import { type TraceLogLine, trace } from "./index.js";
 
 /**
  * A fake x402 instance: each named hook method is a `vi.fn()` that captures the
@@ -31,7 +31,9 @@ const SERVER_HOOKS = [
   "onVerifiedPaymentCanceled",
 ];
 // The facilitator shares the verify/settle names but has no onVerifiedPaymentCanceled.
-const FACILITATOR_HOOKS = SERVER_HOOKS.filter((h) => h !== "onVerifiedPaymentCanceled");
+const FACILITATOR_HOOKS = SERVER_HOOKS.filter(
+  (h) => h !== "onVerifiedPaymentCanceled",
+);
 
 afterEach(() => {
   delete process.env.HAIA_TRACE_DISABLE;
@@ -95,7 +97,11 @@ describe("trace() kind inference", () => {
   });
 
   it("infers an MCP client (role: client) from onBeforePayment/onAfterPayment", () => {
-    const { instance } = fakeInstance(["onPaymentRequired", "onBeforePayment", "onAfterPayment"]);
+    const { instance } = fakeInstance([
+      "onPaymentRequired",
+      "onBeforePayment",
+      "onAfterPayment",
+    ]);
 
     const attestation = trace(instance, { log: vi.fn() });
 
@@ -108,17 +114,21 @@ describe("trace() kind inference", () => {
 
   it("tags the SAME hook name with different roles for server vs facilitator", () => {
     const serverLog = vi.fn();
-    const { instance: server, handlers: serverHandlers } = fakeInstance(SERVER_HOOKS);
+    const { instance: server, handlers: serverHandlers } =
+      fakeInstance(SERVER_HOOKS);
     trace(server, { log: serverLog });
     serverHandlers.get("onBeforeVerify")!({});
 
     const facLog = vi.fn();
-    const { instance: fac, handlers: facHandlers } = fakeInstance(FACILITATOR_HOOKS);
+    const { instance: fac, handlers: facHandlers } =
+      fakeInstance(FACILITATOR_HOOKS);
     trace(fac, { log: facLog });
     facHandlers.get("onBeforeVerify")!({});
 
     const roleOf = (log: ReturnType<typeof vi.fn>) =>
-      log.mock.calls.map((c) => c[0]).find((l: TraceLogLine) => l.hook === "onBeforeVerify")!.role;
+      log.mock.calls
+        .map((c) => c[0])
+        .find((l: TraceLogLine) => l.hook === "onBeforeVerify")!.role;
     expect(roleOf(serverLog)).toBe("server");
     expect(roleOf(facLog)).toBe("facilitator");
   });
@@ -146,7 +156,10 @@ describe("trace()", () => {
     const log = vi.fn();
     trace(instance, { log });
 
-    const context = { result: { transaction: "0xabc" }, requirements: { amount: "1" } };
+    const context = {
+      result: { transaction: "0xabc" },
+      requirements: { amount: "1" },
+    };
     handlers.get("onAfterVerify")!(context);
 
     expect(log).toHaveBeenCalledWith({
@@ -155,7 +168,9 @@ describe("trace()", () => {
       context,
     } satisfies TraceLogLine);
     // Passed through unchanged, not copied/normalized in this slice.
-    expect(log.mock.calls.find((c) => c[0].hook === "onAfterVerify")![0].context).toBe(context);
+    expect(
+      log.mock.calls.find((c) => c[0].hook === "onAfterVerify")![0].context,
+    ).toBe(context);
   });
 
   it("is strictly passive: a throwing log never escapes and the handler returns undefined", () => {
@@ -187,7 +202,12 @@ describe("trace()", () => {
 
     const attestation = trace(instance, { log });
 
-    expect(attestation).toEqual({ attached: [], ok: false, kind: "unknown", role: "unknown" });
+    expect(attestation).toEqual({
+      attached: [],
+      ok: false,
+      kind: "unknown",
+      role: "unknown",
+    });
     for (const name of SERVER_HOOKS) {
       expect(instance[name]).not.toHaveBeenCalled();
     }
@@ -220,14 +240,11 @@ describe("trace()", () => {
 
   it("attaches to a callable instance (function with hook methods)", () => {
     const handlers = new Map<string, unknown>();
-    const callable = Object.assign(
-      function callableClient() {},
-      {
-        onPaymentResponse: vi.fn((fn: unknown) => {
-          handlers.set("onPaymentResponse", fn);
-        }),
-      },
-    );
+    const callable = Object.assign(function callableClient() {}, {
+      onPaymentResponse: vi.fn((fn: unknown) => {
+        handlers.set("onPaymentResponse", fn);
+      }),
+    });
     const log = vi.fn();
 
     const attestation = trace(callable, { log });
@@ -247,7 +264,12 @@ describe("trace()", () => {
 
     const attestation = trace(instance, { log });
 
-    expect(attestation).toEqual({ attached: [], ok: false, kind: "unknown", role: "unknown" });
+    expect(attestation).toEqual({
+      attached: [],
+      ok: false,
+      kind: "unknown",
+      role: "unknown",
+    });
     expect(log).toHaveBeenCalledWith({
       hook: "trace.attach_failed",
       role: "unknown",
@@ -267,9 +289,10 @@ describe("trace() with an out-of-contract kind override", () => {
   // Model a plain-JS caller (or a dynamically-computed string) passing a `kind`
   // that isn't one of the six canonical instance kinds — the type system can't
   // stop it, so trace() must handle it without throwing.
-  const traceLoose = trace as (instance: unknown, options?: Record<string, unknown>) => ReturnType<
-    typeof trace
-  >;
+  const traceLoose = trace as (
+    instance: unknown,
+    options?: Record<string, unknown>,
+  ) => ReturnType<typeof trace>;
 
   it("does not throw on an unrecognized kind string and falls back to inference", () => {
     const { instance } = fakeInstance(SERVER_HOOKS);
@@ -308,7 +331,12 @@ describe("trace() with an unresolvable kind (graceful, never throws)", () => {
       attestation = trace(instance, { log });
     }).not.toThrow();
 
-    expect(attestation).toEqual({ attached: [], ok: false, kind: "unknown", role: "unknown" });
+    expect(attestation).toEqual({
+      attached: [],
+      ok: false,
+      kind: "unknown",
+      role: "unknown",
+    });
     // With no group to register, none of the instance's methods are treated as
     // registrars — the recorder leaves an unrecognized instance untouched.
     expect(instance.somethingElse).not.toHaveBeenCalled();
@@ -342,7 +370,12 @@ describe("trace() with an unresolvable kind (graceful, never throws)", () => {
       attestation = trace(instance, { log, onError });
     }).not.toThrow();
 
-    expect(attestation).toEqual({ attached: [], ok: false, kind: "unknown", role: "unknown" });
+    expect(attestation).toEqual({
+      attached: [],
+      ok: false,
+      kind: "unknown",
+      role: "unknown",
+    });
     expect(onError).toHaveBeenCalledOnce();
     expect(onError.mock.calls[0]![0]).toBeInstanceOf(Error);
   });

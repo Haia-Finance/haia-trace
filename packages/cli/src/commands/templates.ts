@@ -20,11 +20,15 @@ export function runTemplates(): void {
   if (names.length === 0) {
     // The templates directory exists (a missing one throws in the loader), so an
     // empty list means a shipping mistake worth flagging, not silence.
-    console.log(`${symbol.warning} ${color.yellow("No operation templates are installed.")}`);
+    console.log(
+      `${symbol.warning} ${color.yellow("No operation templates are installed.")}`,
+    );
     return;
   }
 
-  console.log(`${emoji.templates} ${color.bold("Operation templates shipped with the CLI:")}\n`);
+  console.log(
+    `${emoji.templates} ${color.bold("Operation templates shipped with the CLI:")}\n`,
+  );
   for (const name of names) {
     console.log(`  ${symbol.success} ${name}`);
   }
