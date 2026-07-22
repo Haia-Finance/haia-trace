@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type OperationTemplate } from "./index.js";
+import { assertOperationTemplate, type OperationTemplate } from "./index.js";
 
 describe("Template Contract", () => {
   // The canonical x402 payment template: intent -> payment -> settlement ->
@@ -74,5 +74,67 @@ describe("Template Contract", () => {
     };
     expect(nanopaymentArc.template).toBe("nanopayment-arc");
     expect(nanopaymentArc.exceptions).toBeUndefined();
+  });
+});
+
+describe("assertOperationTemplate", () => {
+  const valid = {
+    template: "x402-payment",
+    version: 1,
+    stages: [
+      { id: "intent", required: true, match: [{ event: "x402.payment.required" }] },
+      {
+        id: "settlement",
+        required: true,
+        match: [{ event: "x402.settle.ok" }, { event: "chain.transfer.confirmed" }],
+        missing_explanation: "settlement not observed",
+      },
+    ],
+    exceptions: ["x402.settle.failed"],
+  };
+
+  it("accepts and narrows a valid template", () => {
+    const template = assertOperationTemplate(valid, "x402-payment.yaml");
+    // The return is typed OperationTemplate; the stages survive intact.
+    expect(template.stages.map((s) => s.id)).toEqual(["intent", "settlement"]);
+    expect(template.exceptions).toEqual(["x402.settle.failed"]);
+  });
+
+  it("rejects a non-object with a sourced message", () => {
+    expect(() => assertOperationTemplate("nope", "bad.yaml")).toThrow(
+      /invalid template \(bad\.yaml\): expected a mapping/,
+    );
+  });
+
+  it("rejects a template with no stages", () => {
+    expect(() => assertOperationTemplate({ template: "x", version: 1, stages: [] })).toThrow(
+      /`stages` must be a non-empty list/,
+    );
+  });
+
+  it("rejects a stage whose match entries lack an event string", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ notEvent: "oops" }] }],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(/stage intent, match 0: `event` must be a string/);
+  });
+
+  it("rejects duplicate stage ids", () => {
+    const dup = {
+      template: "x",
+      version: 1,
+      stages: [
+        { id: "settlement", required: true, match: [{ event: "a" }] },
+        { id: "settlement", required: true, match: [{ event: "b" }] },
+      ],
+    };
+    expect(() => assertOperationTemplate(dup)).toThrow(/stage settlement: duplicate stage id/);
+  });
+
+  it("locates a blank-id stage by its index", () => {
+    const blank = { template: "x", version: 1, stages: [{ id: "", required: true, match: [{ event: "a" }] }] };
+    expect(() => assertOperationTemplate(blank)).toThrow(/stage #0: `id` must be a non-empty string/);
   });
 });

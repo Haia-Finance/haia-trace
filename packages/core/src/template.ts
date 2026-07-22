@@ -66,3 +66,67 @@ export interface OperationTemplate {
    */
   exceptions?: EventType[];
 }
+
+/**
+ * Validate an untrusted value — typically the result of parsing a template file —
+ * into an `OperationTemplate`, throwing a sourced `Error` on the first mismatch.
+ *
+ * Kept here beside the type, and deliberately pure (no filesystem, no parser), so
+ * every loader in every language-neutral surface validates the contract the same
+ * way. A malformed template must fail loudly rather than silently produce a wrong
+ * receipt — this is a receipt-integrity guarantee, not a convenience check.
+ */
+export function assertOperationTemplate(value: unknown, source = "<template>"): OperationTemplate {
+  const fail = (why: string): never => {
+    throw new Error(`invalid template (${source}): ${why}`);
+  };
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return fail("expected a mapping at the top level");
+  }
+  const t = value as Record<string, unknown>;
+
+  if (typeof t.template !== "string") fail("`template` must be a string");
+  if (typeof t.version !== "number") fail("`version` must be a number");
+  if (!Array.isArray(t.stages) || t.stages.length === 0) {
+    fail("`stages` must be a non-empty list");
+  }
+
+  const seenIds = new Set<string>();
+  (t.stages as unknown[]).forEach((raw, i) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      fail(`stage #${i}: expected a mapping`);
+    }
+    const s = raw as Record<string, unknown>;
+    const id = s.id;
+    // Label by id, falling back to the index when the id is missing or blank, so
+    // the error always points somewhere the author can locate.
+    const at = typeof id === "string" && id !== "" ? `stage ${id}` : `stage #${i}`;
+    if (typeof id !== "string" || id === "") fail(`${at}: \`id\` must be a non-empty string`);
+    const stageId = id as string;
+    // Stage ids must be unique — the assembler keys milestones by id, so a
+    // duplicate would silently close the wrong stage.
+    if (seenIds.has(stageId)) fail(`${at}: duplicate stage id`);
+    seenIds.add(stageId);
+    if (typeof s.required !== "boolean") fail(`${at}: \`required\` must be a boolean`);
+    if (!Array.isArray(s.match) || s.match.length === 0) {
+      fail(`${at}: \`match\` must be a non-empty list`);
+    }
+    (s.match as unknown[]).forEach((m, j) => {
+      if (typeof m !== "object" || m === null || typeof (m as Record<string, unknown>).event !== "string") {
+        fail(`${at}, match ${j}: \`event\` must be a string`);
+      }
+    });
+    if (s.missing_explanation !== undefined && typeof s.missing_explanation !== "string") {
+      fail(`${at}: \`missing_explanation\` must be a string`);
+    }
+  });
+
+  if (t.exceptions !== undefined) {
+    if (!Array.isArray(t.exceptions) || t.exceptions.some((e) => typeof e !== "string")) {
+      fail("`exceptions` must be a list of strings");
+    }
+  }
+
+  return value as OperationTemplate;
+}

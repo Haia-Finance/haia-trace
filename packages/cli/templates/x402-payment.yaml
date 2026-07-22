@@ -1,0 +1,36 @@
+# The canonical x402 payment operation: intent -> payment -> settlement ->
+# paid_action, plus an optional business record. Each stage is a milestone; its
+# `match` is a match-set (OR) — any one event closes the stage, since different
+# roles and sources witness the same milestone differently.
+template: x402-payment
+version: 1
+stages:
+  - id: intent
+    required: true
+    match:
+      - event: x402.payment.required
+  - id: payment
+    required: true
+    match:
+      - event: x402.payment.submitted
+  - id: settlement
+    required: true
+    match:
+      - event: x402.payment.responded    # client-side view
+      - event: x402.settle.ok            # server-side view
+      - event: chain.transfer.confirmed  # on-chain confirmation
+  - id: paid_action
+    required: true
+    match:
+      - event: x402.paid_action.executed
+      - event: http.response.delivered   # the final 200 delivered after payment
+    missing_explanation: "settlement confirmed, but the paid action's result was not observed"
+  - id: business_record
+    required: false
+    match:
+      - event: file.order.recorded
+# Events that mark a stage attention_required instead of closing it.
+exceptions:
+  - x402.verify.failed
+  - x402.settle.failed
+  - x402.payment.creation_failed

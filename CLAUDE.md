@@ -9,12 +9,14 @@ public** — keep this file to engineering guidance only.
 packages/
   core/   @usehaia/trace-core   contracts + deterministic receipt assembler
   x402/   @usehaia/trace-x402   x402 capture adapter (records events)
-  cli/    @usehaia/trace-cli    CLI and renderers
-templates/                       operation templates (yaml) — ship with the CLI
+  cli/    @usehaia/trace-cli    CLI, renderers, template loader
+          cli/templates/*.yaml  operation templates — shipped in the CLI package
 ```
 
 `x402` and `cli` depend on `core` via `"@usehaia/trace-core": "workspace:*"`.
-`templates/` is a plain directory, not a workspace package.
+The templates are plain yaml data (not code, not a workspace package); they live
+in `packages/cli/templates/` and ride into the published tarball via the CLI's
+`files` list, so every install carries them.
 
 ## Toolchain
 
@@ -41,10 +43,13 @@ by `check-types`) and `tsconfig.build.json` (excludes tests, used by `build` so
 
 ## Code conventions
 
-- **Zero third-party runtime dependencies.** Runtime code (anything shipped in
-  `dist/`) must not add third-party `dependencies` — this is an auditability
-  invariant. Internal `@usehaia/*` workspace deps are allowed; anything else goes
-  in `devDependencies`.
+- **Zero third-party runtime dependencies in `core` and `x402`.** These packages
+  are embedded in — or run right next to — the user's payment path, so their
+  auditability is a trust guarantee: runtime code (anything shipped in `dist/`)
+  must not add third-party `dependencies`. Internal `@usehaia/*` workspace deps are
+  allowed; anything else goes in `devDependencies`. The `cli` is a tool you *run*,
+  not embed, so it may carry small, well-audited runtime deps (e.g. `yaml`, which
+  has no transitive deps) — keep them minimal and justified.
 - **ESM only**, `"type": "module"`, TypeScript `module`/`moduleResolution` set to
   `NodeNext`. Because output runs on Node directly, **relative imports carry a
   `.js` extension** in source: `import { x } from "./foo.js"` (not `"./foo"`).
@@ -74,4 +79,5 @@ by `check-types`) and `tsconfig.build.json` (excludes tests, used by `build` so
 
 Copy an existing package's `package.json` + `tsconfig.json` shape into
 `packages/<name>/`. The `packages/*` workspace glob picks it up automatically —
-no root file needs editing. Keep `dependencies` free of third-party packages.
+no root file needs editing. For a `core`/`x402`-style embeddable package, keep
+`dependencies` free of third-party packages (see the invariant above).
