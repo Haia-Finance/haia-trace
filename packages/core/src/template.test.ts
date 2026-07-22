@@ -151,7 +151,12 @@ describe("assertOperationTemplate", () => {
 
   it("rejects a non-number version", () => {
     const bad = { template: "x", version: "1", stages: [{ id: "intent", required: true, match: [{ event: "a" }] }] };
-    expect(() => assertOperationTemplate(bad)).toThrow(/`version` must be a number/);
+    expect(() => assertOperationTemplate(bad)).toThrow(/`version` must be a finite number/);
+  });
+
+  it("rejects a NaN version (typeof NaN is 'number')", () => {
+    const bad = { template: "x", version: NaN, stages: [{ id: "intent", required: true, match: [{ event: "a" }] }] };
+    expect(() => assertOperationTemplate(bad)).toThrow(/`version` must be a finite number/);
   });
 
   it("rejects a non-boolean required flag", () => {

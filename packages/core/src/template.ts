@@ -87,7 +87,11 @@ export function assertOperationTemplate(value: unknown, source = "<template>"): 
   const t = value as Record<string, unknown>;
 
   if (typeof t.template !== "string" || t.template === "") fail("`template` must be a non-empty string");
-  if (typeof t.version !== "number") fail("`version` must be a number");
+  // `Number.isFinite` also rejects NaN (which `typeof` reports as "number") and
+  // ±Infinity, so a YAML `version: .nan` can't pass as a valid version.
+  if (typeof t.version !== "number" || !Number.isFinite(t.version)) {
+    fail("`version` must be a finite number");
+  }
   if (!Array.isArray(t.stages) || t.stages.length === 0) {
     fail("`stages` must be a non-empty list");
   }
