@@ -12,6 +12,9 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "trace": "./dist/cli.js"
+  },
   "files": ["dist", "templates"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -21,6 +24,10 @@
   },
   "dependencies": {
     "@usehaia/trace-core": "workspace:*",
+    "commander": "^14.0.1",
+    "log-symbols": "^7.0.1",
+    "nanospinner": "^1.2.2",
+    "picocolors": "^1.1.1",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
