@@ -201,6 +201,25 @@ describe("assembleReceipt", () => {
     expect(receipt.stages.every((s) => !s.events.includes(unknown!.event_id))).toBe(true);
   });
 
+  it("records one event on every stage whose match-set contains its type", () => {
+    // The Receipt contract promises "one event can appear on more than one stage."
+    // A template where two stages share a witness type must confirm both from the
+    // single observed event.
+    const shared: OperationTemplate = {
+      template: "shared-witness",
+      version: 1,
+      stages: [
+        { id: "first", required: true, match: [{ event: "shared.signal.seen" }] },
+        { id: "second", required: true, match: [{ event: "shared.signal.seen" }] },
+      ],
+    };
+
+    const receipt = assembleReceipt(makeEvents(["shared.signal.seen"]), shared);
+    expect(receipt.completeness).toBe("full");
+    expect(stage(receipt, "first")?.events).toEqual(["evt-0"]);
+    expect(stage(receipt, "second")?.events).toEqual(["evt-0"]);
+  });
+
   it("carries caller-supplied operation identity, never inventing it", () => {
     const events = makeEvents(REQUIRED_HAPPY_PATH);
     const bare = assembleReceipt(events, x402Payment);
@@ -363,6 +382,20 @@ describe("assembleReceipts", () => {
     const { receipts, unassigned } = assembleReceipts(onlyAttestations, x402Payment);
     expect(receipts).toEqual([]);
     expect(unassigned).toHaveLength(2);
+  });
+
+  it("treats an empty-string context_id as no operation, not a group keyed by \"\"", () => {
+    // An empty context_id cannot identify an operation (the same rule the template
+    // contract applies to unmatchable empty event types), so it goes to unassigned
+    // rather than opening a receipt keyed by "".
+    const events = makeRun([
+      ["", "x402.payment.required"],
+      ["a", "x402.payment.required"],
+    ]);
+    const { receipts, unassigned } = assembleReceipts(events, x402Payment);
+
+    expect(receipts.map((r) => r.operation.operation_id)).toEqual(["a"]);
+    expect(unassigned.map((e) => e.event_type)).toEqual(["x402.payment.required"]);
   });
 });
 
