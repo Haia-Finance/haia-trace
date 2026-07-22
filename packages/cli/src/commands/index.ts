@@ -2,7 +2,7 @@
  * The command registry — the single list `cli.ts` walks to build the program.
  *
  * Adding a command is a two-line change: import its `TraceCommand` and append it
- * here. Order here is the order commands appear in `trace --help`.
+ * here. Order here is the order commands appear in `haia-trace --help`.
  */
 
 import { templatesCommand } from "./templates.js";

@@ -1,5 +1,5 @@
 /**
- * `trace templates` — list the operation templates shipped with the CLI.
+ * `haia-trace templates` — list the operation templates shipped with the CLI.
  *
  * The first real command, and the scaffold's proof of wiring: it exercises the
  * full path from `bin` → argv parsing → command → core-backed data

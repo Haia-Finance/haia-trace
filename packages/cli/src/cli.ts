@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The `trace` executable — the CLI entry point named by the package's `bin`.
+ * The `haia-trace` executable — the CLI entry point named by the package's `bin`.
  *
  * Deliberately thin: it builds the root program, registers every command from the
  * registry, and parses argv. All behaviour lives in `./commands/*`, so this file
@@ -34,7 +34,7 @@ function readVersion(): string {
 const program = new Command();
 
 program
-  .name("trace")
+  .name("haia-trace")
   .description(
     "Haia Trace — build an Operation Receipt for a payment operation.",
   )

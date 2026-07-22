@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "trace": "./dist/cli.js"
+    "haia-trace": "./dist/cli.js"
   },
   "files": [
     "dist",

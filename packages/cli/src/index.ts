@@ -1,7 +1,7 @@
 /**
  * `@usehaia/trace-cli` — the programmatic surface of the Trace CLI.
  *
- * The executable lives in `./cli.ts` (the package's `bin: trace`); this module is
+ * The executable lives in `./cli.ts` (the package's `bin: haia-trace`); this module is
  * the library entry point (`exports["."]`), re-exporting the pieces usable
  * without spawning the process: template loading and the command registry.
  */

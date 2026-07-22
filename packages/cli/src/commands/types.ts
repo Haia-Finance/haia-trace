@@ -1,5 +1,5 @@
 /**
- * The command contract — the one shape every `trace` sub-command implements, and
+ * The command contract — the one shape every `haia-trace` sub-command implements, and
  * the seam that keeps "add a new command" a one-file change.
  *
  * A command owns its own registration: it declares its name, description,

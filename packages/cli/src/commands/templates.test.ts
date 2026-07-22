@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runTemplates, templatesCommand } from "./templates.js";
 
-describe("trace templates", () => {
+describe("haia-trace templates", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
