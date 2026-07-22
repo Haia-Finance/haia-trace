@@ -7,3 +7,8 @@ catalog:
   typescript: ^5.9.2
   vitest: ^3.2.4
   "@types/node": ^20.19.0
+  # x402 SDK — type-only devDependency of the x402 adapter (import type only,
+  # erased at build, so no runtime dep is added). Provides the per-hook context
+  # interfaces the adapter types its handlers against.
+  "@x402/core": 2.19.0
+  "@x402/mcp": 2.19.0

@@ -24,6 +24,8 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@x402/core": "catalog:",
+    "@x402/mcp": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
