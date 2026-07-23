@@ -72,6 +72,9 @@ importers:
 
   packages/core:
     devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

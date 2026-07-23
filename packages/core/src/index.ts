@@ -8,4 +8,5 @@ export * from "./assemble.js";
 export * from "./event.js";
 export * from "./receipt.js";
 export * from "./recorder.js";
+export * from "./sink.js";
 export * from "./template.js";
