@@ -15,9 +15,6 @@
  */
 
 import { join } from "node:path";
-
-import type { Command } from "commander";
-
 import {
   assembleReceiptsProgressively,
   type Receipt,
@@ -25,6 +22,7 @@ import {
   type TraceEvent,
 } from "@usehaia/trace-core";
 import { createFileReader, readLatestRun } from "@usehaia/trace-core/node";
+import type { Command } from "commander";
 
 import { renderReceipt } from "../render/receipt.js";
 import { RECEIPTS_DIR, writeReceipt } from "../store.js";
@@ -56,30 +54,46 @@ export interface BuildResult {
 }
 
 /** Assemble the run's receipts, write them, and report. Separated from registration so it stays testable. */
-export function runBuild(file: string | undefined, options: BuildOptions = {}): BuildResult {
+export function runBuild(
+  file: string | undefined,
+  options: BuildOptions = {},
+): BuildResult {
   const templateName = options.template ?? DEFAULT_TEMPLATE;
   const json = options.json ?? false;
   const eventsDir = options.eventsDir ?? EVENTS_DIR;
   const receiptsDir = options.receiptsDir ?? RECEIPTS_DIR;
 
   // An explicit path wins; otherwise build the latest run in the events dir.
-  const reader = file !== undefined ? createFileReader(file) : readLatestRun(eventsDir);
+  const reader =
+    file !== undefined ? createFileReader(file) : readLatestRun(eventsDir);
   if (reader === null) {
-    throw new Error(`no runs found in ${eventsDir} — run under the recorder or pass a run file`);
+    throw new Error(
+      `no runs found in ${eventsDir} — run under the recorder or pass a run file`,
+    );
   }
   const events = reader.read();
   const template = loadTemplate(templateName);
 
   // Only spin on an interactive terminal: a spinner in piped or machine output is
   // noise, and JSON output must stay pure.
-  const spin = !json && process.stdout.isTTY ? spinner("Assembling receipts…").start() : null;
+  const spin =
+    !json && process.stdout.isTTY
+      ? spinner("Assembling receipts…").start()
+      : null;
 
   // Drive the assembler progressively for a live progress count; the final
   // snapshot holds the finished receipts.
-  let last: RunProgress = { processed: 0, total: 0, receipts: [], unassigned: [] };
+  let last: RunProgress = {
+    processed: 0,
+    total: 0,
+    receipts: [],
+    unassigned: [],
+  };
   for (const progress of assembleReceiptsProgressively(events, template)) {
     last = progress;
-    spin?.update({ text: `Assembling receipts… ${progress.processed}/${progress.total} events` });
+    spin?.update({
+      text: `Assembling receipts… ${progress.processed}/${progress.total} events`,
+    });
   }
   const { receipts, unassigned } = last;
 
@@ -88,10 +102,14 @@ export function runBuild(file: string | undefined, options: BuildOptions = {}): 
   for (const receipt of receipts) writeReceipt(receipt, receiptsDir);
 
   const noun = receipts.length === 1 ? "receipt" : "receipts";
-  spin?.success({ text: `Assembled ${receipts.length} ${noun} from ${last.total} events` });
+  spin?.success({
+    text: `Assembled ${receipts.length} ${noun} from ${last.total} events`,
+  });
 
   if (json) {
-    process.stdout.write(`${JSON.stringify({ receipts, unassigned }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify({ receipts, unassigned }, null, 2)}\n`,
+    );
     return { receipts, unassigned };
   }
 
@@ -106,7 +124,11 @@ export function runBuild(file: string | undefined, options: BuildOptions = {}): 
   }
   if (unassigned.length > 0) {
     const evNoun = unassigned.length === 1 ? "event" : "events";
-    console.log(color.dim(`  ${unassigned.length} run-level ${evNoun} not attributed to any operation`));
+    console.log(
+      color.dim(
+        `  ${unassigned.length} run-level ${evNoun} not attributed to any operation`,
+      ),
+    );
   }
 
   return { receipts, unassigned };
@@ -116,12 +138,27 @@ export const buildCommand: TraceCommand = {
   register(program: Command): void {
     program
       .command("build")
-      .argument("[file]", "ndjson run file to build from (default: the latest in .trace/events)")
-      .option("--template <id>", "operation template to apply to every operation", DEFAULT_TEMPLATE)
-      .option("--json", "emit machine-readable JSON instead of a terminal summary")
+      .argument(
+        "[file]",
+        "ndjson run file to build from (default: the latest in .trace/events)",
+      )
+      .option(
+        "--template <id>",
+        "operation template to apply to every operation",
+        DEFAULT_TEMPLATE,
+      )
+      .option(
+        "--json",
+        "emit machine-readable JSON instead of a terminal summary",
+      )
       .description("Assemble one receipt per operation from a run's events")
-      .action((file: string | undefined, opts: { template: string; json?: boolean }) => {
-        runBuild(file, { template: opts.template, json: opts.json });
-      });
+      .action(
+        (
+          file: string | undefined,
+          opts: { template: string; json?: boolean },
+        ) => {
+          runBuild(file, { template: opts.template, json: opts.json });
+        },
+      );
   },
 };

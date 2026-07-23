@@ -1,0 +1,4 @@
+# Normalize all text files to LF in the repo and on checkout, on every platform.
+# Keeps the formatter/linter (Biome defaults to LF) consistent across Windows,
+# macOS, and CI, and stops line-ending churn in diffs.
+* text=auto eol=lf

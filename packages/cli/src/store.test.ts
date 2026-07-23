@@ -8,9 +8,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeReceipt } from "./store.js";
 
 const receipt = (operationId: string): Receipt => ({
-  operation: { template: "x402-payment", version: 1, operation_id: operationId },
+  operation: {
+    template: "x402-payment",
+    version: 1,
+    operation_id: operationId,
+  },
   completeness: "partial",
-  stages: [{ id: "intent", required: true, state: "confirmed", events: ["e1"] }],
+  stages: [
+    { id: "intent", required: true, state: "confirmed", events: ["e1"] },
+  ],
   missing: [],
   exceptions: [],
   events: [],
@@ -30,7 +36,9 @@ describe("writeReceipt", () => {
   it("writes <operation_id>.json and returns the path", () => {
     const path = writeReceipt(receipt("op-1"), dir);
     expect(basename(path)).toBe("op-1.json");
-    expect(JSON.parse(readFileSync(path, "utf8")).operation.operation_id).toBe("op-1");
+    expect(JSON.parse(readFileSync(path, "utf8")).operation.operation_id).toBe(
+      "op-1",
+    );
   });
 
   it("is deterministic — the same receipt yields byte-identical content (BR-4)", () => {

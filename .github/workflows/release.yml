@@ -1,0 +1,40 @@
+name: Release
+
+# Publish only on a version tag. Pushes to main run CI (lint/tests) but never
+# publish, so the registry carries real releases only — no intermediate versions.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          # Writes an .npmrc wired to NODE_AUTH_TOKEN, so pnpm publish authenticates.
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # A version tag (vX.Y.Z) publishes the committed version as-is to `latest`,
+      # the version a plain `npm install` gets. To release: bump the packages'
+      # version, commit, and push the matching tag.
+      - name: Publish to `latest`
+        run: pnpm -r publish --tag latest --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

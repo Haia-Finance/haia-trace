@@ -15,11 +15,23 @@
  * each other's lines.
  */
 
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readdirSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import type { TraceEvent } from "./event.js";
-import { decodeEventLines, encodeEventLine, type EventReader, type EventWriter } from "./sink.js";
+import {
+  decodeEventLines,
+  type EventReader,
+  type EventWriter,
+  encodeEventLine,
+} from "./sink.js";
 
 /** Run files carry this extension; also how a directory listing tells them apart. */
 const RUN_EXT = ".ndjson";
@@ -34,7 +46,10 @@ export type SinkErrorHandler = (err: unknown) => void;
  * Fail-open: an append error is routed to `onError` and swallowed, never thrown —
  * a producer in a payment path must not break because the disk did.
  */
-export function createFileWriter(path: string, onError?: SinkErrorHandler): EventWriter {
+export function createFileWriter(
+  path: string,
+  onError?: SinkErrorHandler,
+): EventWriter {
   return {
     write(event: TraceEvent): void {
       try {

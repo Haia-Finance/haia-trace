@@ -31,7 +31,10 @@ function safeName(id: string): string {
  * Write one receipt to `<dir>/<operation_id>.json` and return the path written.
  * Pretty-printed with a trailing newline. Creates `dir` if absent.
  */
-export function writeReceipt(receipt: Receipt, dir: string = RECEIPTS_DIR): string {
+export function writeReceipt(
+  receipt: Receipt,
+  dir: string = RECEIPTS_DIR,
+): string {
   const id = receipt.operation.operation_id ?? "operation";
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${safeName(id)}.json`);
