@@ -1,14 +1,14 @@
 name: Release
 
+# Publish only on a version tag. Pushes to main run CI (lint/tests) but never
+# publish, so the registry carries real releases only — no intermediate versions.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
 
 permissions:
   contents: read
 
-# Never run two publishes for the same ref at once.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -31,22 +31,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-      # Push to main -> a unique canary version to the `next` dist-tag. Plain
-      # `npm install` (which follows `latest`) never picks these up; opt in with
-      # `npm install <pkg>@next`.
-      - name: Publish canary to `next`
-        if: github.ref == 'refs/heads/main'
-        run: |
-          node scripts/set-canary-version.mjs "${{ github.run_number }}"
-          pnpm -r publish --tag next --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      # A version tag (vX.Y.Z) -> publish the committed version as-is to `latest`,
-      # the version a plain `npm install` gets. Bump the packages' version and push
-      # the matching tag to cut a release.
-      - name: Publish release to `latest`
-        if: startsWith(github.ref, 'refs/tags/v')
+      # A version tag (vX.Y.Z) publishes the committed version as-is to `latest`,
+      # the version a plain `npm install` gets. To release: bump the packages'
+      # version, commit, and push the matching tag.
+      - name: Publish to `latest`
         run: pnpm -r publish --tag latest --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
