@@ -10,7 +10,12 @@ describe("renderReceipt", () => {
       completeness: "full",
       stages: [
         { id: "intent", required: true, state: "confirmed", events: ["e1"] },
-        { id: "paid_action", required: true, state: "confirmed", events: ["e2"] },
+        {
+          id: "paid_action",
+          required: true,
+          state: "confirmed",
+          events: ["e2"],
+        },
       ],
       missing: [],
       exceptions: [],
@@ -28,7 +33,12 @@ describe("renderReceipt", () => {
       completeness: "partial",
       stages: [
         { id: "intent", required: true, state: "confirmed", events: ["e1"] },
-        { id: "paid_action", required: true, state: "not_confirmed", events: [] },
+        {
+          id: "paid_action",
+          required: true,
+          state: "not_confirmed",
+          events: [],
+        },
       ],
       missing: [
         {
@@ -38,7 +48,16 @@ describe("renderReceipt", () => {
         },
       ],
       exceptions: [],
-      events: [{ event_id: "e1", event_type: "x402.payment.required", occurred_at: "t", seq: 0, adapter: "a", payload: {} }],
+      events: [
+        {
+          event_id: "e1",
+          event_type: "x402.payment.required",
+          occurred_at: "t",
+          seq: 0,
+          adapter: "a",
+          payload: {},
+        },
+      ],
     };
     const out = renderReceipt(receipt);
     expect(out).toContain("PARTIAL");
@@ -54,7 +73,14 @@ describe("renderReceipt", () => {
     const receipt: Receipt = {
       operation: { template: "x402-payment", version: 1, operation_id: "op-3" },
       completeness: "partial",
-      stages: [{ id: "settlement", required: true, state: "not_confirmed", events: [] }],
+      stages: [
+        {
+          id: "settlement",
+          required: true,
+          state: "not_confirmed",
+          events: [],
+        },
+      ],
       missing: [{ stage: "settlement", expected_events: ["x402.settle.ok"] }],
       exceptions: [{ event_type: "x402.settle.failed", event_id: "e9" }],
       events: [],

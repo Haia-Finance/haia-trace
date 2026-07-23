@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,12 +15,60 @@ import { buildCommand, runBuild } from "./build.js";
 
 // One full happy-path operation (op-1) and one with an observed fault (op-2).
 const events = [
-  { event_id: "1", event_type: "x402.payment.required", occurred_at: "2026-07-23T12:00:00.000Z", seq: 0, adapter: "t", context_id: "op-1", payload: {} },
-  { event_id: "2", event_type: "x402.payment.submitted", occurred_at: "2026-07-23T12:00:01.000Z", seq: 1, adapter: "t", context_id: "op-1", payload: {} },
-  { event_id: "3", event_type: "x402.settle.ok", occurred_at: "2026-07-23T12:00:02.000Z", seq: 2, adapter: "t", context_id: "op-1", payload: {} },
-  { event_id: "4", event_type: "x402.paid_action.executed", occurred_at: "2026-07-23T12:00:03.000Z", seq: 3, adapter: "t", context_id: "op-1", payload: {} },
-  { event_id: "5", event_type: "x402.payment.required", occurred_at: "2026-07-23T12:01:00.000Z", seq: 4, adapter: "t", context_id: "op-2", payload: {} },
-  { event_id: "6", event_type: "x402.settle.failed", occurred_at: "2026-07-23T12:01:01.000Z", seq: 5, adapter: "t", context_id: "op-2", payload: {} },
+  {
+    event_id: "1",
+    event_type: "x402.payment.required",
+    occurred_at: "2026-07-23T12:00:00.000Z",
+    seq: 0,
+    adapter: "t",
+    context_id: "op-1",
+    payload: {},
+  },
+  {
+    event_id: "2",
+    event_type: "x402.payment.submitted",
+    occurred_at: "2026-07-23T12:00:01.000Z",
+    seq: 1,
+    adapter: "t",
+    context_id: "op-1",
+    payload: {},
+  },
+  {
+    event_id: "3",
+    event_type: "x402.settle.ok",
+    occurred_at: "2026-07-23T12:00:02.000Z",
+    seq: 2,
+    adapter: "t",
+    context_id: "op-1",
+    payload: {},
+  },
+  {
+    event_id: "4",
+    event_type: "x402.paid_action.executed",
+    occurred_at: "2026-07-23T12:00:03.000Z",
+    seq: 3,
+    adapter: "t",
+    context_id: "op-1",
+    payload: {},
+  },
+  {
+    event_id: "5",
+    event_type: "x402.payment.required",
+    occurred_at: "2026-07-23T12:01:00.000Z",
+    seq: 4,
+    adapter: "t",
+    context_id: "op-2",
+    payload: {},
+  },
+  {
+    event_id: "6",
+    event_type: "x402.settle.failed",
+    occurred_at: "2026-07-23T12:01:01.000Z",
+    seq: 5,
+    adapter: "t",
+    context_id: "op-2",
+    payload: {},
+  },
 ];
 const NDJSON = `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
 
@@ -39,9 +93,14 @@ describe("haia-trace build", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { receipts } = runBuild(file, { receiptsDir });
 
-    expect(receipts.map((r) => r.operation.operation_id)).toEqual(["op-1", "op-2"]);
+    expect(receipts.map((r) => r.operation.operation_id)).toEqual([
+      "op-1",
+      "op-2",
+    ]);
     expect(receipts[0]?.completeness).toBe("full");
-    expect(receipts[1]?.exceptions.map((e) => e.event_type)).toContain("x402.settle.failed");
+    expect(receipts[1]?.exceptions.map((e) => e.event_type)).toContain(
+      "x402.settle.failed",
+    );
     expect(readdirSync(receiptsDir).sort()).toEqual(["op-1.json", "op-2.json"]);
   });
 
@@ -55,7 +114,9 @@ describe("haia-trace build", () => {
   });
 
   it("throws when there is no run to build", () => {
-    expect(() => runBuild(undefined, { eventsDir: join(dir, "empty"), receiptsDir })).toThrow(/no runs/);
+    expect(() =>
+      runBuild(undefined, { eventsDir: join(dir, "empty"), receiptsDir }),
+    ).toThrow(/no runs/);
   });
 
   it("registers under the `build` name on the program", () => {

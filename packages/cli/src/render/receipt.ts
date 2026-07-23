@@ -44,7 +44,9 @@ export function renderReceipt(receipt: Receipt): string {
     if (stage.state === "confirmed") {
       lines.push(`  ${symbol.success} ${id}  ${color.green("confirmed")}`);
     } else if (stage.required) {
-      lines.push(`  ${symbol.error} ${id}  ${color.red("not confirmed")}  ${color.dim("required")}`);
+      lines.push(
+        `  ${symbol.error} ${id}  ${color.red("not confirmed")}  ${color.dim("required")}`,
+      );
     } else {
       // An unmet optional stage recedes — it does not block a full operation.
       lines.push(color.dim(`  ${symbol.error} ${id}  not confirmed  optional`));
@@ -65,7 +67,8 @@ export function renderReceipt(receipt: Receipt): string {
     lines.push("");
     lines.push(`  ${color.yellow("missing")}`);
     for (const m of missing) {
-      const detail = m.why ?? `expected one of: ${m.expected_events.join(", ")}`;
+      const detail =
+        m.why ?? `expected one of: ${m.expected_events.join(", ")}`;
       lines.push(`    ${color.bold(m.stage)} ${color.dim("—")} ${detail}`);
     }
   }

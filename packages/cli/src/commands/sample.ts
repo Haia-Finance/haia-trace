@@ -13,9 +13,8 @@
  * never a change here.
  */
 
-import type { Command } from "commander";
-
 import { assembleReceipts } from "@usehaia/trace-core";
+import type { Command } from "commander";
 
 import { loadFixtureEvents } from "../fixtures.js";
 import { renderReceipt } from "../render/receipt.js";
@@ -49,7 +48,9 @@ export const sampleCommand: TraceCommand = {
     program
       .command("sample")
       .argument("[template]", "operation template to sample", DEFAULT_TEMPLATE)
-      .description("Assemble receipts from bundled fixtures — the first, zero-setup taste of Trace")
+      .description(
+        "Assemble receipts from bundled fixtures — the first, zero-setup taste of Trace",
+      )
       .action((template: string) => runSample(template));
   },
 };

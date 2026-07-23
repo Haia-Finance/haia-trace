@@ -29,11 +29,19 @@ const FIXTURE_NAME = /^[A-Za-z0-9_-]+$/;
  * path works in dev (`src/`), after build (`dist/`), and once installed — each is
  * one level below the package root, next to a sibling `fixtures/`.
  */
-const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
+const FIXTURES_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "fixtures",
+);
 
 /** Whether an error is a Node filesystem error carrying the given `code`. */
 function isErrno(err: unknown, code: string): boolean {
-  return typeof err === "object" && err !== null && (err as NodeJS.ErrnoException).code === code;
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as NodeJS.ErrnoException).code === code
+  );
 }
 
 /**
@@ -44,12 +52,16 @@ function isErrno(err: unknown, code: string): boolean {
 export function loadFixtureEvents(template: string): TraceEvent[] {
   // Reject anything with path separators or `..` before it reaches the join, so a
   // name cannot escape the fixtures directory. Such a name simply has no fixtures.
-  if (!FIXTURE_NAME.test(template)) throw new Error(`no sample fixtures for template: ${template}`);
+  if (!FIXTURE_NAME.test(template))
+    throw new Error(`no sample fixtures for template: ${template}`);
   const path = join(FIXTURES_DIR, `${template}${FIXTURE_EXT}`);
   try {
     return createFileReader(path).read();
   } catch (err) {
-    if (isErrno(err, "ENOENT")) throw new Error(`no sample fixtures for template: ${template}`);
-    throw new Error(`could not read fixtures (${template}): ${(err as Error).message}`);
+    if (isErrno(err, "ENOENT"))
+      throw new Error(`no sample fixtures for template: ${template}`);
+    throw new Error(
+      `could not read fixtures (${template}): ${(err as Error).message}`,
+    );
   }
 }

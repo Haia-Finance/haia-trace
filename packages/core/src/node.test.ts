@@ -4,14 +4,13 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import { createRecorder } from "./recorder.js";
 import {
   createFileReader,
   createFileWriter,
   createRunWriter,
   readLatestRun,
 } from "./node.js";
+import { createRecorder } from "./recorder.js";
 
 const rec = createRecorder({
   adapter: "trace-x402",
@@ -46,8 +45,16 @@ describe("createRunWriter", () => {
 
   it("round-trips events through the file", () => {
     const writer = createRunWriter({ dir, now: () => 1 });
-    const a = rec.event({ event_type: "x402.payment.required", payload: {}, context_id: "op-1" });
-    const b = rec.event({ event_type: "x402.settle.ok", payload: {}, role: "server" });
+    const a = rec.event({
+      event_type: "x402.payment.required",
+      payload: {},
+      context_id: "op-1",
+    });
+    const b = rec.event({
+      event_type: "x402.settle.ok",
+      payload: {},
+      role: "server",
+    });
     writer.write(a);
     writer.write(b);
     expect(createFileReader(writer.path).read()).toEqual([a, b]);
@@ -62,29 +69,40 @@ describe("createFileWriter", () => {
     client.write(rec.event({ event_type: "client", payload: {} }));
     server.write(rec.event({ event_type: "server", payload: {} }));
     client.write(rec.event({ event_type: "client-2", payload: {} }));
-    expect(createFileReader(path).read().map((e) => e.event_type)).toEqual([
-      "client",
-      "server",
-      "client-2",
-    ]);
+    expect(
+      createFileReader(path)
+        .read()
+        .map((e) => e.event_type),
+    ).toEqual(["client", "server", "client-2"]);
   });
 
   it("is fail-open: a write to an unwritable path reports and does not throw", () => {
     let reported: unknown;
     // A path whose parent directory does not exist cannot be opened.
-    const writer = createFileWriter(join(dir, "missing", "run.ndjson"), (err) => {
-      reported = err;
-    });
-    expect(() => writer.write(rec.event({ event_type: "a", payload: {} }))).not.toThrow();
+    const writer = createFileWriter(
+      join(dir, "missing", "run.ndjson"),
+      (err) => {
+        reported = err;
+      },
+    );
+    expect(() =>
+      writer.write(rec.event({ event_type: "a", payload: {} })),
+    ).not.toThrow();
     expect(reported).toBeDefined();
   });
 });
 
 describe("readLatestRun", () => {
   it("selects the newest run by timestamped name", () => {
-    createRunWriter({ dir, now: () => 100 }).write(rec.event({ event_type: "old", payload: {} }));
-    createRunWriter({ dir, now: () => 300 }).write(rec.event({ event_type: "new", payload: {} }));
-    createRunWriter({ dir, now: () => 200 }).write(rec.event({ event_type: "mid", payload: {} }));
+    createRunWriter({ dir, now: () => 100 }).write(
+      rec.event({ event_type: "old", payload: {} }),
+    );
+    createRunWriter({ dir, now: () => 300 }).write(
+      rec.event({ event_type: "new", payload: {} }),
+    );
+    createRunWriter({ dir, now: () => 200 }).write(
+      rec.event({ event_type: "mid", payload: {} }),
+    );
     const reader = readLatestRun(dir);
     expect(reader?.read().map((e) => e.event_type)).toEqual(["new"]);
   });
@@ -95,7 +113,13 @@ describe("readLatestRun", () => {
 
   it("ignores non-run files in the directory", () => {
     writeFileSync(join(dir, "notes.txt"), "ignore me");
-    createRunWriter({ dir, now: () => 1 }).write(rec.event({ event_type: "only", payload: {} }));
-    expect(readLatestRun(dir)?.read().map((e) => e.event_type)).toEqual(["only"]);
+    createRunWriter({ dir, now: () => 1 }).write(
+      rec.event({ event_type: "only", payload: {} }),
+    );
+    expect(
+      readLatestRun(dir)
+        ?.read()
+        .map((e) => e.event_type),
+    ).toEqual(["only"]);
   });
 });

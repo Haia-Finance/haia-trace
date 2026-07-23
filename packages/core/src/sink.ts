@@ -60,7 +60,9 @@ export function decodeEventLines(text: string): TraceEvent[] {
     try {
       events.push(decodeEventLine(segment));
     } catch (err) {
-      throw new Error(`malformed event on line ${i + 1}: ${(err as Error).message}`);
+      throw new Error(
+        `malformed event on line ${i + 1}: ${(err as Error).message}`,
+      );
     }
   });
   return events;
