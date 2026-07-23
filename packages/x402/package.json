@@ -1,8 +1,11 @@
 {
   "name": "@usehaia/trace-x402",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Haia Trace capture adapter for the x402 payment SDK.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

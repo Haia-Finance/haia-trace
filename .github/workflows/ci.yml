@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm before setup-node, so setup-node can cache the pnpm store.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Lint first (no build needed), then build once and reuse it for the rest —
+      # the root check-types/test scripts each build, so call the per-package
+      # scripts directly to avoid rebuilding three times.
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm -r run check-types
+      - run: pnpm -r run test

@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# Never run two publishes for the same ref at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          # Writes an .npmrc wired to NODE_AUTH_TOKEN, so pnpm publish authenticates.
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # Push to main -> a unique canary version to the `next` dist-tag. Plain
+      # `npm install` (which follows `latest`) never picks these up; opt in with
+      # `npm install <pkg>@next`.
+      - name: Publish canary to `next`
+        if: github.ref == 'refs/heads/main'
+        run: |
+          node scripts/set-canary-version.mjs "${{ github.run_number }}"
+          pnpm -r publish --tag next --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # A version tag (vX.Y.Z) -> publish the committed version as-is to `latest`,
+      # the version a plain `npm install` gets. Bump the packages' version and push
+      # the matching tag to cut a release.
+      - name: Publish release to `latest`
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: pnpm -r publish --tag latest --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
