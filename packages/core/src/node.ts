@@ -9,7 +9,7 @@
  * `node:fs` into its bundle, while Node consumers (the CLI, a Node recorder's
  * default sink) opt into the file implementation here.
  *
- * The store is `<dir>/<run_id>.ndjsonl`, one file per run, append-only. Writes use
+ * The store is `<dir>/<run_id>.ndjson`, one file per run, append-only. Writes use
  * append mode (`O_APPEND`), so several roles of one operation — a client and a
  * server in the same process — can append to the same run file without tearing
  * each other's lines.
@@ -22,7 +22,7 @@ import type { TraceEvent } from "./event.js";
 import { decodeEventLines, encodeEventLine, type EventReader, type EventWriter } from "./sink.js";
 
 /** Run files carry this extension; also how a directory listing tells them apart. */
-const RUN_EXT = ".ndjsonl";
+const RUN_EXT = ".ndjson";
 
 /** Observe a sink error (disk full, permissions) without it ever reaching the producer. */
 export type SinkErrorHandler = (err: unknown) => void;
@@ -67,7 +67,7 @@ export interface RunWriterOptions {
 
 /** A run writer, plus the resolved path of the file it created. */
 export interface RunWriter extends EventWriter {
-  /** Absolute-or-relative path of this run's file, e.g. `.trace/events/1721709600000.ndjsonl`. */
+  /** Absolute-or-relative path of this run's file, e.g. `.trace/events/1721709600000.ndjson`. */
   readonly path: string;
 }
 

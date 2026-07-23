@@ -32,7 +32,7 @@ afterEach(() => {
 describe("createRunWriter", () => {
   it("names the file with the start timestamp and no illegal characters", () => {
     const writer = createRunWriter({ dir, now: () => 1721709600000 });
-    expect(writer.path).toBe(join(dir, "1721709600000.ndjsonl"));
+    expect(writer.path).toBe(join(dir, "1721709600000.ndjson"));
     // The file *name* must be filesystem-safe on every OS — notably no ':' (which
     // an ISO timestamp would carry, and which Windows forbids). Check the basename,
     // not the full path, since the temp dir itself contains a drive-letter colon.
@@ -56,7 +56,7 @@ describe("createRunWriter", () => {
 
 describe("createFileWriter", () => {
   it("appends across two writers sharing one run file", () => {
-    const path = join(dir, "shared.ndjsonl");
+    const path = join(dir, "shared.ndjson");
     const client = createFileWriter(path);
     const server = createFileWriter(path);
     client.write(rec.event({ event_type: "client", payload: {} }));
@@ -72,7 +72,7 @@ describe("createFileWriter", () => {
   it("is fail-open: a write to an unwritable path reports and does not throw", () => {
     let reported: unknown;
     // A path whose parent directory does not exist cannot be opened.
-    const writer = createFileWriter(join(dir, "missing", "run.ndjsonl"), (err) => {
+    const writer = createFileWriter(join(dir, "missing", "run.ndjson"), (err) => {
       reported = err;
     });
     expect(() => writer.write(rec.event({ event_type: "a", payload: {} }))).not.toThrow();

@@ -8,7 +8,7 @@
  * vocabulary of `event_type` and `role` belongs to the adapter that produces the
  * events (an x402 recorder, an MPP recorder, …).
  *
- * One recorder session is one sink file, `.trace/events/<run_id>.ndjsonl`; the
+ * One recorder session is one sink file, `.trace/events/<run_id>.ndjson`; the
  * run id is the file name rather than a field repeated on every event.
  */
 
