@@ -1,0 +1,32 @@
+---
+title: templates
+description: "List the operation templates shipped with the CLI."
+---
+
+```sh
+haia-trace templates
+```
+
+List the operation templates shipped with the CLI. A template is the declarative
+description of an operation's expected shape that [`build`](/cli/build) and
+[`sample`](/cli/sample) assemble against.
+
+## Example
+
+```sh
+haia-trace templates
+```
+
+```text
+📋 Operation templates shipped with the CLI:
+
+  ✔ x402-payment
+
+1 template available.
+```
+
+<Tip>
+  Templates are data, not code — see [Operation
+  Receipt](/concepts/operation-receipt) for how a template's stages and
+  match-sets shape the verdict.
+</Tip>

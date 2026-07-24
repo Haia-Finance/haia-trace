@@ -1,0 +1,59 @@
+---
+title: Overview
+description: "The haia-trace command-line tool."
+---
+
+`haia-trace` assembles **Operation Receipts** — one verdict per payment
+operation — from recorded events, and renders them in the terminal or as JSON.
+
+## Install
+
+<CodeGroup>
+
+```sh npm
+npm install -g @usehaia/trace-cli
+```
+
+```sh npx
+npx @usehaia/trace-cli <command>
+```
+
+</CodeGroup>
+
+Both expose the `haia-trace` command. Requires **Node ≥ 20**.
+
+## Commands
+
+<CardGroup cols={3}>
+  <Card title="sample" icon="flask" href="/cli/sample">
+    Assemble receipts from bundled fixtures — the zero-setup first taste.
+  </Card>
+  <Card title="build" icon="hammer" href="/cli/build">
+    Assemble one receipt per operation from a run's events.
+  </Card>
+  <Card title="templates" icon="list" href="/cli/templates">
+    List the operation templates shipped with the CLI.
+  </Card>
+</CardGroup>
+
+### Global flags
+
+| Flag             | Meaning                                            |
+| ---------------- | -------------------------------------------------- |
+| `-v, --version`  | Print the version and exit.                        |
+| `-h, --help`     | Help for the program or any command.               |
+
+## The `.trace/` directory
+
+The CLI reads and writes a project-local `.trace/` directory — no daemon, no
+database, no network:
+
+```text
+.trace/
+  events/<run_id>.ndjson      # recorded events; one run = one file (the input)
+  receipts/<context_id>.json  # assembled receipts, one per operation (the output)
+```
+
+A run file is newline-delimited JSON — one event per line, append-only. It's the
+source of truth; a Receipt is a derived, reproducible artifact, so re-building
+the same run always yields the same Receipt.

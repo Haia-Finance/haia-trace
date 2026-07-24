@@ -1,0 +1,53 @@
+---
+title: build
+description: "Assemble one receipt per operation from a run's events."
+---
+
+```sh
+haia-trace build [file] [options]
+```
+
+The core command. Read a run's events and produce **one Receipt per operation**.
+
+Events are grouped into operations by their `context_id`; each group is folded
+through the assembler independently. Every assembled receipt is written to
+`.trace/receipts/<context_id>.json`.
+
+## Usage
+
+```sh
+haia-trace build                          # build the latest run in .trace/events/
+haia-trace build ./run.ndjson             # build a specific run file
+haia-trace build --template x402-payment  # apply a specific template
+haia-trace build --json                   # machine-readable output for agents
+```
+
+## Arguments and options
+
+| Argument / option  | Meaning                                                                 |
+| ------------------ | ----------------------------------------------------------------------- |
+| `[file]`           | NDJSON run file to build from. Default: the latest in `.trace/events/`.  |
+| `--template <id>`  | Operation template applied to every operation. Default: `x402-payment`. |
+| `--json`           | Emit `{ receipts, unassigned }` as JSON instead of a terminal summary.  |
+
+Run-level events that carry no `context_id` (chain confirmations, capture
+attestations) belong to no single operation, so they're reported separately as
+`unassigned` rather than attributed or dropped.
+
+## JSON output for agents
+
+`--json` prints the full [Receipt](/concepts/operation-receipt) objects — the
+machine-readable basis an agent reads (`completeness`, `missing`) to decide
+whether to continue a chain of spending.
+
+## Producing a run file
+
+`build` needs a `.trace/events/*.ndjson` run file. Today you can point it at any
+NDJSON file whose lines match the [Event
+Contract](/sdk/core) — the CLI ships a working example fixture.
+
+<Note>
+  Automatic capture from a live x402 app — [`@usehaia/trace-x402`](/sdk/x402)
+  writing normalized events into `.trace/events` so `trace(...)` feeds `build`
+  end-to-end — is on the roadmap.
+</Note>

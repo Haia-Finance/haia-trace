@@ -1,0 +1,70 @@
+---
+title: sample
+description: "Assemble receipts from bundled fixtures — the zero-setup first taste."
+---
+
+```sh
+haia-trace sample [template]
+```
+
+`sample` replays a bundled fixture run through the *real* assembler, so you see a
+Receipt with no setup. It defaults to the `x402-payment` template. The template
+name selects both the template and its fixture set, so a new scenario is data — a
+template file plus a fixture file — never a code change.
+
+## Example
+
+```sh
+haia-trace sample x402-payment
+```
+
+The `x402-payment` fixture contains three operations, showing the whole model at
+once:
+
+```text
+🧾 x402-payment · op-1 · FULL
+
+  ✔ intent           confirmed
+  ✔ payment          confirmed
+  ✔ settlement       confirmed
+  ✔ paid_action      confirmed
+  ✔ business_record  confirmed
+
+  operation completed
+  ────────────────────────────
+🧾 x402-payment · op-2 · PARTIAL
+
+  ✔ intent           confirmed
+  ✔ payment          confirmed
+  ✔ settlement       confirmed
+  ✖ paid_action      not confirmed  required
+  ✖ business_record  not confirmed  optional
+
+  missing
+    paid_action — settlement confirmed, but the paid action's result was not observed
+
+  operation not complete
+  ────────────────────────────
+🧾 x402-payment · op-3 · PARTIAL
+
+  ✔ intent           confirmed
+  ✔ payment          confirmed
+  ✖ settlement       not confirmed  required
+  ✖ paid_action      not confirmed  required
+  ✖ business_record  not confirmed  optional
+
+  exceptions
+    ⚠ x402.settle.failed
+
+  missing
+    settlement — expected one of: x402.payment.responded, x402.settle.ok, chain.transfer.confirmed
+    paid_action — settlement confirmed, but the paid action's result was not observed
+
+  operation not complete
+```
+
+<Tip>
+  `sample` and [`build`](/cli/build) run the identical assembler — the only
+  difference is where the events come from. See [what a Receipt
+  is](/concepts/operation-receipt).
+</Tip>

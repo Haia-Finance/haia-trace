@@ -1,0 +1,92 @@
+---
+title: Operation Receipt
+description: "The model behind the verdict — stages, evidence, missing, and exceptions."
+---
+
+An **Operation Receipt** is the verdict on one payment operation. It's assembled
+by the core from two inputs — the events observed, and a **template** describing
+the operation's expected shape.
+
+## Templates and stages
+
+A template describes an operation as an ordered sequence of milestone **stages**.
+For the canonical x402 payment, that's `intent → payment → settlement →
+paid_action`, plus an optional business record.
+
+Each stage's `match` is a **match-set**: any one of its events closes the stage.
+This is deliberate — different roles witness the same milestone differently, so
+settlement can be closed by a client-side response, a server-side settle, *or* an
+on-chain confirmation:
+
+```yaml
+- id: settlement
+  required: true
+  match:
+    - event: x402.payment.responded    # client-side view
+    - event: x402.settle.ok            # server-side view
+    - event: chain.transfer.confirmed  # on-chain confirmation
+- id: paid_action
+  required: true
+  match:
+    - event: x402.paid_action.executed
+    - event: http.response.delivered
+  missing_explanation: "settlement confirmed, but the paid action's result was not observed"
+```
+
+Templates are **data, not code** — a new scenario is a new template file, never a
+change to the assembler.
+
+## The verdict
+
+<Steps>
+  <Step title="Each stage gets a state">
+    `confirmed` when at least one witness from its match-set was observed;
+    otherwise `not_confirmed`. A confirmed stage carries the `event_id`s of the
+    witnesses behind it — the evidence.
+  </Step>
+  <Step title="Gaps are explained, never hidden">
+    A required stage left unclosed is surfaced under `missing`, each with a
+    plain-language explanation from the template's `missing_explanation`.
+  </Step>
+  <Step title="Faults surface as exceptions">
+    An event whose type is in the template's `exceptions` (e.g.
+    `x402.settle.failed`) does not close a stage — it's recorded on the
+    operation as a fault.
+  </Step>
+  <Step title="Completeness is decided">
+    `full` only when every required stage is confirmed, at least one stage
+    closed, and no fault was observed. Otherwise `partial`.
+  </Step>
+</Steps>
+
+## Deterministic by design
+
+The assembler is a **pure function** — no LLM, no randomness. The same events and
+template always yield the same Receipt, byte for byte. That's the evidence-chain
+guarantee: a Receipt states absence rather than guessing, so it never invents a
+milestone it didn't observe.
+
+## The Receipt object
+
+Every surface — terminal, `receipt.json`, markdown — renders the same object:
+
+```jsonc
+{
+  "operation": { "template": "x402-payment", "version": 1, "operation_id": "op-2" },
+  "completeness": "partial",
+  "stages": [
+    { "id": "settlement", "required": true, "state": "confirmed", "events": ["evt…"] },
+    { "id": "paid_action", "required": true, "state": "not_confirmed", "events": [] }
+  ],
+  "missing": [
+    { "stage": "paid_action",
+      "expected_events": ["x402.paid_action.executed", "http.response.delivered"],
+      "why": "settlement confirmed, but the paid action's result was not observed" }
+  ],
+  "exceptions": [],
+  "events": [ /* every discovered event, for provenance */ ]
+}
+```
+
+For an agent, `completeness: "partial"` plus `missing: [paid_action]` is a
+machine-readable basis to stop a chain of spending.

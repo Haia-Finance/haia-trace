@@ -1,0 +1,69 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Haia Trace",
+  "colors": {
+    "primary": "#0D9373",
+    "light": "#3BC9A0",
+    "dark": "#0B7A60"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": ["index", "quickstart"]
+          },
+          {
+            "group": "Concepts",
+            "pages": ["concepts/operation-receipt"]
+          }
+        ]
+      },
+      {
+        "tab": "CLI reference",
+        "groups": [
+          {
+            "group": "haia-trace",
+            "pages": [
+              "cli/overview",
+              "cli/sample",
+              "cli/build",
+              "cli/templates"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDKs",
+        "groups": [
+          {
+            "group": "Packages",
+            "pages": ["sdk/x402", "sdk/core"]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "npm",
+        "href": "https://www.npmjs.com/org/usehaia"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "GitHub",
+      "href": "https://github.com/Haia-Finance/haia-trace"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Haia-Finance/haia-trace"
+    }
+  }
+}

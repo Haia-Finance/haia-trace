@@ -1,0 +1,78 @@
+---
+title: Quickstart
+description: "See your first Operation Receipt in under a minute."
+---
+
+## See a Receipt with zero setup
+
+No install needed — replay a bundled fixture run through the real assembler:
+
+```sh
+npx @usehaia/trace-cli sample x402-payment
+```
+
+`sample` runs the same deterministic `(events, template) → receipt` core a live
+run uses; the only difference is that the events come from a bundled fixture
+instead of a recorder. The fixture holds three operations, so one command shows
+the whole model — a **FULL** receipt, a **PARTIAL** one with an explained gap,
+and one carrying an observed fault:
+
+```text
+🧾 x402-payment · op-2 · PARTIAL
+
+  ✔ intent           confirmed
+  ✔ payment          confirmed
+  ✔ settlement       confirmed
+  ✖ paid_action      not confirmed  required
+  ✖ business_record  not confirmed  optional
+
+  missing
+    paid_action — settlement confirmed, but the paid action's result was not observed
+
+  operation not complete
+```
+
+That gap — `settlement ✓` but `paid_action ✗` — is the product: a bank statement,
+a block explorer, and a server log each say "payment went through"; only the
+Receipt says "…but you never got what you paid for."
+
+## Install the CLI
+
+<CodeGroup>
+
+```sh npm
+npm install -g @usehaia/trace-cli
+```
+
+```sh npx
+npx @usehaia/trace-cli <command>
+```
+
+</CodeGroup>
+
+Both expose the `haia-trace` command. Requires **Node ≥ 20**.
+
+## Assemble receipts from a run
+
+Once you have a run of recorded events at `.trace/events/<run>.ndjson`, build one
+Receipt per operation:
+
+```sh
+haia-trace build            # build the latest run in .trace/events/
+haia-trace build --json     # machine-readable output, for an agent to read
+```
+
+<Card title="CLI reference" icon="terminal" href="/cli/overview">
+  Every command, flag, and the `.trace/` layout.
+</Card>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="What a Receipt is" icon="receipt" href="/concepts/operation-receipt">
+    The model behind the verdict: stages, evidence, missing, exceptions.
+  </Card>
+  <Card title="Connect x402" icon="plug" href="/sdk/x402">
+    Record the x402 lifecycle from your own app.
+  </Card>
+</CardGroup>
