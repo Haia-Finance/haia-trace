@@ -1,7 +1,9 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "ignoreUnknown": true },
+  // The Mintlify docs site under docs/ is a separate project with its own
+  // toolchain (MDX, assets, docs.json) — Biome lints the TS monorepo, not it.
+  "files": { "ignoreUnknown": true, "includes": ["**", "!docs"] },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
