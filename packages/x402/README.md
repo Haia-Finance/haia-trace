@@ -2,8 +2,8 @@
 
 The [Haia Trace](https://github.com/Haia-Finance/haia-trace) capture adapter for
 the [x402](https://docs.x402.org) payment SDK. Attach it to an x402 instance and
-it records every lifecycle-hook firing — **strictly passively**, so it can
-observe a payment but never alter it.
+it records every lifecycle-hook firing as a normalized Trace event — **strictly
+passively**, so it can observe a payment but never alter it.
 
 Zero runtime dependencies beyond `@usehaia/trace-core`.
 
@@ -20,17 +20,23 @@ facilitator, or MCP client:
 
 ```ts
 import { trace } from "@usehaia/trace-x402";
+import { createRunWriter } from "@usehaia/trace-core/node";
 import { x402HTTPClient } from "@x402/core/client";
 
 const client = x402HTTPClient({ /* ... */ });
 
-// Attach the recorder. One line, and it's idempotent per instance.
-trace(client);
+// Attach the recorder and write the run to disk. One line, idempotent per instance.
+trace(client, { writer: createRunWriter({ dir: ".trace/events" }) });
 ```
 
+That run file is what
+[`haia-trace build`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/cli)
+reads. Without a `writer`, events go to stdout as NDJSON — the same encoding, so
+it can simply be piped into a file.
+
 `trace()` inspects the instance's method set to resolve its **kind**, attaches to
-that kind's lifecycle hooks, and logs the context each hook is handed, tagging
-every line with the observing **role** (`client` / `server` / `facilitator`).
+that kind's lifecycle hooks, and records each firing tagged with the observing
+**role** (`client` / `server` / `facilitator`).
 
 It works the same on either side of a payment:
 
@@ -56,14 +62,80 @@ stopped", never "payment blocked".
 
 Set `HAIA_TRACE_DISABLE=1` in the environment to make `trace()` a no-op.
 
+## What gets recorded
+
+Each firing becomes one `TraceEvent`:
+
+| hook                        | `event_type`                            |
+| --------------------------- | --------------------------------------- |
+| `onPaymentRequired`         | `x402.payment.required`                 |
+| `onBeforePaymentCreation`   | `x402.payment.creating`                 |
+| `onAfterPaymentCreation`    | `x402.payment.submitted`                |
+| `onPaymentCreationFailure`  | `x402.payment.creation_failed`          |
+| `onPaymentResponse`         | `x402.payment.responded`                |
+| `onBeforePayment` (MCP)     | `x402.payment.requested`                |
+| `onAfterPayment` (MCP)      | `x402.payment.responded`                |
+| `onProtectedRequest`        | `x402.request.protected`                |
+| `onBeforeVerify`            | `x402.verify.started`                   |
+| `onAfterVerify`             | `x402.verify.ok` / `x402.verify.failed` |
+| `onVerifyFailure`           | `x402.verify.failed`                    |
+| `onBeforeSettle`            | `x402.settle.started`                   |
+| `onAfterSettle`             | `x402.settle.ok` / `x402.settle.failed` |
+| `onSettleFailure`           | `x402.settle.failed`                    |
+| `onVerifiedPaymentCanceled` | `x402.payment.canceled`                 |
+
+The `onAfter*` hooks report the outcome they were handed: the SDK reserves
+`onVerifyFailure` / `onSettleFailure` for a *thrown* fault, so a clean "not
+valid" or "settlement rejected" is picked up from the after-hook's result.
+
+### Redaction
+
+The payload is an **allowlist**, not a copy of the hook context — a field the
+x402 SDK adds later is dropped by default rather than silently recorded. Two
+things are never written:
+
+- `PaymentPayload.payload` — the scheme-specific signed authorization. This is
+  the credential that moves the money.
+- `extra` / `extensions` — open-ended bags defined by schemes and third-party
+  extensions, whose contents can't be reasoned about here.
+
+What is recorded is the payment's public facts: the resource, the payment
+requirements (scheme, network, asset, amount, `pay_to`, timeout), the verify and
+settle results (including the transaction hash and payer), and, for a fault, the
+error's name and message.
+
+### `context_id` — telling concurrent payments apart
+
+Every event of one request carries the same `context_id`, which is how the
+assembler produces one receipt per payment instead of merging them. x402 hands
+hooks no request id, so the grouping is derived from the contexts themselves: the
+per-payment nonce inside the payment payload identifies a payment attempt
+exactly, and the resource URL (or MCP tool name) stands in for the few hooks that
+fire before a payload exists. That stand-in is retired the moment a nonce takes
+over, so the next request for the same resource opens its own operation.
+
+Because the key comes from the payment itself, a client and a server traced in
+the same process resolve the same payment to the same `context_id` — both sides
+of one operation assemble into one receipt.
+
+Two events deliberately carry no `context_id`: the `trace.attached` /
+`trace.attach_failed` attestation, and a protected request that arrived without a
+payment header. Neither belongs to a payment, and the assembler keeps them out of
+every receipt rather than guessing.
+
 ## Options
 
 ```ts
 trace(instance, {
-  // Where each hook firing goes. Default: console.log.
-  log: (line) => myLogger.info(line),
+  // Where events go. Default: NDJSON on stdout. The writer's lifetime is yours —
+  // trace() never closes it.
+  writer: createRunWriter({ dir: ".trace/events" }),
 
-  // Observe recorder-internal errors (e.g. a throwing `log`). Never reaches the
+  // Recorder that stamps event_id / occurred_at / seq. Defaults to a
+  // process-wide one, so several traced instances share one ordered session.
+  recorder: createRecorder({ adapter: "trace-x402" }),
+
+  // Observe recorder-internal errors (e.g. a throwing writer). Never reaches the
   // payment path.
   onError: (err) => myLogger.warn(err),
 
@@ -72,8 +144,6 @@ trace(instance, {
   kind: "resourceServer",
 });
 ```
-
-Each logged line has the shape `{ hook, role, context }`.
 
 ## Attestation
 
@@ -87,8 +157,8 @@ const att = trace(client);
 if (!att.ok) console.warn("trace-x402 did not attach to this instance");
 ```
 
-The adapter also emits a `trace.attached` / `trace.attach_failed` line on every
-run for the same reason.
+The adapter also records a `trace.attached` / `trace.attach_failed` event on
+every run for the same reason.
 
 ## Recognized kinds
 
@@ -101,20 +171,6 @@ run for the same reason.
 | `httpResourceServer` | `server`      | x402HTTPResourceServer        |
 | `facilitator`        | `facilitator` | x402Facilitator               |
 | `unknown`            | `unknown`     | unrecognized shape — nothing attached |
-
-## Status
-
-This adapter currently records hook firings as **raw context**. Two pieces are
-still on the roadmap, and until they land it is meant for local development and
-wiring, **not a production or real-money flow**:
-
-- **Normalized events + local sink.** Mapping firings to the Event Contract's
-  `event_type`s (`x402.payment.required`, …) and writing them to
-  `.trace/events/*.ndjson`, so `trace(...)` feeds
-  [`haia-trace build`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/cli)
-  and produces a Receipt end-to-end.
-- **Redaction.** The raw context can contain signatures and credentials; an
-  allowlist-based redaction pass is not in place yet.
 
 ## License
 
