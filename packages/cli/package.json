@@ -2,7 +2,26 @@
   "name": "@usehaia/trace-cli",
   "version": "0.0.1",
   "description": "Haia Trace command-line interface and renderers.",
+  "keywords": [
+    "x402",
+    "circle",
+    "arc",
+    "payments",
+    "receipts",
+    "audit-trail",
+    "agent-payments",
+    "cli",
+    "developer-tools"
+  ],
   "license": "MIT",
+  "author": "Haia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Haia-Finance/haia-trace.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/Haia-Finance/haia-trace/issues",
+  "homepage": "https://developers.haia.finance/cli/overview",
   "publishConfig": {
     "access": "public"
   },

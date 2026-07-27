@@ -2,7 +2,26 @@
   "name": "@usehaia/trace-x402",
   "version": "0.0.1",
   "description": "Haia Trace capture adapter for the x402 payment SDK.",
+  "keywords": [
+    "x402",
+    "circle",
+    "arc",
+    "payments",
+    "receipts",
+    "audit-trail",
+    "agent-payments",
+    "instrumentation",
+    "mcp"
+  ],
   "license": "MIT",
+  "author": "Haia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Haia-Finance/haia-trace.git",
+    "directory": "packages/x402"
+  },
+  "bugs": "https://github.com/Haia-Finance/haia-trace/issues",
+  "homepage": "https://developers.haia.finance/sdk/x402",
   "publishConfig": {
     "access": "public"
   },

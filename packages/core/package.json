@@ -2,7 +2,26 @@
   "name": "@usehaia/trace-core",
   "version": "0.0.1",
   "description": "Haia Trace core: contracts and the deterministic receipt assembler.",
+  "keywords": [
+    "x402",
+    "circle",
+    "arc",
+    "payments",
+    "receipts",
+    "audit-trail",
+    "provenance",
+    "agent-payments",
+    "deterministic"
+  ],
   "license": "MIT",
+  "author": "Haia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Haia-Finance/haia-trace.git",
+    "directory": "packages/core"
+  },
+  "bugs": "https://github.com/Haia-Finance/haia-trace/issues",
+  "homepage": "https://developers.haia.finance/sdk/core",
   "publishConfig": {
     "access": "public"
   },
