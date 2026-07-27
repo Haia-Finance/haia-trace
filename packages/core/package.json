@@ -1,6 +1,6 @@
 {
   "name": "@usehaia/trace-core",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Haia Trace core: contracts and the deterministic receipt assembler.",
   "keywords": [
     "x402",
