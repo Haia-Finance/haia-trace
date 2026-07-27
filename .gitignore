@@ -9,3 +9,6 @@ coverage/
 
 # Haia Trace local store (product artifact, never committed)
 .trace/
+
+# Hackathon submission working files (video plan, slides) — temporary, not part of the product
+hackathon/
