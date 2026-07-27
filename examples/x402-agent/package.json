@@ -1,0 +1,20 @@
+{
+  "name": "@usehaia/example-x402-agent",
+  "version": "0.0.0",
+  "description": "A traced buyer agent — from x402 lifecycle hooks to an Operation Receipt.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "node buyer.mjs && haia-trace build",
+    "policy": "node policy.mjs",
+    "clean": "rm -rf .trace"
+  },
+  "dependencies": {
+    "@usehaia/trace-core": "workspace:*",
+    "@usehaia/trace-x402": "workspace:*"
+  },
+  "devDependencies": {
+    "@usehaia/trace-cli": "workspace:*",
+    "@x402/core": "catalog:"
+  }
+}

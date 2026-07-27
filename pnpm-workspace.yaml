@@ -1,5 +1,8 @@
 packages:
   - packages/*
+  # Runnable examples. Private, never published — they consume the packages the
+  # same way an outside project does, through the workspace link.
+  - examples/*
 
 # Single source of truth for shared dev-dependency versions.
 # Packages reference these with "typescript": "catalog:" etc.

@@ -39,6 +39,22 @@ importers:
         specifier: 'catalog:'
         version: 3.2.7(@types/node@20.19.43)(yaml@2.9.0)
 
+  examples/x402-agent:
+    dependencies:
+      '@usehaia/trace-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@usehaia/trace-x402':
+        specifier: workspace:*
+        version: link:../../packages/x402
+    devDependencies:
+      '@usehaia/trace-cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@x402/core':
+        specifier: 'catalog:'
+        version: 2.19.0
+
   packages/cli:
     dependencies:
       '@usehaia/trace-core':
