@@ -63,7 +63,9 @@ NDJSON always assembles to the same Receipt.
   Haia Trace is pre-1.0. The `trace-core` contracts and assembler and the
   `haia-trace` CLI (`sample`, `build`, `templates`) are in place, and the
   `trace-x402` adapter records the x402 lifecycle hooks passively as normalized,
-  redacted events into `.trace/events`. See [Connect x402](/sdk/x402).
+  redacted events into `.trace/events`. The shipped template's last stage is
+  closed by a business event no adapter produces yet, so a captured payment
+  assembles as `partial`. See [Connect x402](/sdk/x402).
 </Note>
 
 Ready to see a Receipt? Head to the [Quickstart](/quickstart).

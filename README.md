@@ -76,8 +76,10 @@ Early and pre-1.0. What's wired today:
   assembles receipts from a `.trace/events/*.ndjson` run file.
 - **`trace-x402`** — attaches to the x402 v2 lifecycle hooks and records each
   firing, strictly passively, as a normalized and redacted event. Point it at
-  `.trace/events` and `trace(...)` → `haia-trace build` runs end-to-end. See its
-  [README](./packages/x402).
+  `.trace/events` and `trace(...)` → `haia-trace build` produces a receipt per
+  payment. One gap remains: the shipped template's `paid_action` stage is closed
+  by a business event the adapter does not observe, so even a clean payment
+  assembles as `partial` today. See its [README](./packages/x402).
 
 ## Develop from source
 
