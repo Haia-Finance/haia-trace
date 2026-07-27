@@ -220,6 +220,12 @@ export function trace(
         record(mapped.event_type, mapped.payload, role, contextId);
       } catch (err) {
         reportError(err);
+        // A hook that fired but could not be mapped — an SDK context that no
+        // longer matches what the mapper reads — still gets a line, so the gap
+        // is visible in the run instead of the firing vanishing. It carries no
+        // `context_id`: the keys are read by the mapper that just failed, and
+        // guessing an operation is exactly the dishonesty this records.
+        record("trace.capture_failed", { hook }, role);
       }
       return undefined;
     };

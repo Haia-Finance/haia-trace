@@ -620,8 +620,36 @@ describe("trace()", () => {
 
     expect(() => handlers.get("onBeforeSettle")!({})).not.toThrow();
 
+    // The firing is not silently lost: it leaves a line naming the hook, so the
+    // gap is visible in the run even when no `onError` is supplied.
     expect(payments(events)).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      event_type: "trace.capture_failed",
+      // A lone settle hook reads as a facilitator — it lacks the server-only
+      // `onVerifiedPaymentCanceled`.
+      role: "facilitator",
+      payload: { hook: "onBeforeSettle" },
+    });
+    expect(events.at(-1)!.context_id).toBeUndefined();
     expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("records an offer that arrives without its resource or accepts list", () => {
+    // A v1 server's 402 body has no `resource` at all — a normalizer must never
+    // be the reason a firing goes unrecorded.
+    const { instance, handlers } = fakeInstance(["onPaymentRequired"]);
+    const { writer, events } = memoryWriter();
+    trace(instance, { writer });
+
+    handlers.get("onPaymentRequired")!({
+      paymentRequired: { x402Version: 1, error: "insufficient_funds" },
+    });
+
+    expect(payments(events)).toHaveLength(1);
+    expect(payments(events)[0]).toMatchObject({
+      event_type: "x402.payment.required",
+      payload: { x402_version: 1, error: "insufficient_funds", accepts: [] },
+    });
   });
 
   it("is a no-op when HAIA_TRACE_DISABLE=1", () => {

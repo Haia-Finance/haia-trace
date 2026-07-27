@@ -40,11 +40,16 @@ interface RequirementsLike {
   readonly maxTimeoutSeconds: number;
 }
 
+/**
+ * `resource` and `accepts` are optional here even though the v2 protocol type
+ * requires them: a v1 offer carries no `resource` at all, and an adapter reading
+ * a foreign object must not assume a field is present just because a type says so.
+ */
 export interface PaymentRequiredLike {
   readonly x402Version: number;
   readonly error?: string;
-  readonly resource: ResourceLike;
-  readonly accepts: readonly RequirementsLike[];
+  readonly resource?: ResourceLike;
+  readonly accepts?: readonly RequirementsLike[];
 }
 
 export interface PaymentPayloadLike {
@@ -115,7 +120,9 @@ export function normalizePaymentRequired(
     x402_version: paymentRequired.x402Version,
     error: paymentRequired.error,
     resource: normalizeResource(paymentRequired.resource),
-    accepts: paymentRequired.accepts.map(normalizeRequirements),
+    // Tolerate an offer that arrives without its list: a normalizer must never
+    // be the reason a firing goes unrecorded.
+    accepts: (paymentRequired.accepts ?? []).map(normalizeRequirements),
   });
 }
 
