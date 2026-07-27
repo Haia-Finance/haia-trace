@@ -26,20 +26,22 @@ The one artifact is the **Operation Receipt**. It is:
 
 ## How it fits together
 
-```text
-  your x402 app                         the Trace toolchain
-┌─────────────────────┐   records   ┌──────────────────────────────────┐
-│ x402 client/server  │──hooks─────▶│ @usehaia/trace-x402  (adapter)   │
-│ facilitator / MCP   │             │        │  Event Contract          │
-└─────────────────────┘             │        ▼                         │
-                                    │ .trace/events/<run>.ndjson       │
-                                    │        │                         │
-                                    │        ▼                         │
-                                    │ @usehaia/trace-core  (assembler) │
-                                    │        │  Receipt                 │
-                                    │        ▼                         │
-                                    │ haia-trace  build · sample       │
-                                    └──────────────────────────────────┘
+```mermaid
+flowchart LR
+  A["your x402 app<br/>client · resource server<br/>facilitator · MCP"]
+
+  subgraph toolchain["the Trace toolchain"]
+    direction TB
+    B["@usehaia/trace-x402<br/>capture adapter"]
+    C[".trace/events/*.ndjson<br/>append-only · source of truth"]
+    D["@usehaia/trace-core<br/>deterministic assembler"]
+    E["haia-trace<br/>build · sample"]
+  end
+
+  A -->|lifecycle hooks| B
+  B -->|Event Contract| C
+  C --> D
+  D -->|Receipt| E
 ```
 
 Events are the source of truth; a Receipt is derived and reproducible — the same
