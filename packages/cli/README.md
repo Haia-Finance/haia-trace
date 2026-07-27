@@ -35,7 +35,7 @@ Receipt with no setup:
   ✖ business_record  not confirmed  optional
 
   missing
-    paid_action — settlement confirmed, but the paid action's result was not observed
+    paid_action — the paid action's result was not observed
 
   operation not complete
 ```

@@ -24,7 +24,7 @@ stages:
     match:
       - event: x402.paid_action.executed
       - event: http.response.delivered   # the final 200 delivered after payment
-    missing_explanation: "settlement confirmed, but the paid action's result was not observed"
+    missing_explanation: "the paid action's result was not observed"
   - id: business_record
     required: false
     match:

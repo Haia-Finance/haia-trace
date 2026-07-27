@@ -43,7 +43,7 @@ const x402Payment: OperationTemplate = {
         { event: "http.response.delivered" },
       ],
       missing_explanation:
-        "settlement confirmed, but the paid action's result was not observed",
+        "the paid action's result was not observed",
     },
     {
       id: "business_record",
@@ -153,7 +153,7 @@ describe("assembleReceipt", () => {
           "x402.paid_action.executed",
           "http.response.delivered",
         ],
-        why: "settlement confirmed, but the paid action's result was not observed",
+        why: "the paid action's result was not observed",
       },
     ]);
     // The optional business_record is never listed as missing.

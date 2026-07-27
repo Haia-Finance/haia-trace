@@ -44,7 +44,7 @@ describe("renderReceipt", () => {
         {
           stage: "paid_action",
           expected_events: ["x402.paid_action.executed"],
-          why: "settlement confirmed, but the paid action's result was not observed",
+          why: "the paid action's result was not observed",
         },
       ],
       exceptions: [],
