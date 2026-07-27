@@ -76,10 +76,11 @@ Early and pre-1.0. What's wired today:
 - **`trace-cli`** — `sample`, `build`, and `templates` all work. `build`
   assembles receipts from a `.trace/events/*.ndjson` run file.
 - **`trace-x402`** — attaches to the x402 v2 lifecycle hooks and records each
-  firing, strictly passively. Normalizing those firings into `.trace/events`
-  (so `trace(...)` → `haia-trace build` runs end-to-end) and payload redaction
-  are **coming** — until then the adapter is for local development and wiring,
-  not a real-money flow. See its [README](./packages/x402).
+  firing, strictly passively, as a normalized and redacted event. Point it at
+  `.trace/events` and `trace(...)` → `haia-trace build` produces a receipt per
+  payment. One gap remains: the shipped template's `paid_action` stage is closed
+  by a business event the adapter does not observe, so even a clean payment
+  assembles as `partial` today. See its [README](./packages/x402).
 
 ## Develop from source
 
