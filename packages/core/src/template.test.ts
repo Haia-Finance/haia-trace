@@ -36,8 +36,7 @@ describe("Template Contract", () => {
           { event: "x402.paid_action.executed" },
           { event: "http.response.delivered" },
         ],
-        missing_explanation:
-          "the paid action's result was not observed",
+        missing_explanation: "the paid action's result was not observed",
       },
       {
         id: "business_record",

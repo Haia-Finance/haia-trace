@@ -101,7 +101,10 @@ function paidCall({ url, nonce, transaction, delivered }) {
     paymentRequired,
     selectedRequirements: requirements,
   });
-  fire(client, "afterPaymentCreationHooks", { paymentRequired, paymentPayload });
+  fire(client, "afterPaymentCreationHooks", {
+    paymentRequired,
+    paymentPayload,
+  });
 
   // 2. The seller reports the payment settled, with a transaction to prove it.
   //    This is the seller's own claim — the strongest evidence the agent has,
@@ -137,7 +140,8 @@ console.log("\nagent: buying market data from two APIs\n");
 paidCall({
   url: "https://api.example.com/v1/quote",
   nonce: "0x01",
-  transaction: "0xf1e2d3c4b5a60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  transaction:
+    "0xf1e2d3c4b5a60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
   delivered: true,
 });
 console.log("  /v1/quote    paid · data received");
@@ -145,7 +149,8 @@ console.log("  /v1/quote    paid · data received");
 paidCall({
   url: "https://api.other-vendor.com/v1/report",
   nonce: "0x02",
-  transaction: "0xa9b8c7d6e5f40312233445566778899aabbccddeeff00112233445566778899a",
+  transaction:
+    "0xa9b8c7d6e5f40312233445566778899aabbccddeeff00112233445566778899a",
   delivered: false,
 });
 console.log("  /v1/report   paid · nothing came back");
