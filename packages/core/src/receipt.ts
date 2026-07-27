@@ -67,7 +67,7 @@ export interface ReceiptException {
 
 /** Which operation this receipt is a verdict on. */
 export interface ReceiptOperation {
-  /** The template id the verdict was built against, e.g. `x402-payment`. */
+  /** The template id the verdict was built against, e.g. `x402-buyer`. */
   template: string;
   /** The template version, carried over for unambiguous reproduction. */
   version: number;

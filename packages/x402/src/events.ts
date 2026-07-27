@@ -33,8 +33,9 @@
  * failed payment is never recorded under a type that a template reads as proof
  * the payment went through.
  *
- * Every failure type produced here is listed in the shipped template's
- * `exceptions`, so a fault surfaces on the receipt instead of passing silently.
+ * Every failure type produced here is listed in the `exceptions` of a shipped
+ * template (x402-buyer or x402-seller), so a fault surfaces on the receipt
+ * instead of passing silently.
  *
  * `role` is not decided here: it is fixed by the instance's kind, since the
  * server and the facilitator share these hook names.

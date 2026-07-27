@@ -10,27 +10,28 @@ the operation's expected shape.
 ## Templates and stages
 
 A template describes an operation as an ordered sequence of milestone **stages**.
-For the canonical x402 payment, that's `intent → payment → settlement →
-paid_action`, plus an optional business record.
+Templates are per-role — each side of a payment sees only its half of the flow.
+For the buyer (`x402-buyer`), the milestones are `challenge → payment →
+settlement`; for the seller (`x402-seller`), `request → verification →
+settlement`.
 
 Each stage's `match` is a **match-set**: any one of its events closes the stage.
-This is deliberate — different roles witness the same milestone differently, so
-settlement can be closed by a client-side response, a server-side settle, *or* an
-on-chain confirmation:
+This is deliberate — different client kinds witness the same milestone
+differently, so the buyer's payment milestone can be closed by a signed payment
+leaving an HTTP client *or* by an MCP client initiating payment for a tool call:
 
 ```yaml
+- id: payment
+  required: true
+  match:
+    - event: x402.payment.submitted  # a signed payment left the client
+    - event: x402.payment.requested  # MCP: payment for a tool call initiated
+  missing_explanation: "the challenge was observed, but no payment was initiated"
 - id: settlement
   required: true
   match:
-    - event: x402.payment.responded    # client-side view
-    - event: x402.settle.ok            # server-side view
-    - event: chain.transfer.confirmed  # on-chain confirmation
-- id: paid_action
-  required: true
-  match:
-    - event: x402.paid_action.executed
-    - event: http.response.delivered
-  missing_explanation: "the paid action's result was not observed"
+    - event: x402.payment.responded  # only a settlement that succeeded
+  missing_explanation: "the payment was submitted, but no settlement response was observed"
 ```
 
 Templates are **data, not code** — a new scenario is a new template file, never a
@@ -72,21 +73,22 @@ Every surface — terminal, `receipt.json`, markdown — renders the same object
 
 ```jsonc
 {
-  "operation": { "template": "x402-payment", "version": 1, "operation_id": "op-2" },
+  "operation": { "template": "x402-buyer", "version": 1, "operation_id": "op-2" },
   "completeness": "partial",
   "stages": [
-    { "id": "settlement", "required": true, "state": "confirmed", "events": ["evt…"] },
-    { "id": "paid_action", "required": true, "state": "not_confirmed", "events": [] }
+    { "id": "challenge", "required": true, "state": "confirmed", "events": ["evt…"] },
+    { "id": "payment", "required": true, "state": "confirmed", "events": ["evt…"] },
+    { "id": "settlement", "required": true, "state": "not_confirmed", "events": [] }
   ],
   "missing": [
-    { "stage": "paid_action",
-      "expected_events": ["x402.paid_action.executed", "http.response.delivered"],
-      "why": "the paid action's result was not observed" }
+    { "stage": "settlement",
+      "expected_events": ["x402.payment.responded"],
+      "why": "the payment was submitted, but no settlement response was observed" }
   ],
   "exceptions": [],
   "events": [ /* every discovered event, for provenance */ ]
 }
 ```
 
-For an agent, `completeness: "partial"` plus `missing: [paid_action]` is a
+For an agent, `completeness: "partial"` plus `missing: [settlement]` is a
 machine-readable basis to stop a chain of spending.

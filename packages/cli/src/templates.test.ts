@@ -9,31 +9,152 @@ import {
 
 describe("template loading", () => {
   it("lists the templates shipped with the CLI", () => {
-    expect(listTemplates()).toContain("x402-payment");
+    expect(listTemplates()).toEqual(["x402-buyer", "x402-seller"]);
   });
 
-  it("loads and validates the canonical x402-payment template", () => {
-    const template = loadTemplate("x402-payment");
-    expect(template.template).toBe("x402-payment");
+  it("loads and validates the x402-buyer template", () => {
+    const template = loadTemplate("x402-buyer");
+    expect(template.template).toBe("x402-buyer");
     expect(template.stages.map((s) => s.id)).toEqual([
-      "intent",
+      "challenge",
       "payment",
       "settlement",
-      "paid_action",
-      "business_record",
     ]);
-    expect(template.exceptions).toContain("x402.verify.failed");
+    expect(template.stages.every((s) => s.required)).toBe(true);
+    expect(template.exceptions).toEqual([
+      "x402.payment.creation_failed",
+      "x402.payment.failed",
+      "x402.verify.failed",
+      "x402.settle.failed",
+      "x402.payment.canceled",
+    ]);
   });
 
-  it("keeps the settlement match-set as an OR of witnesses", () => {
-    const settlement = loadTemplate("x402-payment").stages.find(
+  it("gives every buyer stage a witness for every client kind", () => {
+    // Per-kind flows from packages/x402/src/hooks.ts: the HTTP client emits
+    // required/submitted/responded, the MCP client required/requested/responded,
+    // the bare x402Client creating/submitted/responded. Each flow must close
+    // every required stage, or that kind's clean payment assembles as partial.
+    const flows = [
+      [
+        "x402.payment.required",
+        "x402.payment.submitted",
+        "x402.payment.responded",
+      ],
+      [
+        "x402.payment.required",
+        "x402.payment.requested",
+        "x402.payment.responded",
+      ],
+      [
+        "x402.payment.creating",
+        "x402.payment.submitted",
+        "x402.payment.responded",
+      ],
+    ];
+    const template = loadTemplate("x402-buyer");
+    for (const flow of flows) {
+      for (const stage of template.stages.filter((s) => s.required)) {
+        expect(
+          stage.match.some((m) => flow.includes(m.event)),
+          `stage ${stage.id} has no witness in flow ${flow.join(" → ")}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("keeps the buyer challenge match-set as an OR of the HTTP and bare-client witnesses", () => {
+    const challenge = loadTemplate("x402-buyer").stages.find(
+      (s) => s.id === "challenge",
+    );
+    expect(challenge?.match.map((m) => m.event)).toEqual([
+      "x402.payment.required",
+      "x402.payment.creating",
+    ]);
+  });
+
+  it("closes the buyer settlement only on a successful client-side response", () => {
+    const settlement = loadTemplate("x402-buyer").stages.find(
       (s) => s.id === "settlement",
     );
     expect(settlement?.match.map((m) => m.event)).toEqual([
       "x402.payment.responded",
-      "x402.settle.ok",
-      "chain.transfer.confirmed",
     ]);
+    expect(settlement?.missing_explanation).toMatch(/no settlement response/);
+  });
+
+  it("loads and validates the x402-seller template", () => {
+    const template = loadTemplate("x402-seller");
+    expect(template.template).toBe("x402-seller");
+    expect(template.stages.map((s) => s.id)).toEqual([
+      "request",
+      "verification",
+      "settlement",
+    ]);
+    expect(template.exceptions).toEqual([
+      "x402.verify.failed",
+      "x402.settle.failed",
+      "x402.payment.canceled",
+    ]);
+  });
+
+  it("keeps the seller request gate optional (only the HTTP server has one)", () => {
+    const template = loadTemplate("x402-seller");
+    expect(template.stages.map((s) => [s.id, s.required])).toEqual([
+      ["request", false],
+      ["verification", true],
+      ["settlement", true],
+    ]);
+  });
+
+  it("explains every required seller milestone that can go unclosed", () => {
+    const template = loadTemplate("x402-seller");
+    for (const stage of template.stages.filter((s) => s.required)) {
+      expect(stage.missing_explanation).toBeTruthy();
+    }
+  });
+
+  it("covers every failure event the x402 adapter can record", () => {
+    // The failure vocabulary of packages/x402/src/events.ts. Each type must be an
+    // exception in at least one shipped template, or an observed fault could
+    // assemble into a clean-looking receipt.
+    const adapterFailures = [
+      "x402.payment.creation_failed",
+      "x402.payment.failed",
+      "x402.verify.failed",
+      "x402.settle.failed",
+      "x402.payment.canceled",
+    ];
+    const covered = new Set(
+      listTemplates().flatMap((name) => loadTemplate(name).exceptions ?? []),
+    );
+    for (const failure of adapterFailures) {
+      expect(covered).toContain(failure);
+    }
+  });
+
+  it("matches only events the adapter can record — no invented witnesses", () => {
+    // The success/progress vocabulary of packages/x402/src/events.ts. A stage
+    // matching an event no adapter emits could never close.
+    const adapterEvents = new Set([
+      "x402.payment.required",
+      "x402.payment.requested",
+      "x402.payment.creating",
+      "x402.payment.submitted",
+      "x402.payment.responded",
+      "x402.request.protected",
+      "x402.verify.started",
+      "x402.verify.ok",
+      "x402.settle.started",
+      "x402.settle.ok",
+    ]);
+    for (const name of listTemplates()) {
+      for (const stage of loadTemplate(name).stages) {
+        for (const witness of stage.match) {
+          expect(adapterEvents).toContain(witness.event);
+        }
+      }
+    }
   });
 
   it("only lists templates that can be loaded by their listed name", () => {

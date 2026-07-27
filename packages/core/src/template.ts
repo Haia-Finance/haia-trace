@@ -53,7 +53,7 @@ export interface TemplateStage {
  * and `exceptions` to produce a receipt.
  */
 export interface OperationTemplate {
-  /** Template id, e.g. `x402-payment`. Recorded on the receipt's operation. */
+  /** Template id, e.g. `x402-buyer`. Recorded on the receipt's operation. */
   template: string;
   /** Template version, for evolving a template's content without ambiguity. */
   version: number;

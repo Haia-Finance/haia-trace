@@ -15,7 +15,8 @@ trends across many).
 No install needed — run the bundled sample through the real assembler:
 
 ```sh
-npx @usehaia/trace-cli sample x402-payment
+npx @usehaia/trace-cli sample x402-buyer     # the paying agent's view
+npx @usehaia/trace-cli sample x402-seller    # the resource server's view
 ```
 
 You'll see three operations from one fixture run: a **FULL** receipt, a
@@ -78,9 +79,8 @@ Early and pre-1.0. What's wired today:
 - **`trace-x402`** — attaches to the x402 v2 lifecycle hooks and records each
   firing, strictly passively, as a normalized and redacted event. Point it at
   `.trace/events` and `trace(...)` → `haia-trace build` produces a receipt per
-  payment. One gap remains: the shipped template's `paid_action` stage is closed
-  by a business event the adapter does not observe, so even a clean payment
-  assembles as `partial` today. See its [README](./packages/x402).
+  payment, assembled with the per-role `x402-buyer` / `x402-seller` templates —
+  a clean payment assembles as `full`. See its [README](./packages/x402).
 
 ## Develop from source
 

@@ -34,10 +34,10 @@ import { color, spinner } from "../ui.js";
 import type { TraceCommand } from "./types.js";
 
 /** The template applied when `--template` is omitted. */
-const DEFAULT_TEMPLATE = "x402-payment";
+const DEFAULT_TEMPLATE = "x402-buyer";
 
 export interface BuildOptions {
-  /** Template id to apply to every operation in the run. Defaults to `x402-payment`. */
+  /** Template id to apply to every operation in the run. Defaults to `x402-buyer`. */
   template?: string;
   /** Emit machine-readable JSON instead of a terminal summary. */
   json?: boolean;

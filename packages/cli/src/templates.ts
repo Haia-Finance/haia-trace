@@ -51,7 +51,7 @@ function isErrno(err: unknown, code: string): boolean {
   );
 }
 
-/** Names of the templates shipped with the CLI, sorted — e.g. `["x402-payment"]`. */
+/** Names of the templates shipped with the CLI, sorted — e.g. `["x402-buyer", "x402-seller"]`. */
 export function listTemplates(): string[] {
   let entries: string[];
   try {

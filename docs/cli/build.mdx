@@ -18,7 +18,7 @@ through the assembler independently. Every assembled receipt is written to
 ```sh
 haia-trace build                          # build the latest run in .trace/events/
 haia-trace build ./run.ndjson             # build a specific run file
-haia-trace build --template x402-payment  # apply a specific template
+haia-trace build --template x402-seller   # apply a specific template
 haia-trace build --json                   # machine-readable output for agents
 ```
 
@@ -27,7 +27,7 @@ haia-trace build --json                   # machine-readable output for agents
 | Argument / option  | Meaning                                                                 |
 | ------------------ | ----------------------------------------------------------------------- |
 | `[file]`           | NDJSON run file to build from. Default: the latest in `.trace/events/`.  |
-| `--template <id>`  | Operation template applied to every operation. Default: `x402-payment`. |
+| `--template <id>`  | Operation template applied to every operation. Default: `x402-buyer`.  |
 | `--json`           | Emit `{ receipts, unassigned }` as JSON instead of a terminal summary.  |
 
 Run-level events that carry no `context_id` (chain confirmations, capture
@@ -49,8 +49,7 @@ Contract](/sdk/core) — the CLI ships a working example fixture.
 <Note>
   For automatic capture from a live x402 app, point
   [`@usehaia/trace-x402`](/sdk/x402) at `.trace/events` — `trace(...)` then feeds
-  `build` directly. Note that the shipped `x402-payment` template's `paid_action`
-  stage is closed by a business event the adapter does not observe, so a captured
-  payment assembles as `partial` until you supply that event or a template that
-  does not require it.
+  `build` directly. Pick the template matching the side you traced: `x402-buyer`
+  (the default) for a client capture, `--template x402-seller` for a resource
+  server or facilitator capture.
 </Note>

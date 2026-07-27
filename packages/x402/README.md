@@ -227,12 +227,12 @@ file feeds [`haia-trace
 build`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/cli), and
 concurrent payments come out as separate receipts.
 
-What is not in place yet is the last stage of the shipped template. `paid_action`
-is closed by a business event describing the work that was paid for, which this
-adapter does not observe — so a successful payment still assembles as
-`partial`, with `paid_action` listed under `missing`. Until per-role templates
-land, treat the receipt's stage list as the source of truth rather than
-`completeness`.
+The shipped templates are per-role: assemble a client capture with `x402-buyer`
+and a server capture with `x402-seller`. Each matches only events that side's
+hooks record, and every buyer stage has a witness in each client kind's flow
+(HTTP, MCP, and the bare `x402Client`), so a clean payment assembles as `full`
+on either side. A facilitator capture shares the server's verify/settle
+vocabulary and assembles with `x402-seller` too.
 
 ## License
 

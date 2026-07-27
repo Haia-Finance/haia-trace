@@ -23,7 +23,7 @@ import { color } from "../ui.js";
 import type { TraceCommand } from "./types.js";
 
 /** The template sampled when the argument is omitted. */
-const DEFAULT_TEMPLATE = "x402-payment";
+const DEFAULT_TEMPLATE = "x402-buyer";
 
 /** Assemble and print the sample receipts. Separated from registration so it stays testable without commander. */
 export function runSample(templateName: string = DEFAULT_TEMPLATE): void {

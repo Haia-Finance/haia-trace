@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { assertOperationTemplate, type OperationTemplate } from "./index.js";
 
 describe("Template Contract", () => {
-  // The canonical x402 payment template: intent -> payment -> settlement ->
+  // A synthetic payment template: intent -> payment -> settlement ->
   // paid_action -> business_record, plus the events that break the flow.
-  const x402Payment: OperationTemplate = {
-    template: "x402-payment",
+  const demoPayment: OperationTemplate = {
+    template: "demo-payment",
     version: 1,
     stages: [
       {
@@ -51,13 +51,13 @@ describe("Template Contract", () => {
     ],
   };
 
-  it("expresses the canonical x402-payment template", () => {
-    expect(x402Payment.stages).toHaveLength(5);
-    expect(x402Payment.exceptions).toContain("x402.verify.failed");
+  it("expresses a multi-stage payment template", () => {
+    expect(demoPayment.stages).toHaveLength(5);
+    expect(demoPayment.exceptions).toContain("x402.verify.failed");
   });
 
   it("treats a stage's match as an OR-set of witnesses", () => {
-    const settlement = x402Payment.stages.find((s) => s.id === "settlement");
+    const settlement = demoPayment.stages.find((s) => s.id === "settlement");
     // Any one of the three events closes settlement; the stage lists them all.
     expect(settlement?.match.map((m) => m.event)).toEqual([
       "x402.payment.responded",
@@ -67,8 +67,8 @@ describe("Template Contract", () => {
   });
 
   it("carries optional stages and an explanation for an unclosed milestone", () => {
-    const paidAction = x402Payment.stages.find((s) => s.id === "paid_action");
-    const businessRecord = x402Payment.stages.find(
+    const paidAction = demoPayment.stages.find((s) => s.id === "paid_action");
+    const businessRecord = demoPayment.stages.find(
       (s) => s.id === "business_record",
     );
     expect(paidAction?.missing_explanation).toMatch(/not observed/);
@@ -105,7 +105,7 @@ describe("Template Contract", () => {
 
 describe("assertOperationTemplate", () => {
   const valid = {
-    template: "x402-payment",
+    template: "demo-payment",
     version: 1,
     stages: [
       {
@@ -127,7 +127,7 @@ describe("assertOperationTemplate", () => {
   };
 
   it("accepts and narrows a valid template", () => {
-    const template = assertOperationTemplate(valid, "x402-payment.yaml");
+    const template = assertOperationTemplate(valid, "demo-payment.yaml");
     // The return is typed OperationTemplate; the stages survive intact.
     expect(template.stages.map((s) => s.id)).toEqual(["intent", "settlement"]);
     expect(template.exceptions).toEqual(["x402.settle.failed"]);
