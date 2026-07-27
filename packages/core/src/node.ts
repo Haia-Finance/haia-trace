@@ -66,10 +66,18 @@ export function createFileWriter(
   };
 }
 
+/**
+ * The run directory a recorder writes to and the CLI reads from, relative to the
+ * working directory. It is one constant rather than a convention repeated on
+ * both sides: a producer that takes the default and `haia-trace build` meet at
+ * the same path without either being configured.
+ */
+export const DEFAULT_RUN_DIR = join(".trace", "events");
+
 /** Options for a run writer, whose file name is stamped from the service's start time. */
 export interface RunWriterOptions {
-  /** Directory the run file is created in, e.g. `.trace/events`. Created if absent. */
-  dir: string;
+  /** Directory the run file is created in. Created if absent. Defaults to `.trace/events`. */
+  dir?: string;
   /**
    * Epoch-millisecond clock for the file name; injectable so tests are
    * deterministic. Defaults to `Date.now`. Epoch ms is filesystem-safe (unlike an
@@ -95,12 +103,13 @@ export interface RunWriter extends EventWriter {
  * capture was attached and simply saw nothing, which must never read as "capture
  * failed" (the honesty invariant).
  */
-export function createRunWriter(options: RunWriterOptions): RunWriter {
+export function createRunWriter(options: RunWriterOptions = {}): RunWriter {
   const now = options.now ?? Date.now;
-  const path = join(options.dir, `${now()}${RUN_EXT}`);
+  const dir = options.dir ?? DEFAULT_RUN_DIR;
+  const path = join(dir, `${now()}${RUN_EXT}`);
 
   try {
-    mkdirSync(options.dir, { recursive: true });
+    mkdirSync(dir, { recursive: true });
     // Touch the file so an event-less run is still visible on disk.
     closeSync(openSync(path, "a"));
   } catch (err) {

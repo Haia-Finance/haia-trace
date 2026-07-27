@@ -8,6 +8,7 @@ import {
   createFileReader,
   createFileWriter,
   createRunWriter,
+  DEFAULT_RUN_DIR,
   readLatestRun,
 } from "./node.js";
 import { createRecorder } from "./recorder.js";
@@ -41,6 +42,23 @@ describe("createRunWriter", () => {
   it("creates the file eagerly, so an event-less run is still visible", () => {
     const writer = createRunWriter({ dir, now: () => 1 });
     expect(readFileSync(writer.path, "utf8")).toBe("");
+  });
+
+  it("defaults to the run directory the CLI reads, so no path has to be agreed", () => {
+    // A producer that configures nothing must land where `haia-trace build`
+    // looks; run it in a temp cwd so the assertion is about the default, not
+    // about this repository's working directory.
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const writer = createRunWriter({ now: () => 1 });
+      expect(writer.path).toBe(join(DEFAULT_RUN_DIR, "1.ndjson"));
+      expect(readFileSync(writer.path, "utf8")).toBe("");
+      // And the reader finds it without being told where either.
+      expect(readLatestRun(DEFAULT_RUN_DIR)).not.toBeNull();
+    } finally {
+      process.chdir(cwd);
+    }
   });
 
   it("round-trips events through the file", () => {

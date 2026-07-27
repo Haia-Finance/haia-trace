@@ -14,14 +14,17 @@
  * block, which the receipt model does not carry yet.
  */
 
-import { join } from "node:path";
 import {
   assembleReceiptsProgressively,
   type Receipt,
   type RunProgress,
   type TraceEvent,
 } from "@usehaia/trace-core";
-import { createFileReader, readLatestRun } from "@usehaia/trace-core/node";
+import {
+  createFileReader,
+  DEFAULT_RUN_DIR,
+  readLatestRun,
+} from "@usehaia/trace-core/node";
 import type { Command } from "commander";
 
 import { renderReceipt } from "../render/receipt.js";
@@ -32,9 +35,6 @@ import type { TraceCommand } from "./types.js";
 
 /** The template applied when `--template` is omitted. */
 const DEFAULT_TEMPLATE = "x402-payment";
-
-/** Default run-events directory, relative to the working directory. */
-const EVENTS_DIR = join(".trace", "events");
 
 export interface BuildOptions {
   /** Template id to apply to every operation in the run. Defaults to `x402-payment`. */
@@ -60,7 +60,7 @@ export function runBuild(
 ): BuildResult {
   const templateName = options.template ?? DEFAULT_TEMPLATE;
   const json = options.json ?? false;
-  const eventsDir = options.eventsDir ?? EVENTS_DIR;
+  const eventsDir = options.eventsDir ?? DEFAULT_RUN_DIR;
   const receiptsDir = options.receiptsDir ?? RECEIPTS_DIR;
 
   // An explicit path wins; otherwise build the latest run in the events dir.

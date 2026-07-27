@@ -26,13 +26,16 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 const client = new x402HTTPClient(new x402Client());
 
 // Attach the recorder and write the run to disk. One line, idempotent per instance.
-trace(client, { writer: createRunWriter({ dir: ".trace/events" }) });
+trace(client, { writer: createRunWriter() });
 ```
 
-That run file is what
+The writer defaults to `.trace/events` — the directory
 [`haia-trace build`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/cli)
-reads. Without a `writer`, events go to stdout as NDJSON — the same encoding, so
-it can simply be piped into a file.
+reads from, so neither side has to be told where the run lives. That path is
+relative to the working directory, which is what an app started from its own
+project root wants; a process whose cwd is not fixed should pass `dir`
+explicitly. Without a `writer`, events go to stdout as NDJSON — the same
+encoding, so it can simply be piped into a file.
 
 `trace()` inspects the instance's method set to resolve its **kind**, attaches to
 that kind's lifecycle hooks — following into the instance a wrapper holds, so one
@@ -160,7 +163,7 @@ guessing.
 trace(instance, {
   // Where events go. Default: NDJSON on stdout. The writer's lifetime is yours —
   // trace() never closes it.
-  writer: createRunWriter({ dir: ".trace/events" }),
+  writer: createRunWriter(),
 
   // Recorder that stamps event_id / occurred_at / seq. Defaults to a
   // process-wide one, so several traced instances share one ordered session.
