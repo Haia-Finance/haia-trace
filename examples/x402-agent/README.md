@@ -12,29 +12,33 @@ pnpm policy   # the agent reads the verdict and decides whether to keep spending
 
 ## What you get
 
-Both calls settle. One returns the data that was paid for; the other returns
-nothing usable. `pnpm demo` records the run to `.trace/events/<run>.ndjson` and
-assembles one receipt per operation:
+The first call settles. The second is signed, sent, and never comes back with a
+settlement. `pnpm demo` records the run to `.trace/events/<run>.ndjson` and
+assembles one receipt per operation, against the `x402-buyer` template — the
+payment as the buyer's own client witnessed it:
 
 ```text
-🧾 x402-payment · op-1 · FULL          🧾 x402-payment · op-2 · PARTIAL
+🧾 x402-buyer · op-1 · FULL      🧾 x402-buyer · op-2 · PARTIAL
 
-  ✔ intent           confirmed          ✔ intent           confirmed
-  ✔ payment          confirmed          ✔ payment          confirmed
-  ✔ settlement       confirmed          ✔ settlement       confirmed
-  ✔ paid_action      confirmed          ✖ paid_action      not confirmed  required
+  ✔ challenge   confirmed          ✔ challenge   confirmed
+  ✔ payment     confirmed          ✔ payment     confirmed
+  ✔ settlement  confirmed          ✖ settlement  not confirmed  required
 
-  operation completed                   missing
-                                          paid_action — the paid action's result
-                                          was not observed
+  operation completed              exceptions
+                                     ⚠ x402.payment.failed
 
-                                        operation not complete
+                                   missing
+                                     settlement — the payment was submitted, but
+                                     no settlement response was observed
+
+                                   operation not complete
 ```
 
-The second operation is the point. The payment is beyond dispute — the seller
-returned a settled response with a transaction hash — and the agent still has
-nothing. A block explorer, the agent's own wallet and the seller's confirmation
-would each report success. Only the receipt reports the gap.
+The second operation is the point. A signed authorization left the agent, and
+nothing came back that says what happened to it. The agent cannot tell a payment
+that never settled from one that settled silently — and instead of guessing
+either way, the receipt records the fault it saw and names the milestone that
+stayed open.
 
 `pnpm policy` then reads those receipts the way an agent would, and exits
 non-zero:
@@ -42,7 +46,8 @@ non-zero:
 ```text
 ✔ op-1  complete — safe to continue spending
 ✖ op-2  partial — stopping the spend chain
-    missing paid_action — the paid action's result was not observed
+    missing settlement — the payment was submitted, but no settlement response was observed
+    fault   x402.payment.failed
 ```
 
 ## The integration
@@ -66,32 +71,15 @@ Capture is passive: the handlers only record and always return `undefined`, so
 they can never steer a payment the way an x402 hook is allowed to. The worst case
 of a bug here is a missing event, never a broken payment.
 
-## Closing the last milestone, without the seller
+## The buyer's template
 
-x402 ends at settlement — the protocol has no "you got what you paid for" step,
-and the seller is not going to report one. So the `paid_action` milestone is
-closed by the only party who can observe it: the buyer, when the response it
-paid for actually arrives.
+`x402-buyer` — the template `haia-trace build` applies by default — covers the
+payment as the client sees it: the 402 challenge, the signed payment, the
+settlement response. It ends where the client's own evidence ends.
 
-```js
-writer.write(
-  app.event({
-    event_type: "http.response.delivered",
-    context_id: operation,
-    role: "client",
-    payload: { status: 200, url, bytes: 8123 },
-  }),
-);
-```
-
-That is the whole mechanism for adding a source: emit an event whose type the
-template already matches. No adapter, no core change, and no cooperation from the
-counterparty — which is why the first operation reads `FULL` and the second,
-where this line never runs, does not.
-
-A seller who wants their own side recorded attaches the same way — `trace()` on
-an `x402ResourceServer` picks up verify and settle. It is not required for any of
-the above, and this example deliberately does without it.
+A seller who wants their own side recorded attaches the same way, and assembles
+it against `x402-seller`. Nothing here depends on that, and this example
+deliberately does without it.
 
 ## What is real and what is not
 

@@ -5,20 +5,19 @@
  * agent has no access to their code, their logs or their hooks, which is the
  * normal case: you own your side of a payment and nothing else.
  *
- * Both calls settle. The first returns the data that was paid for; the second
- * returns nothing usable. Run `haia-trace build` afterwards and the two
- * operations assemble into a `full` receipt and a `partial` one — from the
- * buyer's own observations alone.
+ * The first call settles. The second is signed, sent, and never comes back with
+ * a settlement — the agent is left holding a payment it cannot account for. Run
+ * `haia-trace build` afterwards and the two operations assemble into a `full`
+ * receipt and a `partial` one, from the buyer's own observations alone.
  *
  * What is real here: the x402 client (`@x402/core`), its hook registries, the
  * recorder attached to it, the Event Contract on disk, and the assembler that
- * reads it. What is simulated: the money and the seller. There is no chain, no
+ * reads it. What is simulated: the money and the sellers. There is no chain, no
  * facilitator and no wallet, so the lifecycle is driven locally by invoking the
  * hooks the SDK would invoke. This example fakes the payment, never the trace.
  */
 
-import { createRecorder } from "@usehaia/trace-core";
-import { createFileReader, createRunWriter } from "@usehaia/trace-core/node";
+import { createRunWriter } from "@usehaia/trace-core/node";
 import { trace } from "@usehaia/trace-x402";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 
@@ -34,17 +33,6 @@ const writer = createRunWriter();
 
 const capture = trace(agent, { writer });
 
-/** The agent's own record of having received what it paid for. */
-const app = createRecorder({ adapter: "buyer-app" });
-
-/**
- * The operation the recorder grouped the payment it just saw under. A real app
- * takes this from its own call context; reading back the run keeps the example
- * to the public API.
- */
-const currentOperation = () =>
-  createFileReader(writer.path).read().at(-1)?.context_id;
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 // The attestation says what capture actually connected to — so "no events" can
@@ -59,13 +47,14 @@ function fire(owner, registry, context) {
 }
 
 /**
- * One paid call: the seller's 402, the payment, the seller's settled response,
- * and whether anything useful came back.
+ * One paid call: the seller's 402, the signed payment, and whatever the seller
+ * sent back.
  *
- * `delivered: false` is the interesting path. Nothing about the payment failed —
- * the seller even returns a transaction hash — and the agent still has nothing.
+ * `settled: false` is the interesting path. The agent did everything right and
+ * the response carries no settlement, so whether the money moved is exactly what
+ * nobody can tell it.
  */
-function paidCall({ url, nonce, transaction, delivered }) {
+function paidCall({ url, nonce, transaction, settled }) {
   const requirements = {
     scheme: "exact",
     network: "eip155:8453",
@@ -106,33 +95,22 @@ function paidCall({ url, nonce, transaction, delivered }) {
     paymentPayload,
   });
 
-  // 2. The seller reports the payment settled, with a transaction to prove it.
-  //    This is the seller's own claim — the strongest evidence the agent has,
-  //    and it says nothing about whether the paid work happened.
+  // 2. What came back. A settlement — with a transaction to point at — closes
+  //    the operation. Anything else leaves it open: the adapter reports the
+  //    outcome it observed and never upgrades a silence into a settlement.
   fire(client, "paymentResponseHooks", {
     paymentPayload,
     requirements,
-    settleResponse: {
-      success: true,
-      transaction,
-      network: requirements.network,
-      payer: "0xBUYER",
-    },
+    settleResponse: settled
+      ? {
+          success: true,
+          transaction,
+          network: requirements.network,
+          payer: "0xBUYER",
+        }
+      : undefined,
+    error: settled ? undefined : new Error("upstream timed out after 30s"),
   });
-
-  // 3. The agent checks what actually came back. x402 ends at settlement, so
-  //    this milestone can only come from the agent itself — and when the data
-  //    never arrives, the receipt says so instead of assuming success.
-  if (!delivered) return;
-
-  writer.write(
-    app.event({
-      event_type: "http.response.delivered",
-      context_id: currentOperation(),
-      role: "client",
-      payload: { status: 200, url, bytes: 8123 },
-    }),
-  );
 }
 
 console.log("\nagent: buying market data from two APIs\n");
@@ -142,18 +120,16 @@ paidCall({
   nonce: "0x01",
   transaction:
     "0xf1e2d3c4b5a60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
-  delivered: true,
+  settled: true,
 });
-console.log("  /v1/quote    paid · data received");
+console.log("  /v1/quote    paid · settled");
 
 paidCall({
   url: "https://api.other-vendor.com/v1/report",
   nonce: "0x02",
-  transaction:
-    "0xa9b8c7d6e5f40312233445566778899aabbccddeeff00112233445566778899a",
-  delivered: false,
+  settled: false,
 });
-console.log("  /v1/report   paid · nothing came back");
+console.log("  /v1/report   paid · no settlement came back");
 
 writer.close();
 console.log(`\nrun recorded → ${writer.path}`);
