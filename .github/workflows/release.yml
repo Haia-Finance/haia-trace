@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+  # Provenance attestations are signed with a short-lived OIDC token that GitHub
+  # mints per run; without write access to that token the signing request fails,
+  # taking the publish with it.
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -31,10 +35,27 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+      # Verify before publishing. A published npm version is permanent — it can
+      # never be replaced — and nothing stops a tag from being cut off a commit
+      # that CI never ran on, so re-check here instead of assuming it passed.
+      # As in CI, call the per-package scripts: the root check-types/test scripts
+      # each build first, which would redo the build above.
+      #
+      # Lint is intentionally left to CI. It's a style gate, and a formatting nit
+      # can't make a published tarball wrong — it would only add a way for a
+      # release to fail for a reason no user would ever observe.
+      - run: pnpm -r run check-types
+      - run: pnpm -r run test
+
       # A version tag (vX.Y.Z) publishes the committed version as-is to `latest`,
       # the version a plain `npm install` gets. To release: bump the packages'
       # version, commit, and push the matching tag.
+      #
+      # --provenance attaches a signed attestation binding each tarball to this
+      # repo, commit, and workflow run, so anyone can verify what the published
+      # code was built from rather than trusting the publisher:
+      # https://docs.npmjs.com/generating-provenance-statements
       - name: Publish to `latest`
-        run: pnpm -r publish --tag latest --no-git-checks
+        run: pnpm -r publish --provenance --tag latest --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
