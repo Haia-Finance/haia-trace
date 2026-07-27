@@ -24,6 +24,21 @@ You'll see three operations from one fixture run: a **FULL** receipt, a
 product's whole spectrum, assembled by the same deterministic core a live run
 uses.
 
+## Then on a real agent
+
+[`examples/x402-agent`](./examples/x402-agent) is a buyer agent built on the
+actual `@x402/core` client, traced by one line and assembled into receipts:
+
+```sh
+cd examples/x402-agent
+pnpm demo     # the agent pays twice, then the receipts are built
+pnpm policy   # the agent reads the verdict and stops on the unresolved one
+```
+
+Only the buyer is instrumented, because that is all you own: the sellers are
+other people's services. The money is simulated — there is no chain and no
+facilitator — and the README says exactly which parts are real.
+
 ## Packages
 
 | Package                                        | Role                                                            |

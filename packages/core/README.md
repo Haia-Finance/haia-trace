@@ -81,11 +81,24 @@ The event sink is defined as a runtime-agnostic contract in the root export
 `node:fs` is imported — lives behind the `/node` subpath:
 
 ```ts
-import { readLatestRun, createFileReader } from "@usehaia/trace-core/node";
+import {
+  createRunWriter,
+  DEFAULT_RUN_DIR,
+  readLatestRun,
+} from "@usehaia/trace-core/node";
 
-const reader = readLatestRun(".trace/events");   // or createFileReader(path)
-const events = reader?.read() ?? [];
+// Producing: one run file per session, named for its start time.
+const writer = createRunWriter();   // .trace/events/<run>.ndjson
+writer.write(event);
+
+// Reading it back: the newest run in that directory.
+const events = readLatestRun(DEFAULT_RUN_DIR)?.read() ?? [];
 ```
+
+`createRunWriter()` and the CLI's `build` share one default directory, so a
+producer that configures nothing and the assembler meet without a path being
+agreed. That path is relative to the working directory, which is what an app
+started from its own project root wants; pass `dir` when the cwd is not fixed.
 
 ## License
 

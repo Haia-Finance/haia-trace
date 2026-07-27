@@ -11,6 +11,8 @@ packages/
   x402/   @usehaia/trace-x402   x402 capture adapter (records events)
   cli/    @usehaia/trace-cli    CLI, renderers, template loader
           cli/templates/*.yaml  operation templates — shipped in the CLI package
+examples/
+  x402-agent/                   runnable demo: a traced buyer agent
 ```
 
 `x402` and `cli` depend on `core` via `"@usehaia/trace-core": "workspace:*"`.
@@ -81,3 +83,8 @@ Copy an existing package's `package.json` + `tsconfig.json` shape into
 `packages/<name>/`. The `packages/*` workspace glob picks it up automatically —
 no root file needs editing. For a `core`/`x402`-style embeddable package, keep
 `dependencies` free of third-party packages (see the invariant above).
+
+Examples live under `examples/<name>/`, covered by the `examples/*` glob. They
+consume the packages through `workspace:*`, so their imports read exactly as an
+outside project's would, and they are **`private: true`** — an example must never
+reach the registry.

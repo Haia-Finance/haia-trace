@@ -110,12 +110,16 @@ the same run always yields the same Receipt.
 
 ## Producing a run file
 
-`build` needs a `.trace/events/*.ndjson` run file. Today you can point it at any
-NDJSON file whose lines match the Event Contract (the bundled
-[`fixtures/x402-buyer.ndjson`](./fixtures/x402-buyer.ndjson) is a working
-example). Automatic capture from a live x402 app via
+`build` needs a `.trace/events/*.ndjson` run file.
 [`@usehaia/trace-x402`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/x402)
-writing into `.trace/events` is on the roadmap.
+writes one from a live x402 app — attach it to your client or resource server and
+`build` picks the run up with no path to configure, since both sides default to
+`.trace/events`. Any NDJSON whose lines match the Event Contract works just as
+well (the bundled [`fixtures/x402-buyer.ndjson`](./fixtures/x402-buyer.ndjson) is
+a working example).
+
+Build a capture against the template for the side that recorded it: `x402-buyer`
+is the default, `--template x402-seller` for a resource server.
 
 ## License
 
