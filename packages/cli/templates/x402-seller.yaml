@@ -1,0 +1,25 @@
+# The x402 payment as the seller (a traced x402 resource server) witnesses it.
+# Every event here is one the trace-x402 adapter records with `role: server`.
+# `request` is optional because only the HTTP resource server has a request
+# gate; the `*.started` events are progress markers, not milestones.
+template: x402-seller
+version: 1
+stages:
+  - id: request
+    required: false
+    match:
+      - event: x402.request.protected
+  - id: verification
+    required: true
+    match:
+      - event: x402.verify.ok
+    missing_explanation: "the payment was never verified"
+  - id: settlement
+    required: true
+    match:
+      - event: x402.settle.ok
+    missing_explanation: "settlement of the payment was not observed"
+exceptions:
+  - x402.verify.failed
+  - x402.settle.failed
+  - x402.payment.canceled            # verified, then rolled back — the paid work failed

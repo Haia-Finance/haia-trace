@@ -5,7 +5,7 @@ import { commands, listTemplates } from "./index.js";
 describe("@usehaia/trace-cli surface", () => {
   it("re-exports the template loader", () => {
     // A smoke check that the core-backed loader is wired through the package entry.
-    expect(listTemplates()).toContain("x402-payment");
+    expect(listTemplates()).toContain("x402-buyer");
   });
 
   it("exposes a non-empty command registry", () => {

@@ -9,13 +9,13 @@ import { writeReceipt } from "./store.js";
 
 const receipt = (operationId: string): Receipt => ({
   operation: {
-    template: "x402-payment",
+    template: "x402-buyer",
     version: 1,
     operation_id: operationId,
   },
   completeness: "partial",
   stages: [
-    { id: "intent", required: true, state: "confirmed", events: ["e1"] },
+    { id: "challenge", required: true, state: "confirmed", events: ["e1"] },
   ],
   missing: [],
   exceptions: [],

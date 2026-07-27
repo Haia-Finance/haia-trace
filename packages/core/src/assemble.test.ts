@@ -10,10 +10,10 @@ import {
   type TraceEvent,
 } from "./index.js";
 
-// The canonical x402 payment template (mirrors packages/cli/templates/x402-payment.yaml):
-// intent -> payment -> settlement -> paid_action -> business_record, plus faults.
-const x402Payment: OperationTemplate = {
-  template: "x402-payment",
+// A synthetic payment template exercising every contract feature — OR match-sets,
+// an optional stage, a missing_explanation — independent of any shipped template.
+const demoPayment: OperationTemplate = {
+  template: "demo-payment",
   version: 1,
   stages: [
     {
@@ -95,7 +95,7 @@ function makeRun(entries: Array<[string | undefined, string]>): TraceEvent[] {
   );
 }
 
-/** The witnesses that close every required stage of x402-payment, in flow order. */
+/** The witnesses that close every required stage of demo-payment, in flow order. */
 const REQUIRED_HAPPY_PATH = [
   "x402.payment.required",
   "x402.payment.submitted",
@@ -110,12 +110,12 @@ function stage(receipt: ReturnType<typeof assembleReceipt>, id: string) {
 describe("assembleReceipt", () => {
   it("confirms every required stage on the happy path -> full", () => {
     const events = makeEvents(REQUIRED_HAPPY_PATH);
-    const receipt = assembleReceipt(events, x402Payment);
+    const receipt = assembleReceipt(events, demoPayment);
 
     expect(receipt.completeness).toBe("full");
     expect(receipt.missing).toEqual([]);
     expect(receipt.exceptions).toEqual([]);
-    expect(receipt.operation).toEqual({ template: "x402-payment", version: 1 });
+    expect(receipt.operation).toEqual({ template: "demo-payment", version: 1 });
 
     // Each required stage is confirmed by the event that witnessed it.
     expect(stage(receipt, "intent")).toEqual({
@@ -141,7 +141,7 @@ describe("assembleReceipt", () => {
       "x402.payment.submitted",
       "x402.settle.ok",
     ]);
-    const receipt = assembleReceipt(events, x402Payment);
+    const receipt = assembleReceipt(events, demoPayment);
 
     expect(receipt.completeness).toBe("partial");
     expect(stage(receipt, "settlement")?.state).toBe("confirmed");
@@ -169,7 +169,7 @@ describe("assembleReceipt", () => {
       "chain.transfer.confirmed", // the third settlement witness, alone
       "x402.paid_action.executed",
     ]);
-    const receipt = assembleReceipt(events, x402Payment);
+    const receipt = assembleReceipt(events, demoPayment);
 
     expect(receipt.completeness).toBe("full");
     expect(stage(receipt, "settlement")?.state).toBe("confirmed");
@@ -183,7 +183,7 @@ describe("assembleReceipt", () => {
       "chain.transfer.confirmed", // evt-3, same settlement milestone
       "x402.paid_action.executed",
     ]);
-    const receipt = assembleReceipt(events, x402Payment);
+    const receipt = assembleReceipt(events, demoPayment);
 
     // Both witnesses, in deterministic order, back the one confirmed stage.
     expect(stage(receipt, "settlement")?.events).toEqual(["evt-2", "evt-3"]);
@@ -217,7 +217,7 @@ describe("assembleReceipt", () => {
 
   it("surfaces a fault and holds the operation to partial even if stages closed", () => {
     const events = makeEvents([...REQUIRED_HAPPY_PATH, "x402.settle.failed"]);
-    const receipt = assembleReceipt(events, x402Payment);
+    const receipt = assembleReceipt(events, demoPayment);
 
     // Every required stage is confirmed, but an observed fault keeps it from `full`.
     expect(
@@ -233,7 +233,7 @@ describe("assembleReceipt", () => {
 
   it("keeps an unmatched event in the receipt without attributing it to a stage", () => {
     const events = makeEvents([...REQUIRED_HAPPY_PATH, "some.unknown.event"]);
-    const receipt = assembleReceipt(events, x402Payment);
+    const receipt = assembleReceipt(events, demoPayment);
 
     expect(receipt.events).toHaveLength(5);
     const unknown = receipt.events.find(
@@ -275,16 +275,16 @@ describe("assembleReceipt", () => {
 
   it("carries caller-supplied operation identity, never inventing it", () => {
     const events = makeEvents(REQUIRED_HAPPY_PATH);
-    const bare = assembleReceipt(events, x402Payment);
+    const bare = assembleReceipt(events, demoPayment);
     expect(bare.operation.title).toBeUndefined();
     expect(bare.operation.operation_id).toBeUndefined();
 
-    const titled = assembleReceipt(events, x402Payment, {
+    const titled = assembleReceipt(events, demoPayment, {
       title: "GET /api/data",
       operation_id: "op-7",
     });
     expect(titled.operation).toEqual({
-      template: "x402-payment",
+      template: "demo-payment",
       version: 1,
       title: "GET /api/data",
       operation_id: "op-7",
@@ -320,12 +320,12 @@ describe("assembleReceipt", () => {
   it("is deterministic and order-independent", () => {
     const events = makeEvents(REQUIRED_HAPPY_PATH);
 
-    const first = assembleReceipt(events, x402Payment);
-    const second = assembleReceipt(events, x402Payment);
+    const first = assembleReceipt(events, demoPayment);
+    const second = assembleReceipt(events, demoPayment);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
 
     // Feeding the same events out of order yields the identical receipt.
-    const shuffled = assembleReceipt([...events].reverse(), x402Payment);
+    const shuffled = assembleReceipt([...events].reverse(), demoPayment);
     expect(JSON.stringify(shuffled)).toBe(JSON.stringify(first));
   });
 
@@ -354,8 +354,8 @@ describe("assembleReceipt", () => {
     });
     expect(clientEvent.seq).toBe(chainEvent.seq);
 
-    const forward = assembleReceipt([clientEvent, chainEvent], x402Payment);
-    const reverse = assembleReceipt([chainEvent, clientEvent], x402Payment);
+    const forward = assembleReceipt([clientEvent, chainEvent], demoPayment);
+    const reverse = assembleReceipt([chainEvent, clientEvent], demoPayment);
     expect(JSON.stringify(reverse)).toBe(JSON.stringify(forward));
     // Both settle-witnesses land on settlement in a stable, id-ordered sequence.
     expect(forward.stages.find((s) => s.id === "settlement")?.events).toEqual([
@@ -368,7 +368,7 @@ describe("assembleReceipt", () => {
 describe("assembleProgressively", () => {
   it("yields a baseline then one snapshot per event, counting to total", () => {
     const events = makeEvents(REQUIRED_HAPPY_PATH);
-    const snapshots = [...assembleProgressively(events, x402Payment)];
+    const snapshots = [...assembleProgressively(events, demoPayment)];
 
     expect(snapshots).toHaveLength(events.length + 1);
     expect(snapshots.map((s) => s.processed)).toEqual([0, 1, 2, 3, 4]);
@@ -383,14 +383,14 @@ describe("assembleProgressively", () => {
 
   it("ends at exactly the eager receipt (the reducer/generator agree)", () => {
     const events = makeEvents(REQUIRED_HAPPY_PATH);
-    const snapshots = [...assembleProgressively(events, x402Payment)];
-    const eager = assembleReceipt(events, x402Payment);
+    const snapshots = [...assembleProgressively(events, demoPayment)];
+    const eager = assembleReceipt(events, demoPayment);
 
     expect(snapshots.at(-1)!.receipt).toEqual(eager);
   });
 
   it("handles an empty event set with a single baseline snapshot", () => {
-    const snapshots = [...assembleProgressively([], x402Payment)];
+    const snapshots = [...assembleProgressively([], demoPayment)];
 
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]).toMatchObject({ processed: 0, total: 0 });
@@ -414,7 +414,7 @@ describe("assembleReceipts", () => {
     ]);
 
   it("splits a run into one receipt per context_id, keyed by operation", () => {
-    const { receipts } = assembleReceipts(run(), x402Payment);
+    const { receipts } = assembleReceipts(run(), demoPayment);
 
     expect(receipts).toHaveLength(2);
     // Ordered by first appearance: op a (seq 0) before op b (seq 1).
@@ -430,7 +430,7 @@ describe("assembleReceipts", () => {
   });
 
   it("keeps context-less events in unassigned, off every receipt", () => {
-    const { receipts, unassigned } = assembleReceipts(run(), x402Payment);
+    const { receipts, unassigned } = assembleReceipts(run(), demoPayment);
 
     expect(unassigned.map((e) => e.event_type)).toEqual(["trace.attached"]);
     const attestationId = unassigned[0]!.event_id;
@@ -442,13 +442,13 @@ describe("assembleReceipts", () => {
 
   it("is order-independent: shuffled run input yields the identical split", () => {
     const events = run();
-    const forward = assembleReceipts(events, x402Payment);
-    const reverse = assembleReceipts([...events].reverse(), x402Payment);
+    const forward = assembleReceipts(events, demoPayment);
+    const reverse = assembleReceipts([...events].reverse(), demoPayment);
     expect(JSON.stringify(reverse)).toBe(JSON.stringify(forward));
   });
 
   it("returns empty on empty input and buckets an all-attestation run", () => {
-    expect(assembleReceipts([], x402Payment)).toEqual({
+    expect(assembleReceipts([], demoPayment)).toEqual({
       receipts: [],
       unassigned: [],
     });
@@ -459,7 +459,7 @@ describe("assembleReceipts", () => {
     ]);
     const { receipts, unassigned } = assembleReceipts(
       onlyAttestations,
-      x402Payment,
+      demoPayment,
     );
     expect(receipts).toEqual([]);
     expect(unassigned).toHaveLength(2);
@@ -473,7 +473,7 @@ describe("assembleReceipts", () => {
       ["", "x402.payment.required"],
       ["a", "x402.payment.required"],
     ]);
-    const { receipts, unassigned } = assembleReceipts(events, x402Payment);
+    const { receipts, unassigned } = assembleReceipts(events, demoPayment);
 
     expect(receipts.map((r) => r.operation.operation_id)).toEqual(["a"]);
     expect(unassigned.map((e) => e.event_type)).toEqual([
@@ -497,7 +497,7 @@ describe("assembleReceiptsProgressively", () => {
 
   it("yields a baseline then one snapshot per event, counting to total", () => {
     const events = run();
-    const snapshots = [...assembleReceiptsProgressively(events, x402Payment)];
+    const snapshots = [...assembleReceiptsProgressively(events, demoPayment)];
 
     expect(snapshots).toHaveLength(events.length + 1);
     expect(snapshots.map((s) => s.processed)).toEqual([
@@ -511,7 +511,7 @@ describe("assembleReceiptsProgressively", () => {
   });
 
   it("grows the operation set as each new context_id first appears", () => {
-    const snapshots = [...assembleReceiptsProgressively(run(), x402Payment)];
+    const snapshots = [...assembleReceiptsProgressively(run(), demoPayment)];
 
     // op a's first event opens one operation; op b's first event opens the second.
     expect(snapshots[1]!.receipts.map((r) => r.operation.operation_id)).toEqual(
@@ -528,10 +528,10 @@ describe("assembleReceiptsProgressively", () => {
 
   it("ends at exactly the eager split (progressive and assembleReceipts agree)", () => {
     const events = run();
-    const last = [...assembleReceiptsProgressively(events, x402Payment)].at(
+    const last = [...assembleReceiptsProgressively(events, demoPayment)].at(
       -1,
     )!;
-    const eager = assembleReceipts(events, x402Payment);
+    const eager = assembleReceipts(events, demoPayment);
 
     expect(last).toMatchObject({
       processed: events.length,
@@ -543,7 +543,7 @@ describe("assembleReceiptsProgressively", () => {
   });
 
   it("handles an empty run with a single baseline snapshot", () => {
-    const snapshots = [...assembleReceiptsProgressively([], x402Payment)];
+    const snapshots = [...assembleReceiptsProgressively([], demoPayment)];
 
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]).toEqual({

@@ -12,7 +12,8 @@ describe("haia-trace templates", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     runTemplates();
     const output = log.mock.calls.map((args) => args.join(" ")).join("\n");
-    expect(output).toContain("x402-payment");
+    expect(output).toContain("x402-buyer");
+    expect(output).toContain("x402-seller");
   });
 
   it("registers under the `templates` name on the program", () => {

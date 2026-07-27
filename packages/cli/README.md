@@ -19,23 +19,21 @@ Both expose the `haia-trace` command.
 ## Quickstart
 
 ```sh
-haia-trace sample x402-payment
+haia-trace sample x402-buyer
 ```
 
 `sample` replays a bundled fixture run through the real assembler, so you see a
 Receipt with no setup:
 
 ```text
-🧾 x402-payment · op-2 · PARTIAL
+🧾 x402-buyer · op-2 · PARTIAL
 
-  ✔ intent           confirmed
-  ✔ payment          confirmed
-  ✔ settlement       confirmed
-  ✖ paid_action      not confirmed  required
-  ✖ business_record  not confirmed  optional
+  ✔ challenge   confirmed
+  ✔ payment     confirmed
+  ✖ settlement  not confirmed  required
 
   missing
-    paid_action — settlement confirmed, but the paid action's result was not observed
+    settlement — the payment was submitted, but no settlement response was observed
 
   operation not complete
 ```
@@ -49,7 +47,8 @@ model.
 ### `haia-trace sample [template]`
 
 Assemble receipts from bundled fixtures — the zero-setup first taste. Defaults to
-the `x402-payment` template. The template name selects both the template and its
+the `x402-buyer` template (the paying agent's view); `x402-seller` shows the
+resource server's view. The template name selects both the template and its
 fixture set.
 
 ### `haia-trace build [file] [options]`
@@ -63,14 +62,14 @@ through the assembler independently. Every assembled receipt is written to
 ```sh
 haia-trace build                       # build the latest run in .trace/events/
 haia-trace build ./run.ndjson          # build a specific run file
-haia-trace build --template x402-payment
+haia-trace build --template x402-seller
 haia-trace build --json                # machine-readable output for agents
 ```
 
 | Argument / option    | Meaning                                                                 |
 | -------------------- | ----------------------------------------------------------------------- |
 | `[file]`             | NDJSON run file to build from. Default: the latest in `.trace/events/`.  |
-| `--template <id>`    | Operation template applied to every operation. Default: `x402-payment`. |
+| `--template <id>`    | Operation template applied to every operation. Default: `x402-buyer`.  |
 | `--json`             | Emit `{ receipts, unassigned }` as JSON instead of a terminal summary.  |
 
 Run-level events that carry no `context_id` (chain confirmations, capture
@@ -113,7 +112,7 @@ the same run always yields the same Receipt.
 
 `build` needs a `.trace/events/*.ndjson` run file. Today you can point it at any
 NDJSON file whose lines match the Event Contract (the bundled
-[`fixtures/x402-payment.ndjson`](./fixtures/x402-payment.ndjson) is a working
+[`fixtures/x402-buyer.ndjson`](./fixtures/x402-buyer.ndjson) is a working
 example). Automatic capture from a live x402 app via
 [`@usehaia/trace-x402`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/x402)
 writing into `.trace/events` is on the roadmap.
