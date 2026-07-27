@@ -218,6 +218,33 @@ export const HOOKS_BY_KIND: Record<
 export const KNOWN_INSTANCE_KINDS = new Set<string>(Object.keys(HOOKS_BY_KIND));
 
 /**
+ * Where a kind keeps the instance that owns the rest of its hooks.
+ *
+ * The two HTTP types are wrappers: `x402HTTPClient` exposes only
+ * `onPaymentRequired` and `x402HTTPResourceServer` only `onProtectedRequest`,
+ * while the payment-creation and verify/settle hooks live on the `x402Client` /
+ * `x402ResourceServer` each holds. Attaching to the wrapper alone would register
+ * one hook out of the kind's group and still look like a connected recorder.
+ *
+ * Each candidate property is checked for the inner kind's hooks before it is
+ * used, so this stays duck-typing: a wrapper that renames the field, or a
+ * monolithic fork that owns every hook itself, simply matches nothing here.
+ */
+export const INNER_BY_KIND: Partial<
+  Record<
+    TraceInstanceKind,
+    { props: readonly string[]; kind: TraceInstanceKind }
+  >
+> = {
+  // `server` is the documented getter; the private field it reads is the fallback.
+  httpResourceServer: {
+    props: ["server", "ResourceServer"],
+    kind: "resourceServer",
+  },
+  httpClient: { props: ["client"], kind: "client" },
+};
+
+/**
  * Infer an instance's kind from its method set, checked most-specific first.
  * The overlaps are deliberate: a resource server and a facilitator share the six
  * verify/settle hook names, so the server is identified by a method the

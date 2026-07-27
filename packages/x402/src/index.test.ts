@@ -3,6 +3,8 @@ import {
   type EventWriter,
   type TraceEvent,
 } from "@usehaia/trace-core";
+import { x402Client, x402HTTPClient } from "@x402/core/client";
+import { x402HTTPResourceServer, x402ResourceServer } from "@x402/core/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetTraceSession, trace } from "./index.js";
@@ -35,6 +37,13 @@ function memoryWriter() {
   };
   return { writer, events };
 }
+
+/** Read a real SDK instance's hook registry — the array it fires on each event. */
+const handlersOf = (
+  instance: object,
+  field: string,
+): ((context: unknown) => unknown)[] =>
+  (instance as Record<string, ((context: unknown) => unknown)[]>)[field] ?? [];
 
 /** The payment events of a run — the attestation line is not one of them. */
 const payments = (events: TraceEvent[]): TraceEvent[] =>
@@ -168,6 +177,18 @@ describe("trace() kind inference", () => {
 
     expect(attestation.kind).toBe("httpClient");
     expect(attestation.role).toBe("client");
+    // A wrapper with no reachable inner client observes one hook of five, and
+    // says so — `ok` alone would read as a connected recorder.
+    expect(attestation.ok).toBe(true);
+    expect(attestation.complete).toBe(false);
+    expect(attestation.missing.sort()).toEqual(
+      [
+        "onAfterPaymentCreation",
+        "onBeforePaymentCreation",
+        "onPaymentCreationFailure",
+        "onPaymentResponse",
+      ].sort(),
+    );
   });
 
   it("infers an MCP client (role: client) from onBeforePayment/onAfterPayment", () => {
@@ -207,6 +228,99 @@ describe("trace() kind inference", () => {
 
     expect(payments(server.events)[0]!.role).toBe("server");
     expect(payments(facilitator.events)[0]!.role).toBe("facilitator");
+  });
+});
+
+describe("trace() on the real x402 SDK wrappers", () => {
+  // The HTTP types are wrappers: each exposes one hook and keeps the instance
+  // that owns the rest. Attaching to the wrapper alone captured a single hook —
+  // no `x402.payment.submitted`, no settlement — while reporting `ok: true`.
+  it("covers every client hook through the wrapped x402Client", () => {
+    const client = new x402Client();
+    const http = new x402HTTPClient(client);
+    const { writer } = memoryWriter();
+
+    const attestation = trace(http, { writer });
+
+    expect(attestation.kind).toBe("httpClient");
+    expect(attestation.complete).toBe(true);
+    expect(attestation.missing).toEqual([]);
+    expect(attestation.attached.sort()).toEqual(
+      [
+        "onPaymentRequired",
+        "client.onBeforePaymentCreation",
+        "client.onAfterPaymentCreation",
+        "client.onPaymentCreationFailure",
+        "client.onPaymentResponse",
+      ].sort(),
+    );
+  });
+
+  it("covers every server hook through the wrapped x402ResourceServer", () => {
+    const http = new x402HTTPResourceServer(new x402ResourceServer(), {
+      "/report": { price: "$0.01", network: "eip155:84532" },
+    });
+    const { writer } = memoryWriter();
+
+    const attestation = trace(http, { writer });
+
+    expect(attestation.kind).toBe("httpResourceServer");
+    expect(attestation.complete).toBe(true);
+    expect(attestation.missing).toEqual([]);
+    // Reached through the documented `server` getter.
+    expect(attestation.attached).toContain("server.onAfterSettle");
+    expect(attestation.attached).toContain("onProtectedRequest");
+  });
+
+  it("records the wrapped instance's firings under the wrapper's role", () => {
+    const server = new x402ResourceServer();
+    const http = new x402HTTPResourceServer(server, {
+      "/report": { price: "$0.01", network: "eip155:84532" },
+    });
+    const { writer, events } = memoryWriter();
+    trace(http, { writer });
+
+    // Fire the real registry: the SDK invokes every registered hook in order.
+    for (const hook of handlersOf(server, "beforeVerifyHooks")) {
+      hook({
+        paymentPayload: paymentPayload("0x01"),
+        requirements: REQUIREMENTS,
+      });
+    }
+
+    expect(payments(events).map((event) => event.event_type)).toEqual([
+      "x402.verify.started",
+    ]);
+    expect(payments(events)[0]!.role).toBe("server");
+  });
+
+  it("does not register twice when the wrapped instance is traced on its own", () => {
+    const client = new x402Client();
+    const http = new x402HTTPClient(client);
+    const { writer } = memoryWriter();
+
+    trace(http, { writer });
+    const second = trace(client, { writer });
+
+    // The inner client is already covered, so a direct trace() is the same no-op
+    // a repeat call on the wrapper is — a second handler would double its events.
+    expect(second.attached).toEqual(
+      expect.arrayContaining(["client.onPaymentResponse"]),
+    );
+    expect(handlersOf(client, "paymentResponseHooks")).toHaveLength(1);
+  });
+
+  it("leaves a wrapper whose inner instance is unreachable honestly incomplete", () => {
+    // A fork that renames the field matches no candidate: capture attaches what
+    // it can and reports the rest as missing rather than looking connected.
+    const { instance } = fakeInstance(["onProtectedRequest"]);
+    const { writer } = memoryWriter();
+
+    const attestation = trace(instance, { writer });
+
+    expect(attestation.ok).toBe(true);
+    expect(attestation.complete).toBe(false);
+    expect(attestation.missing).toContain("onAfterSettle");
   });
 });
 
@@ -661,7 +775,9 @@ describe("trace()", () => {
 
     expect(attestation).toEqual({
       attached: [],
+      missing: [],
       ok: false,
+      complete: false,
       kind: "unknown",
       role: "unknown",
     });
@@ -706,9 +822,10 @@ describe("trace()", () => {
 
     const attestation = trace(callable, { writer });
 
-    expect(attestation).toEqual({
+    expect(attestation).toMatchObject({
       attached: ["onPaymentResponse"],
       ok: true,
+      complete: false,
       kind: "client",
       role: "client",
     });
@@ -723,7 +840,9 @@ describe("trace()", () => {
 
     expect(attestation).toEqual({
       attached: [],
+      missing: [],
       ok: false,
+      complete: false,
       kind: "unknown",
       role: "unknown",
     });
@@ -735,7 +854,14 @@ describe("trace()", () => {
   });
 
   it("returns an inert attestation for non-object input without throwing", () => {
-    const inert = { attached: [], ok: false, kind: "unknown", role: "unknown" };
+    const inert = {
+      attached: [],
+      missing: [],
+      ok: false,
+      complete: false,
+      kind: "unknown",
+      role: "unknown",
+    };
     expect(trace(null)).toEqual(inert);
     expect(trace(undefined)).toEqual(inert);
     expect(trace(42)).toEqual(inert);
@@ -792,7 +918,9 @@ describe("trace() with an unresolvable kind (graceful, never throws)", () => {
 
     expect(attestation).toEqual({
       attached: [],
+      missing: [],
       ok: false,
+      complete: false,
       kind: "unknown",
       role: "unknown",
     });
@@ -834,7 +962,9 @@ describe("trace() with an unresolvable kind (graceful, never throws)", () => {
 
     expect(attestation).toEqual({
       attached: [],
+      missing: [],
       ok: false,
+      complete: false,
       kind: "unknown",
       role: "unknown",
     });

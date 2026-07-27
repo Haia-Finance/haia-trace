@@ -3,7 +3,8 @@
  * Hooks reference: https://docs.x402.org/advanced-concepts/lifecycle-hooks
  *
  * `trace(instance)` resolves the instance's kind (client, resource server,
- * facilitator, …), duck-typing-attaches to that kind's lifecycle hooks, and turns
+ * facilitator, …), duck-typing-attaches to that kind's lifecycle hooks — including
+ * the ones on the instance a wrapper kind holds (`hooks.ts`) — and turns
  * every firing into an Event Contract `TraceEvent`: an allowlisted payload
  * (`events.ts` / `normalize.ts`), the observing `role` fixed by the kind, and the
  * `context_id` that groups one request's events (`correlate.ts`). Events are
@@ -27,6 +28,7 @@ import { HOOK_EVENTS, type HookEvent } from "./events.js";
 import {
   HOOKS_BY_KIND,
   type HookContextMap,
+  INNER_BY_KIND,
   KNOWN_INSTANCE_KINDS,
   ROLE_BY_KIND,
   resolveKind,
@@ -70,10 +72,22 @@ export interface TraceOptions {
  * wired up to this instance".
  */
 export interface TraceAttestation {
-  /** Hook methods that actually registered on the instance. */
+  /**
+   * Hook methods that actually registered, in registration order. A hook found
+   * on the instance the kind wraps is labelled by where it registered, e.g.
+   * `server.onBeforeVerify`.
+   */
   attached: string[];
-  /** `attached.length > 0` — false means capture did not connect. */
+  /**
+   * Hooks the resolved kind should expose that registered nowhere — on the
+   * instance or on the one it wraps. A non-empty list means the run will be
+   * missing those firings, which is not something a caller can see from `ok`.
+   */
+  missing: string[];
+  /** `attached.length > 0` — false means capture did not connect at all. */
   ok: boolean;
+  /** `ok` and nothing is missing — every hook of the kind is being observed. */
+  complete: boolean;
   /** The resolved (or overridden) instance kind. */
   kind: TraceKind;
   /** The observing role implied by `kind`. */
@@ -122,7 +136,46 @@ function isDisabled(): boolean {
 
 /** An attestation for a run that never wired up (disabled, or non-instance input). */
 function inertAttestation(): TraceAttestation {
-  return { attached: [], ok: false, kind: "unknown", role: "unknown" };
+  return {
+    attached: [],
+    missing: [],
+    ok: false,
+    complete: false,
+    kind: "unknown",
+    role: "unknown",
+  };
+}
+
+/**
+ * The instance a wrapper keeps its remaining hooks on, found by reading each
+ * candidate property and keeping the first that actually exposes one of those
+ * hooks. A getter is read inside try/catch: it is foreign code, and resolving a
+ * kind must not be able to throw out of `trace()`.
+ */
+function findInner(
+  target: Record<string, unknown>,
+  props: readonly string[],
+  hooks: readonly (keyof HookContextMap)[],
+): { host: Record<string, unknown>; prop: string } | undefined {
+  for (const prop of props) {
+    let candidate: unknown;
+    try {
+      candidate = target[prop];
+    } catch {
+      continue;
+    }
+    if (
+      candidate === null ||
+      (typeof candidate !== "object" && typeof candidate !== "function")
+    ) {
+      continue;
+    }
+    const host = candidate as Record<string, unknown>;
+    if (hooks.some((hook) => typeof host[hook] === "function")) {
+      return { host, prop };
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -208,6 +261,9 @@ export function trace(
     kind === "unknown" ? [] : HOOKS_BY_KIND[kind];
 
   const attached: string[] = [];
+  // Coverage is per hook name, not per location: a hook registered on the
+  // wrapped instance covers the kind's expectation just as one on the instance.
+  const covered = new Set<string>();
 
   // Generic over the hook name, so each mapper gets the context its hook is
   // actually handed. `role` is fixed for this instance.
@@ -230,9 +286,14 @@ export function trace(
       return undefined;
     };
 
-  for (const name of methods) {
-    const register = target[name];
-    if (typeof register === "function") {
+  const attachGroup = (
+    host: Record<string, unknown>,
+    hooks: readonly (keyof HookContextMap)[],
+    prefix: string,
+  ): void => {
+    for (const name of hooks) {
+      const register = host[name];
+      if (typeof register !== "function") continue;
       try {
         // The typed handler is registered through an `unknown`-context slot;
         // widening the parameter is safe because the SDK only ever calls it with
@@ -242,29 +303,60 @@ export function trace(
         // adding our handler runs alongside — never displaces — the user's hooks.
         (
           register as (handler: (context: unknown) => undefined) => unknown
-        ).call(target, handler);
-        attached.push(name);
+        ).call(host, handler);
+        attached.push(`${prefix}${name}`);
+        covered.add(name);
       } catch (err) {
         reportError(err);
       }
     }
+  };
+
+  attachGroup(target, methods, "");
+
+  // The HTTP kinds are wrappers around the instance that owns the rest of their
+  // hooks, so capture has to follow. Skipped when that instance was traced on its
+  // own, which would otherwise register a second handler and double its events.
+  const nested = kind === "unknown" ? undefined : INNER_BY_KIND[kind];
+  let innerHost: Record<string, unknown> | undefined;
+  if (nested !== undefined) {
+    const innerHooks = HOOKS_BY_KIND[nested.kind];
+    const found = findInner(target, nested.props, innerHooks);
+    if (found !== undefined && !traced.has(found.host)) {
+      innerHost = found.host;
+      attachGroup(found.host, innerHooks, `${found.prop}.`);
+    }
   }
 
-  // Record the attestation either way, so a failed attach is never mistaken for a
-  // quiet run that simply saw no payment activity. It belongs to no operation, so
-  // it carries no `context_id` and the assembler keeps it out of every receipt.
+  const missing = methods.filter((name) => !covered.has(name));
+  const ok = attached.length > 0;
+  const complete = ok && missing.length === 0;
+
+  // Record the attestation either way, so a failed — or partial — attach is never
+  // mistaken for a quiet run that simply saw no payment activity. It belongs to no
+  // operation, so it carries no `context_id` and the assembler keeps it out of
+  // every receipt.
   record(
-    attached.length > 0 ? "trace.attached" : "trace.attach_failed",
-    { kind, attached },
+    !ok
+      ? "trace.attach_failed"
+      : complete
+        ? "trace.attached"
+        : "trace.attach_partial",
+    { kind, attached, ...(missing.length > 0 ? { missing } : {}) },
     role,
   );
 
   const result: TraceAttestation = {
     attached,
-    ok: attached.length > 0,
+    missing,
+    ok,
+    complete,
     kind,
     role,
   };
   traced.set(target, result);
+  // Mark the wrapped instance too, so a later `trace()` on it is the same no-op a
+  // repeat call on the wrapper is.
+  if (innerHost !== undefined) traced.set(innerHost, result);
   return result;
 }
