@@ -21,22 +21,16 @@ import { createRunWriter } from "@usehaia/trace-core/node";
 import { trace } from "@usehaia/trace-x402";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 
-// The agent's x402 client — the only thing this process owns.
 const client = new x402Client();
 const agent = new x402HTTPClient(client);
 
 // ─── Haia Trace: the entire integration ──────────────────────────────────────
 
-// No path to agree on: the writer defaults to the run directory
-// `haia-trace build` reads from.
 const writer = createRunWriter();
-
 const capture = trace(agent, { writer });
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The attestation says what capture actually connected to — so "no events" can
-// never be confused with "the recorder never attached".
 console.log(
   `capture: ${capture.kind}  ${capture.attached.length} hooks  complete=${capture.complete}`,
 );
