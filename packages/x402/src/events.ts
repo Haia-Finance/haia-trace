@@ -12,9 +12,9 @@
  * | `onBeforePaymentCreation`  | `x402.payment.creating`                     |
  * | `onAfterPaymentCreation`   | `x402.payment.submitted`                    |
  * | `onPaymentCreationFailure` | `x402.payment.creation_failed`              |
- * | `onPaymentResponse`        | `x402.payment.responded`                    |
+ * | `onPaymentResponse`        | outcome — see `paymentOutcome`              |
  * | `onBeforePayment` (MCP)    | `x402.payment.requested`                    |
- * | `onAfterPayment` (MCP)     | `x402.payment.responded`                    |
+ * | `onAfterPayment` (MCP)     | outcome — see `paymentOutcome`              |
  * | `onProtectedRequest`       | `x402.request.protected`                    |
  * | `onBeforeVerify`           | `x402.verify.started`                       |
  * | `onAfterVerify`            | `x402.verify.ok` / `x402.verify.failed`     |
@@ -24,11 +24,17 @@
  * | `onSettleFailure`          | `x402.settle.failed`                        |
  * | `onVerifiedPaymentCanceled`| `x402.payment.canceled`                     |
  *
- * The `onAfter*` hooks fire on both outcomes — the SDK reserves `onVerifyFailure`
- * / `onSettleFailure` for a *thrown* fault, while a clean "not valid" or
- * "settlement rejected" arrives as a result on the after-hook. So the after-hooks
- * pick their event type from the result, and a rejection is reported as a failure
- * from either path rather than only from the throwing one.
+ * No hook has a fixed event type when the SDK hands it an outcome. The
+ * `onAfter*` hooks fire on success and rejection alike — the SDK reserves
+ * `onVerifyFailure` / `onSettleFailure` for a *thrown* fault, while a clean "not
+ * valid" or "settlement rejected" arrives as a result — and the client's
+ * response hook fires for every ending a paid request can have. Each of those
+ * reads the outcome off the context rather than assuming the happy path, so a
+ * failed payment is never recorded under a type that a template reads as proof
+ * the payment went through.
+ *
+ * Every failure type produced here is listed in the shipped template's
+ * `exceptions`, so a fault surfaces on the receipt instead of passing silently.
  *
  * `role` is not decided here: it is fixed by the instance's kind, since the
  * server and the facilitator share these hook names.
@@ -69,14 +75,30 @@ function paymentAttemptKey(
   const authorization = signed.authorization as
     | Record<string, unknown>
     | undefined;
-  const attempt =
-    authorization?.nonce ?? signed.nonce ?? signed.signature;
+  const attempt = authorization?.nonce ?? signed.nonce ?? signed.signature;
   return typeof attempt === "string" ? `payment:${attempt}` : undefined;
 }
 
-/** The stand-in key for the hooks that fire before a payment payload exists. */
-function resourceKey(url: string | undefined): string | undefined {
-  return url === undefined ? undefined : `resource:${url}`;
+/**
+ * The outcome the client observed, read off the discriminant `@x402/core`
+ * documents on `PaymentResponseContext`: a settlement (successful or not), the
+ * server's fresh 402 when verification failed, or a transport/parse error.
+ *
+ * Only a settlement that actually succeeded may report `x402.payment.responded` —
+ * that event is the client-side witness a template reads as "the payment
+ * settled", so reporting it for a failed payment would put a settlement a
+ * receipt cannot back into that receipt. Anything unclassifiable is reported as
+ * a failure rather than a success, because an over-reported fault is visible
+ * while an over-reported settlement is a lie.
+ */
+function paymentOutcome(
+  settle: { readonly success: boolean } | undefined | null,
+  declined: boolean,
+): EventType {
+  if (settle !== undefined && settle !== null) {
+    return settle.success ? "x402.payment.responded" : "x402.settle.failed";
+  }
+  return declined ? "x402.verify.failed" : "x402.payment.failed";
 }
 
 /**
@@ -120,10 +142,7 @@ export const HOOK_EVENTS: HookEventMappers = {
         ...normalizePaymentRequired(paymentRequired),
         tool_name: toolName,
       }),
-      coarse:
-        toolName !== undefined
-          ? `tool:${toolName}`
-          : resourceKey(paymentRequired.resource.url),
+      anchor: paymentRequired,
     };
   },
 
@@ -134,7 +153,7 @@ export const HOOK_EVENTS: HookEventMappers = {
       resource: normalizeResource(paymentRequired.resource),
       requirements: normalizeRequirements(selectedRequirements),
     }),
-    coarse: resourceKey(paymentRequired.resource.url),
+    anchor: paymentRequired,
   }),
 
   onAfterPaymentCreation: ({ paymentRequired, paymentPayload }) => ({
@@ -145,7 +164,7 @@ export const HOOK_EVENTS: HookEventMappers = {
       requirements: normalizeRequirements(paymentPayload.accepted),
     }),
     unique: paymentAttemptKey(paymentPayload),
-    coarse: resourceKey(paymentRequired.resource.url),
+    anchor: paymentRequired,
   }),
 
   onPaymentCreationFailure: ({
@@ -160,7 +179,7 @@ export const HOOK_EVENTS: HookEventMappers = {
       requirements: normalizeRequirements(selectedRequirements),
       error: normalizeError(error),
     }),
-    coarse: resourceKey(paymentRequired.resource.url),
+    anchor: paymentRequired,
   }),
 
   // The client's view of the whole outcome: a settlement, the server's 402
@@ -172,7 +191,7 @@ export const HOOK_EVENTS: HookEventMappers = {
     paymentRequired,
     error,
   }) => ({
-    event_type: "x402.payment.responded",
+    event_type: paymentOutcome(settleResponse, paymentRequired !== undefined),
     payload: compact({
       x402_version: paymentPayload.x402Version,
       resource: normalizeResource(paymentPayload.resource),
@@ -182,7 +201,6 @@ export const HOOK_EVENTS: HookEventMappers = {
       error: normalizeError(error),
     }),
     unique: paymentAttemptKey(paymentPayload),
-    coarse: resourceKey(paymentPayload.resource?.url),
   }),
 
   onBeforePayment: ({ toolName, paymentRequired }) => ({
@@ -191,11 +209,13 @@ export const HOOK_EVENTS: HookEventMappers = {
       ...normalizePaymentRequired(paymentRequired),
       tool_name: toolName,
     }),
-    coarse: `tool:${toolName}`,
+    anchor: paymentRequired,
   }),
 
+  // The MCP client hands a `settleResponse` of `null` when the paid call came
+  // back without a settlement, so the same outcome rule applies here.
   onAfterPayment: ({ toolName, paymentPayload, settleResponse }) => ({
-    event_type: "x402.payment.responded",
+    event_type: paymentOutcome(settleResponse, false),
     payload: compact({
       x402_version: paymentPayload.x402Version,
       resource: normalizeResource(paymentPayload.resource),
@@ -204,7 +224,6 @@ export const HOOK_EVENTS: HookEventMappers = {
       tool_name: toolName,
     }),
     unique: paymentAttemptKey(paymentPayload),
-    coarse: `tool:${toolName}`,
   }),
 
   // The request gate. An unpaid request carries no payment header, so it yields

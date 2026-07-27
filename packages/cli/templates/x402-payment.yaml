@@ -29,8 +29,12 @@ stages:
     required: false
     match:
       - event: file.order.recorded
-# Events that mark a stage attention_required instead of closing it.
+# Events that mark a stage attention_required instead of closing it. Every
+# failure the x402 adapter can record is listed, so no observed fault passes
+# silently — an unlisted failure type would leave the receipt looking clean.
 exceptions:
   - x402.verify.failed
   - x402.settle.failed
   - x402.payment.creation_failed
+  - x402.payment.failed              # paid request ended with no settlement
+  - x402.payment.canceled            # verified, then rolled back — the paid work failed

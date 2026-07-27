@@ -79,11 +79,16 @@ const RESOURCE = {
   serviceName: "example",
   iconUrl: "https://example.com/icon.png",
 };
-const PAYMENT_REQUIRED = {
+/**
+ * One 402 offer. A factory, not a constant: the SDK decodes a fresh object per
+ * 402 response and threads that one object through the pre-payment hooks, and
+ * the adapter groups those hooks by its identity.
+ */
+const paymentRequired = () => ({
   x402Version: 2,
   resource: RESOURCE,
   accepts: [REQUIREMENTS],
-};
+});
 /** A signed payload — `payload` holds exactly the material that must never be recorded. */
 const paymentPayload = (nonce: string) => ({
   x402Version: 2,
@@ -326,6 +331,83 @@ describe("trace() event recording", () => {
     });
   });
 
+  it("reports the client's response by its outcome, not as a settlement", () => {
+    // `x402.payment.responded` is the client-side witness a template reads as
+    // "the payment settled", so only a successful settlement may carry it.
+    const { instance, handlers } = fakeInstance(CLIENT_HOOKS);
+    const { writer, events } = memoryWriter();
+    trace(instance, { writer });
+
+    const base = {
+      paymentPayload: paymentPayload("0x01"),
+      requirements: REQUIREMENTS,
+    };
+    const settle = (success: boolean) => ({
+      success,
+      transaction: success ? "0xtx" : "",
+      network: "base-sepolia",
+    });
+
+    handlers.get("onPaymentResponse")!({
+      ...base,
+      settleResponse: settle(true),
+    });
+    handlers.get("onPaymentResponse")!({
+      ...base,
+      settleResponse: settle(false),
+    });
+    // Verification failed: the server answered with a fresh 402, no settlement.
+    handlers.get("onPaymentResponse")!({
+      ...base,
+      paymentRequired: paymentRequired(),
+    });
+    // Transport or parse error: no settlement, no 402.
+    handlers.get("onPaymentResponse")!({
+      ...base,
+      error: new Error("socket hung up"),
+    });
+    // Nothing the SDK's discriminant recognizes — never reported as settled.
+    handlers.get("onPaymentResponse")!({ ...base });
+
+    expect(payments(events).map((event) => event.event_type)).toEqual([
+      "x402.payment.responded",
+      "x402.settle.failed",
+      "x402.verify.failed",
+      "x402.payment.failed",
+      "x402.payment.failed",
+    ]);
+  });
+
+  it("reports an MCP paid call with no settlement as a failure", () => {
+    const { instance, handlers } = fakeInstance([
+      "onPaymentRequired",
+      "onBeforePayment",
+      "onAfterPayment",
+    ]);
+    const { writer, events } = memoryWriter();
+    trace(instance, { writer });
+
+    const base = {
+      toolName: "get_report",
+      paymentPayload: paymentPayload("0x01"),
+    };
+    handlers.get("onAfterPayment")!({
+      ...base,
+      settleResponse: {
+        success: true,
+        transaction: "0xtx",
+        network: "base-sepolia",
+      },
+    });
+    // The MCP client passes null when the paid call came back unsettled.
+    handlers.get("onAfterPayment")!({ ...base, settleResponse: null });
+
+    expect(payments(events).map((event) => event.event_type)).toEqual([
+      "x402.payment.responded",
+      "x402.payment.failed",
+    ]);
+  });
+
   it("records the attestation without a context_id, so it belongs to no receipt", () => {
     const { instance } = fakeInstance(FACILITATOR_HOOKS);
     const { writer, events } = memoryWriter();
@@ -349,13 +431,14 @@ describe("trace() operation grouping", () => {
     trace(instance, { writer });
 
     const payload = paymentPayload("0x01");
-    handlers.get("onPaymentRequired")!({ paymentRequired: PAYMENT_REQUIRED });
+    const offer = paymentRequired();
+    handlers.get("onPaymentRequired")!({ paymentRequired: offer });
     handlers.get("onBeforePaymentCreation")!({
-      paymentRequired: PAYMENT_REQUIRED,
+      paymentRequired: offer,
       selectedRequirements: REQUIREMENTS,
     });
     handlers.get("onAfterPaymentCreation")!({
-      paymentRequired: PAYMENT_REQUIRED,
+      paymentRequired: offer,
       selectedRequirements: REQUIREMENTS,
       paymentPayload: payload,
     });
@@ -380,25 +463,51 @@ describe("trace() operation grouping", () => {
     );
   });
 
-  it("keeps two payments for the same resource in separate operations", () => {
+  it("keeps two INTERLEAVED payments for the same resource fully apart", () => {
+    // Two concurrent purchases of the same resource: byte-identical offers, so
+    // only the identity of each 402 object separates them. Interleaved on
+    // purpose — the pre-payment hooks of both are in flight at once.
     const { instance, handlers } = fakeInstance(CLIENT_HOOKS);
     const { writer, events } = memoryWriter();
     trace(instance, { writer });
 
-    for (const nonce of ["0x01", "0x02"]) {
-      handlers.get("onPaymentRequired")!({ paymentRequired: PAYMENT_REQUIRED });
+    const a = { offer: paymentRequired(), payload: paymentPayload("0x0a") };
+    const b = { offer: paymentRequired(), payload: paymentPayload("0x0b") };
+
+    for (const payment of [a, b]) {
+      handlers.get("onPaymentRequired")!({ paymentRequired: payment.offer });
+    }
+    for (const payment of [a, b]) {
       handlers.get("onAfterPaymentCreation")!({
-        paymentRequired: PAYMENT_REQUIRED,
+        paymentRequired: payment.offer,
         selectedRequirements: REQUIREMENTS,
-        paymentPayload: paymentPayload(nonce),
+        paymentPayload: payment.payload,
+      });
+    }
+    for (const payment of [a, b]) {
+      handlers.get("onPaymentResponse")!({
+        paymentPayload: payment.payload,
+        requirements: REQUIREMENTS,
+        settleResponse: {
+          success: true,
+          transaction: "0xtx",
+          network: "base-sepolia",
+        },
       });
     }
 
-    expect(payments(events).map((event) => event.context_id)).toEqual([
-      "op-1",
-      "op-1",
-      "op-2",
-      "op-2",
+    // Each payment's three events land in its own operation — no event of one
+    // payment is attributed to the other, and neither operation loses one.
+    const byOperation = new Map<string | undefined, number>();
+    for (const event of payments(events)) {
+      byOperation.set(
+        event.context_id,
+        (byOperation.get(event.context_id) ?? 0) + 1,
+      );
+    }
+    expect([...byOperation.entries()].sort()).toEqual([
+      ["op-1", 3],
+      ["op-2", 3],
     ]);
   });
 
@@ -413,7 +522,7 @@ describe("trace() operation grouping", () => {
 
     const payload = paymentPayload("0x01");
     clientHandlers.get("onAfterPaymentCreation")!({
-      paymentRequired: PAYMENT_REQUIRED,
+      paymentRequired: paymentRequired(),
       selectedRequirements: REQUIREMENTS,
       paymentPayload: payload,
     });
