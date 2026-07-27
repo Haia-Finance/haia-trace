@@ -81,6 +81,16 @@ const REQUIREMENTS = {
   maxTimeoutSeconds: 60,
   extra: { name: "USD Coin", version: "2" },
 };
+const ROUTES = {
+  "/report": {
+    accepts: {
+      scheme: "exact",
+      payTo: "0xseller",
+      price: "$0.01",
+      network: "eip155:84532",
+    },
+  },
+} as const;
 const RESOURCE = {
   url: "https://api.example.com/report",
   description: "Quarterly report",
@@ -257,9 +267,7 @@ describe("trace() on the real x402 SDK wrappers", () => {
   });
 
   it("covers every server hook through the wrapped x402ResourceServer", () => {
-    const http = new x402HTTPResourceServer(new x402ResourceServer(), {
-      "/report": { price: "$0.01", network: "eip155:84532" },
-    });
+    const http = new x402HTTPResourceServer(new x402ResourceServer(), ROUTES);
     const { writer } = memoryWriter();
 
     const attestation = trace(http, { writer });
@@ -274,9 +282,7 @@ describe("trace() on the real x402 SDK wrappers", () => {
 
   it("records the wrapped instance's firings under the wrapper's role", () => {
     const server = new x402ResourceServer();
-    const http = new x402HTTPResourceServer(server, {
-      "/report": { price: "$0.01", network: "eip155:84532" },
-    });
+    const http = new x402HTTPResourceServer(server, ROUTES);
     const { writer, events } = memoryWriter();
     trace(http, { writer });
 
