@@ -1,6 +1,6 @@
 {
   "name": "@usehaia/trace-cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Haia Trace command-line interface and renderers.",
   "keywords": [
     "x402",

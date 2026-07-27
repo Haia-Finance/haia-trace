@@ -37,7 +37,7 @@ describe("Template Contract", () => {
           { event: "http.response.delivered" },
         ],
         missing_explanation:
-          "settlement confirmed, but the paid action's result was not observed",
+          "the paid action's result was not observed",
       },
       {
         id: "business_record",

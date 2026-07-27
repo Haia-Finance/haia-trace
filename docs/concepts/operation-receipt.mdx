@@ -30,7 +30,7 @@ on-chain confirmation:
   match:
     - event: x402.paid_action.executed
     - event: http.response.delivered
-  missing_explanation: "settlement confirmed, but the paid action's result was not observed"
+  missing_explanation: "the paid action's result was not observed"
 ```
 
 Templates are **data, not code** — a new scenario is a new template file, never a
@@ -81,7 +81,7 @@ Every surface — terminal, `receipt.json`, markdown — renders the same object
   "missing": [
     { "stage": "paid_action",
       "expected_events": ["x402.paid_action.executed", "http.response.delivered"],
-      "why": "settlement confirmed, but the paid action's result was not observed" }
+      "why": "the paid action's result was not observed" }
   ],
   "exceptions": [],
   "events": [ /* every discovered event, for provenance */ ]
