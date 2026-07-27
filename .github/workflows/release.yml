@@ -8,9 +8,10 @@ on:
 
 permissions:
   contents: read
-  # Provenance attestations are signed with a short-lived OIDC token that GitHub
-  # mints per run; without write access to that token the signing request fails,
-  # taking the publish with it.
+  # Releases authenticate by trusted publishing: instead of a stored npm token,
+  # the job exchanges a short-lived OIDC token that GitHub mints per run. npm
+  # accepts it only from the repo and workflow file registered as each package's
+  # trusted publisher, so a leaked credential is not a thing that can exist here.
   id-token: write
 
 concurrency:
@@ -21,16 +22,21 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
-          cache: pnpm
-          # Writes an .npmrc wired to NODE_AUTH_TOKEN, so pnpm publish authenticates.
+          # Trusted publishing needs Node >= 22.14 and npm >= 11.5.1, both of
+          # which Node 24 ships. `pnpm publish` shells out to that npm binary to
+          # do the upload, so it inherits OIDC support without implementing it.
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          # No dependency cache on a release build. What ships to the registry
+          # should come from a clean resolve rather than restored state, so the
+          # tarball depends on the lockfile alone.
+          package-manager-cache: false
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
@@ -51,11 +57,10 @@ jobs:
       # the version a plain `npm install` gets. To release: bump the packages'
       # version, commit, and push the matching tag.
       #
-      # --provenance attaches a signed attestation binding each tarball to this
-      # repo, commit, and workflow run, so anyone can verify what the published
-      # code was built from rather than trusting the publisher:
-      # https://docs.npmjs.com/generating-provenance-statements
+      # No token and no --provenance flag: trusted publishing supplies the
+      # credential and generates the signed provenance attestation on its own,
+      # binding each tarball to this repo, commit, and workflow run so anyone can
+      # verify what the published code was built from:
+      # https://docs.npmjs.com/trusted-publishers
       - name: Publish to `latest`
-        run: pnpm -r publish --provenance --tag latest --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm -r publish --tag latest --no-git-checks
