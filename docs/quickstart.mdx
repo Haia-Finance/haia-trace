@@ -8,7 +8,7 @@ description: "See your first Operation Receipt in under a minute."
 No install needed — replay a bundled fixture run through the real assembler:
 
 ```sh
-npx @usehaia/trace-cli sample x402-payment
+npx @usehaia/trace-cli sample x402-buyer
 ```
 
 `sample` runs the same deterministic `(events, template) → receipt` core a live
@@ -18,23 +18,23 @@ the whole model — a **FULL** receipt, a **PARTIAL** one with an explained gap,
 and one carrying an observed fault:
 
 ```text
-🧾 x402-payment · op-2 · PARTIAL
+🧾 x402-buyer · op-2 · PARTIAL
 
-  ✔ intent           confirmed
-  ✔ payment          confirmed
-  ✔ settlement       confirmed
-  ✖ paid_action      not confirmed  required
-  ✖ business_record  not confirmed  optional
+  ✔ challenge   confirmed
+  ✔ payment     confirmed
+  ✖ settlement  not confirmed  required
 
   missing
-    paid_action — the paid action's result was not observed
+    settlement — the payment was submitted, but no settlement response was observed
 
   operation not complete
 ```
 
-That gap — `settlement ✓` but `paid_action ✗` — is the product: a bank statement,
-a block explorer, and a server log each say "payment went through"; only the
-Receipt says "…but you never got what you paid for."
+That gap — `payment ✓` but `settlement ✗` — is the product: your agent signed and
+sent the money, and nothing on your side witnessed what became of it. A log
+viewer shows a request with no answer; only the Receipt states the absence and
+what exactly is missing. (`x402-seller` shows the same model from the resource
+server's side.)
 
 ## Install the CLI
 

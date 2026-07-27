@@ -8,60 +8,57 @@ haia-trace sample [template]
 ```
 
 `sample` replays a bundled fixture run through the *real* assembler, so you see a
-Receipt with no setup. It defaults to the `x402-payment` template. The template
+Receipt with no setup. It defaults to the `x402-buyer` template (the paying
+agent's view); `x402-seller` shows the resource server's view. The template
 name selects both the template and its fixture set, so a new scenario is data — a
 template file plus a fixture file — never a code change.
 
 ## Example
 
 ```sh
-haia-trace sample x402-payment
+haia-trace sample x402-buyer
 ```
 
-The `x402-payment` fixture contains three operations, showing the whole model at
-once:
+Each fixture contains three operations, showing the whole model at once:
 
 ```text
-🧾 x402-payment · op-1 · FULL
+🧾 x402-buyer · op-1 · FULL
 
-  ✔ intent           confirmed
-  ✔ payment          confirmed
-  ✔ settlement       confirmed
-  ✔ paid_action      confirmed
-  ✔ business_record  confirmed
+  ✔ challenge   confirmed
+  ✔ payment     confirmed
+  ✔ settlement  confirmed
 
   operation completed
   ────────────────────────────
-🧾 x402-payment · op-2 · PARTIAL
+🧾 x402-buyer · op-2 · PARTIAL
 
-  ✔ intent           confirmed
-  ✔ payment          confirmed
-  ✔ settlement       confirmed
-  ✖ paid_action      not confirmed  required
-  ✖ business_record  not confirmed  optional
+  ✔ challenge   confirmed
+  ✔ payment     confirmed
+  ✖ settlement  not confirmed  required
 
   missing
-    paid_action — the paid action's result was not observed
+    settlement — the payment was submitted, but no settlement response was observed
 
   operation not complete
   ────────────────────────────
-🧾 x402-payment · op-3 · PARTIAL
+🧾 x402-buyer · op-3 · PARTIAL
 
-  ✔ intent           confirmed
-  ✔ payment          confirmed
-  ✖ settlement       not confirmed  required
-  ✖ paid_action      not confirmed  required
-  ✖ business_record  not confirmed  optional
+  ✔ challenge   confirmed
+  ✔ payment     confirmed
+  ✖ settlement  not confirmed  required
 
   exceptions
     ⚠ x402.settle.failed
 
   missing
-    settlement — expected one of: x402.payment.responded, x402.settle.ok, chain.transfer.confirmed
-    paid_action — the paid action's result was not observed
+    settlement — the payment was submitted, but no settlement response was observed
 
   operation not complete
 ```
+
+Note the difference between op-2 and op-3: the same unclosed milestone, but op-2
+is *unknown* (nothing was observed) while op-3 carries an *observed fault* — the
+server reported the settlement failed.
 
 <Tip>
   `sample` and [`build`](/cli/build) run the identical assembler — the only
