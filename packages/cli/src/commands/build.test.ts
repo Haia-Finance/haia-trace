@@ -1,4 +1,5 @@
 import {
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -102,6 +103,50 @@ describe("haia-trace build", () => {
     expect(readFileSync(join(dir, "a", "op-1.json"), "utf8")).toBe(
       readFileSync(join(dir, "b", "op-1.json"), "utf8"),
     );
+  });
+
+  it("builds against a project's own template, not just the built-in set", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const templatesDir = join(dir, "templates");
+    mkdirSync(templatesDir);
+    // A shape no shipped template has: one stage, closed by the settle failure
+    // that makes op-2 partial under x402-buyer.
+    writeFileSync(
+      join(templatesDir, "my-op.yaml"),
+      "template: my-op\nversion: 1\nstages:\n  - id: outcome\n    required: true\n    match:\n      - event: x402.settle.failed\n",
+    );
+
+    const { receipts } = runBuild(file, {
+      template: "my-op",
+      templatesDir,
+      receiptsDir,
+    });
+
+    expect(receipts.map((r) => r.operation.template)).toEqual([
+      "my-op",
+      "my-op",
+    ]);
+    expect(receipts[1]?.stages.map((s) => s.id)).toEqual(["outcome"]);
+    expect(receipts[1]?.completeness).toBe("full");
+  });
+
+  it("reports which template file the verdicts were assembled against", () => {
+    // The receipt records the template's declared name but not the file that
+    // declared it, so two machines can produce different verdicts from the same
+    // run and the same command. The path is the only thing that tells them apart.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const templatesDir = join(dir, "templates");
+    mkdirSync(templatesDir);
+    const path = join(templatesDir, "x402-buyer.yaml");
+    writeFileSync(
+      path,
+      "template: x402-buyer\nversion: 1\nstages:\n  - id: outcome\n    required: true\n    match:\n      - event: x402.settle.failed\n",
+    );
+
+    const result = runBuild(file, { templatesDir, receiptsDir });
+
+    expect(result.template).toMatchObject({ path, origin: "local" });
+    expect(log.mock.calls.map((c) => c.join(" ")).join("\n")).toContain(path);
   });
 
   it("throws when there is no run to build", () => {

@@ -31,8 +31,8 @@ Both expose the `haia-trace` command. Requires **Node ≥ 20**.
   <Card title="build" icon="hammer" href="/cli/build">
     Assemble one receipt per operation from a run's events.
   </Card>
-  <Card title="templates" icon="list" href="/cli/templates">
-    List the operation templates shipped with the CLI.
+  <Card title="template" icon="list" href="/cli/template">
+    List the templates you can build against, and scaffold your own.
   </Card>
 </CardGroup>
 
@@ -52,8 +52,18 @@ database, no network:
 .trace/
   events/<run_id>.ndjson      # recorded events; one run = one file (the input)
   receipts/<context_id>.json  # assembled receipts, one per operation (the output)
+  templates/<name>.yaml       # your own operation templates (yours to edit)
 ```
 
 A run file is newline-delimited JSON — one event per line, append-only. It's the
 source of truth; a Receipt is a derived, reproducible artifact, so re-building
 the same run always yields the same Receipt.
+
+`events/` and `receipts/` are recorded and derived, so they belong in
+`.gitignore`. `templates/` is source you author — ignore the two subdirectories
+rather than `.trace/` as a whole:
+
+```gitignore
+.trace/events/
+.trace/receipts/
+```

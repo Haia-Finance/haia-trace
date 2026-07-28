@@ -29,7 +29,11 @@ import type { Command } from "commander";
 
 import { renderReceipt } from "../render/receipt.js";
 import { RECEIPTS_DIR, writeReceipt } from "../store.js";
-import { loadTemplate } from "../templates.js";
+import {
+  resolveTemplateSource,
+  type TemplateSource,
+  USER_TEMPLATES_DIR,
+} from "../templates.js";
 import { color, spinner } from "../ui.js";
 import type { TraceCommand } from "./types.js";
 
@@ -37,8 +41,14 @@ import type { TraceCommand } from "./types.js";
 const DEFAULT_TEMPLATE = "x402-buyer";
 
 export interface BuildOptions {
-  /** Template id to apply to every operation in the run. Defaults to `x402-buyer`. */
+  /**
+   * Template to apply to every operation in the run — a name resolved against the
+   * project's templates and then the built-in set, or a path to a template file.
+   * Defaults to `x402-buyer`.
+   */
   template?: string;
+  /** Directory of the project's own templates. Defaults to `.trace/templates`. */
+  templatesDir?: string;
   /** Emit machine-readable JSON instead of a terminal summary. */
   json?: boolean;
   /** Run-events directory to resolve the latest run from when no file is given. */
@@ -51,6 +61,13 @@ export interface BuildOptions {
 export interface BuildResult {
   receipts: Receipt[];
   unassigned: TraceEvent[];
+  /**
+   * The template the verdicts were assembled against, and the file it came from. A
+   * receipt records the template's declared name but not which file declared it, so
+   * two runs of the same command can differ purely because one machine has a
+   * `.trace/templates/` override. Reporting the path makes that visible.
+   */
+  template: TemplateSource;
 }
 
 /** Assemble the run's receipts, write them, and report. Separated from registration so it stays testable. */
@@ -59,6 +76,7 @@ export function runBuild(
   options: BuildOptions = {},
 ): BuildResult {
   const templateName = options.template ?? DEFAULT_TEMPLATE;
+  const templatesDir = options.templatesDir ?? USER_TEMPLATES_DIR;
   const json = options.json ?? false;
   const eventsDir = options.eventsDir ?? DEFAULT_RUN_DIR;
   const receiptsDir = options.receiptsDir ?? RECEIPTS_DIR;
@@ -72,7 +90,10 @@ export function runBuild(
     );
   }
   const events = reader.read();
-  const template = loadTemplate(templateName);
+  const { template, ...source } = resolveTemplateSource(
+    templateName,
+    templatesDir,
+  );
 
   // Only spin on an interactive terminal: a spinner in piped or machine output is
   // noise, and JSON output must stay pure.
@@ -108,12 +129,16 @@ export function runBuild(
 
   if (json) {
     process.stdout.write(
-      `${JSON.stringify({ receipts, unassigned }, null, 2)}\n`,
+      `${JSON.stringify({ receipts, unassigned, template: source }, null, 2)}\n`,
     );
-    return { receipts, unassigned };
+    return { receipts, unassigned, template: source };
   }
 
+  // Which file the template came from, always — a verdict read without knowing
+  // which shape produced it isn't reproducible by whoever reads it next.
+  console.log(color.dim(`\n  template: ${source.path}`));
   console.log("");
+
   receipts.forEach((receipt, index) => {
     if (index > 0) console.log(color.dim("  ────────────────────────────"));
     console.log(renderReceipt(receipt));
@@ -131,7 +156,7 @@ export function runBuild(
     );
   }
 
-  return { receipts, unassigned };
+  return { receipts, unassigned, template: source };
 }
 
 export const buildCommand: TraceCommand = {
@@ -143,9 +168,14 @@ export const buildCommand: TraceCommand = {
         "ndjson run file to build from (default: the latest in .trace/events)",
       )
       .option(
-        "--template <id>",
+        "--template <name|path>",
         "operation template to apply to every operation",
         DEFAULT_TEMPLATE,
+      )
+      .option(
+        "--templates-dir <path>",
+        "directory holding the project's own templates",
+        USER_TEMPLATES_DIR,
       )
       .option(
         "--json",
@@ -155,9 +185,13 @@ export const buildCommand: TraceCommand = {
       .action(
         (
           file: string | undefined,
-          opts: { template: string; json?: boolean },
+          opts: { template: string; templatesDir: string; json?: boolean },
         ) => {
-          runBuild(file, { template: opts.template, json: opts.json });
+          runBuild(file, {
+            template: opts.template,
+            templatesDir: opts.templatesDir,
+            json: opts.json,
+          });
         },
       );
   },

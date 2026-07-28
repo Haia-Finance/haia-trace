@@ -1,12 +1,16 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runSample, sampleCommand } from "./sample.js";
 
 /** Run the sample and capture everything it printed. */
-function sampleOutput(template?: string): string {
+function sampleOutput(template?: string, templatesDir?: string): string {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
-  runSample(template);
+  runSample(template, { templatesDir });
   return log.mock.calls.map((args) => args.join(" ")).join("\n");
 }
 
@@ -44,5 +48,30 @@ describe("haia-trace sample", () => {
     const program = new Command();
     sampleCommand.register(program);
     expect(program.commands.map((c) => c.name())).toContain("sample");
+  });
+
+  describe("with a project template", () => {
+    let dir: string;
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("resolves a name the same way `build` does, and says which file won", () => {
+      // A name must not mean one file under `build` and another under `sample`:
+      // editing a shadowing template and seeing no change here would read as the
+      // edit having no effect, while `build` was already using it.
+      dir = mkdtempSync(join(tmpdir(), "trace-sample-"));
+      writeFileSync(
+        join(dir, "x402-buyer.yaml"),
+        "template: x402-buyer\nversion: 1\nstages:\n  - id: only\n    required: true\n    match:\n      - event: x402.payment.required\n",
+      );
+
+      const out = sampleOutput("x402-buyer", dir);
+      expect(out).toContain(join(dir, "x402-buyer.yaml"));
+      expect(out).toContain("only");
+      // The shipped template's stages are gone — this really is the local one.
+      expect(out).not.toContain("challenge");
+    });
   });
 });

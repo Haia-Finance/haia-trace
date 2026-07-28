@@ -19,16 +19,40 @@ through the assembler independently. Every assembled receipt is written to
 haia-trace build                          # build the latest run in .trace/events/
 haia-trace build ./run.ndjson             # build a specific run file
 haia-trace build --template x402-seller   # apply a specific template
+haia-trace build --template my-op         # apply one of your own
 haia-trace build --json                   # machine-readable output for agents
 ```
 
 ## Arguments and options
 
-| Argument / option  | Meaning                                                                 |
-| ------------------ | ----------------------------------------------------------------------- |
-| `[file]`           | NDJSON run file to build from. Default: the latest in `.trace/events/`.  |
-| `--template <id>`  | Operation template applied to every operation. Default: `x402-buyer`.  |
-| `--json`           | Emit `{ receipts, unassigned }` as JSON instead of a terminal summary.  |
+| Argument / option         | Meaning                                                                 |
+| ------------------------- | ----------------------------------------------------------------------- |
+| `[file]`                  | NDJSON run file to build from. Default: the latest in `.trace/events/`.  |
+| `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.    |
+| `--templates-dir <path>`  | Where your own templates live. Default: `.trace/templates/`.             |
+| `--json`                  | Emit `{ receipts, unassigned, template }` as JSON instead of a terminal summary. |
+
+## How a template is resolved
+
+A `--template` **name** is looked up in `.trace/templates/` first and then in the
+templates shipped with the CLI, so a template written by
+[`haia-trace template new`](/cli/template) is found with no extra flags, and a
+local `x402-buyer.yaml` deliberately shadows the built-in one.
+
+Anything that isn't a bare name — `./ops/refund.yaml`, an absolute path — is read
+as a path to a template file instead.
+
+Because a receipt records the template's declared *name* and not the file that
+declared it, two machines can produce different verdicts from the same run and the
+same command — one has a `.trace/templates/` override, the other doesn't. `build`
+therefore always prints the file it loaded, and `--json` carries it as
+`template: { name, path, origin }` (`origin` is `local`, `builtin`, or `file`).
+
+<Warning>
+  A template that exists but doesn't parse always fails the build. It never falls
+  back to a built-in of the same name, because silently substituting a different
+  template would produce a verdict on a shape you didn't write.
+</Warning>
 
 Run-level events that carry no `context_id` (chain confirmations, capture
 attestations) belong to no single operation, so they're reported separately as

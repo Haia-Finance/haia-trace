@@ -8,4 +8,5 @@
 
 export type { TraceCommand } from "./commands/index.js";
 export { commands } from "./commands/index.js";
+export * from "./scaffold.js";
 export * from "./templates.js";

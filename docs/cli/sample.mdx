@@ -13,6 +13,12 @@ agent's view); `x402-seller` shows the resource server's view. The template
 name selects both the template and its fixture set, so a new scenario is data — a
 template file plus a fixture file — never a code change.
 
+The template is resolved exactly as [`build`](/cli/build) resolves it, so a name
+means the same file in both commands: editing `.trace/templates/x402-buyer.yaml`
+changes what you sample too, and `sample` prints the path when the template isn't
+the shipped one. Only the *events* are always built-in — a template with no bundled
+fixture set has nothing to replay and says so.
+
 ## Example
 
 ```sh

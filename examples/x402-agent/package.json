@@ -7,7 +7,7 @@
   "scripts": {
     "demo": "node buyer.mjs && haia-trace build",
     "policy": "node policy.mjs",
-    "clean": "rm -rf .trace"
+    "clean": "rm -rf .trace/events .trace/receipts"
   },
   "dependencies": {
     "@usehaia/trace-core": "workspace:*",

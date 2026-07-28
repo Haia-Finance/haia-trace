@@ -32,7 +32,7 @@
               "cli/overview",
               "cli/sample",
               "cli/build",
-              "cli/templates"
+              "cli/template"
             ]
           }
         ]

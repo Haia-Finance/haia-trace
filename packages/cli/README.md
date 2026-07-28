@@ -51,6 +51,10 @@ the `x402-buyer` template (the paying agent's view); `x402-seller` shows the
 resource server's view. The template name selects both the template and its
 fixture set.
 
+The template resolves exactly as `build` resolves it (`--templates-dir` included),
+so a name means the same file in both commands. Only the *events* are always
+built-in: a template with no bundled fixture set has nothing to replay.
+
 ### `haia-trace build [file] [options]`
 
 The core command. Read a run's events and produce **one Receipt per operation**.
@@ -63,14 +67,23 @@ through the assembler independently. Every assembled receipt is written to
 haia-trace build                       # build the latest run in .trace/events/
 haia-trace build ./run.ndjson          # build a specific run file
 haia-trace build --template x402-seller
+haia-trace build --template my-op      # your own, from .trace/templates/
 haia-trace build --json                # machine-readable output for agents
 ```
 
-| Argument / option    | Meaning                                                                 |
-| -------------------- | ----------------------------------------------------------------------- |
-| `[file]`             | NDJSON run file to build from. Default: the latest in `.trace/events/`.  |
-| `--template <id>`    | Operation template applied to every operation. Default: `x402-buyer`.  |
-| `--json`             | Emit `{ receipts, unassigned }` as JSON instead of a terminal summary.  |
+| Argument / option        | Meaning                                                                    |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `[file]`                 | NDJSON run file to build from. Default: the latest in `.trace/events/`.     |
+| `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.      |
+| `--templates-dir <path>` | Where your own templates live. Default: `.trace/templates/`.                |
+| `--json`                 | Emit `{ receipts, unassigned, template }` as JSON instead of a terminal summary. |
+
+A `--template` **name** is looked up in `.trace/templates/` first and then in the
+templates shipped with the CLI, so your own `my-op` is found with no extra flags
+and a local `x402-buyer.yaml` deliberately shadows the built-in one. Anything that
+isn't a bare name — `./ops/refund.yaml`, an absolute path — is read as a path to a
+template file. A template that exists but doesn't parse always fails the build; it
+never falls back to a built-in of the same name.
 
 Run-level events that carry no `context_id` (chain confirmations, capture
 attestations) belong to no single operation and are reported separately as
@@ -80,13 +93,35 @@ attestations) belong to no single operation and are reported separately as
 objects — the machine-readable basis an agent reads (`completeness`, `missing`)
 to decide whether to continue a chain of spending.
 
-### `haia-trace templates`
+### `haia-trace template list | new`
 
-List the operation templates shipped with the CLI.
+A template is the declarative shape of an operation — the milestones that have to
+be witnessed for it to count as complete. Two ship with the CLI (`x402-buyer`,
+`x402-seller`); any other operation needs one you write.
 
 ```sh
-haia-trace templates
+haia-trace template list          # everything `build --template` will accept
+haia-trace template new my-op     # scaffold .trace/templates/my-op.yaml
 ```
+
+`list` shows the built-in templates and your project's own, each labelled with the
+file `build` would actually load:
+
+```text
+📋 Operation templates
+
+  ✔ my-op        .trace/templates/my-op.yaml
+  ✔ x402-buyer   built-in
+  ✔ x402-seller  built-in
+
+3 templates available.
+```
+
+`new` writes a commented starter template into `.trace/templates/` — the same
+directory `build` searches first, so `haia-trace build --template my-op` picks it
+up as soon as you've edited the stages. It refuses to overwrite an existing file
+unless you pass `--force`, and both subcommands take `--templates-dir <path>` if
+your templates live somewhere else.
 
 ### Global flags
 
@@ -100,13 +135,23 @@ database, no network:
 
 ```text
 .trace/
-  events/<run_id>.ndjson    # recorded events; one run = one file (the input)
+  events/<run_id>.ndjson     # recorded events; one run = one file (the input)
   receipts/<context_id>.json # assembled receipts, one per operation (the output)
+  templates/<name>.yaml      # your own operation templates (yours to edit)
 ```
 
 A run file is newline-delimited JSON — one event per line, append-only. It's the
 source of truth; a Receipt is a derived, reproducible artifact, so re-building
 the same run always yields the same Receipt.
+
+`events/` and `receipts/` are derived and belong in `.gitignore`; `templates/` is
+source you write, so ignore the two subdirectories rather than `.trace/` as a
+whole:
+
+```gitignore
+.trace/events/
+.trace/receipts/
+```
 
 ## Producing a run file
 

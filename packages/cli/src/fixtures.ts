@@ -19,6 +19,8 @@ import { fileURLToPath } from "node:url";
 import type { TraceEvent } from "@usehaia/trace-core";
 import { createFileReader } from "@usehaia/trace-core/node";
 
+import { isErrno } from "./fs.js";
+
 const FIXTURE_EXT = ".ndjson";
 
 /** A fixture is addressed by the bare template slug — letters, digits, `-`, `_`. */
@@ -34,15 +36,6 @@ const FIXTURES_DIR = join(
   "..",
   "fixtures",
 );
-
-/** Whether an error is a Node filesystem error carrying the given `code`. */
-function isErrno(err: unknown, code: string): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as NodeJS.ErrnoException).code === code
-  );
-}
 
 /**
  * Load the sample events for a template. Throws a clear error if the template has

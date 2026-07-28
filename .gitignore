@@ -7,8 +7,16 @@ coverage/
 .env
 .env.*
 
-# Haia Trace local store (product artifact, never committed)
-.trace/
+# Haia Trace local store. A `.trace/` at the repo root is only ever scratch — this
+# repo builds the tool, it doesn't record operations with it — so the whole thing
+# goes, including anything left behind by exercising the CLI from here.
+/.trace/
+
+# Under examples/ (and anywhere else) only the derived halves go. `.trace/templates/`
+# is source a project authors and should commit, so it is deliberately kept. `**/`
+# because a pattern with an inner slash would otherwise anchor to the repo root.
+**/.trace/events/
+**/.trace/receipts/
 
 # Hackathon submission working files (video plan, slides) — temporary, not part of the product
 hackathon/

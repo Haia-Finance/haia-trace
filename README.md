@@ -89,8 +89,9 @@ Early and pre-1.0. What's wired today:
 
 - **`trace-core`** — the Event / Template / Receipt contracts and the
   deterministic assembler are complete.
-- **`trace-cli`** — `sample`, `build`, and `templates` all work. `build`
-  assembles receipts from a `.trace/events/*.ndjson` run file.
+- **`trace-cli`** — `sample`, `build`, and `template` all work. `build`
+  assembles receipts from a `.trace/events/*.ndjson` run file, against a built-in
+  template or one you scaffold with `haia-trace template new`.
 - **`trace-x402`** — attaches to the x402 v2 lifecycle hooks and records each
   firing, strictly passively, as a normalized and redacted event. Point it at
   `.trace/events` and `trace(...)` → `haia-trace build` produces a receipt per

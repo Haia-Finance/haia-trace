@@ -1,0 +1,106 @@
+---
+title: template
+description: "List the operation templates you can build against, and scaffold your own."
+---
+
+```sh
+haia-trace template list
+haia-trace template new <name>
+```
+
+A template is the declarative description of an operation's expected shape, which
+[`build`](/cli/build) and [`sample`](/cli/sample) assemble against. Two ship with
+the CLI (`x402-buyer` and `x402-seller`, the two sides of an x402 payment); any
+other operation needs one you write.
+
+## `template list`
+
+Everything `build --template` will accept — the built-in templates and your
+project's own — each labelled with the file `build` would actually load.
+
+```sh
+haia-trace template list
+```
+
+```text
+📋 Operation templates
+
+  ✔ my-op        .trace/templates/my-op.yaml
+  ✔ x402-buyer   built-in
+  ✔ x402-seller  built-in
+
+3 templates available.
+```
+
+## `template new`
+
+Scaffold a new template into `.trace/templates/` — the same directory `build`
+searches first, so the two halves of the loop meet with no flags to configure.
+
+```sh
+haia-trace template new my-op
+```
+
+```text
+✔ Created .trace/templates/my-op.yaml
+
+  Edit the stages to match your events, then:
+  haia-trace build --template my-op
+```
+
+The file it writes is commented and already valid, but deliberately inert: its
+placeholder event types match nothing, so building against an unedited scaffold
+returns PARTIAL rather than a clean verdict on an operation nobody has described
+yet.
+
+```yaml
+template: my-op
+version: 1
+stages:
+  # A stage closes the first time any event in its `match` list is observed. The
+  # list is an OR, not a sequence.
+  - id: request
+    required: true
+    match:
+      - event: your.namespace.requested
+    missing_explanation: "the operation was never requested"
+  # `required: false` marks a progress marker rather than a milestone.
+  - id: authorization
+    required: false
+    match:
+      - event: your.namespace.authorized
+  - id: settlement
+    required: true
+    match:
+      - event: your.namespace.settled
+    missing_explanation: "the operation was requested, but never settled"
+exceptions:
+  - your.namespace.failed
+  - your.namespace.canceled
+```
+
+`new` refuses to overwrite an existing file unless you pass `--force`, so an
+edited template is never lost to a repeated command.
+
+## Options
+
+| Option                   | Applies to    | Meaning                                                       |
+| ------------------------ | ------------- | ------------------------------------------------------------- |
+| `--templates-dir <path>` | `list`, `new` | Where your own templates live. Default: `.trace/templates/`.   |
+| `--force`                | `new`         | Overwrite the file if it already exists.                       |
+
+<Tip>
+  A local template shadows a built-in of the same name — writing
+  `.trace/templates/x402-buyer.yaml` is how you adapt a shipped template to a flow
+  that differs from the standard one. `template list` prints the path, so it stays
+  clear which of the two `build` is using. Templates are data, not code — see
+  [Operation Receipt](/concepts/operation-receipt) for how stages and match-sets
+  shape the verdict.
+</Tip>
+
+<Note>
+  `.trace/templates/` is **source you author**, unlike `.trace/events/` and
+  `.trace/receipts/`, which are recorded and derived. Ignore those two
+  subdirectories in git rather than `.trace/` as a whole, or your templates won't
+  be committed.
+</Note>
