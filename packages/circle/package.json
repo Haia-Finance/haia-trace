@@ -1,0 +1,52 @@
+{
+  "name": "@usehaia/trace-circle",
+  "version": "0.0.1",
+  "description": "Haia Trace capture adapter for Circle webhook v2 notifications.",
+  "keywords": [
+    "circle",
+    "webhooks",
+    "arc",
+    "usdc",
+    "payments",
+    "receipts",
+    "audit-trail",
+    "escrow"
+  ],
+  "license": "MIT",
+  "author": "Haia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Haia-Finance/haia-trace.git",
+    "directory": "packages/circle"
+  },
+  "bugs": "https://github.com/Haia-Finance/haia-trace/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check-types": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@usehaia/trace-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
