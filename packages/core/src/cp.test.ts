@@ -72,7 +72,7 @@ describe("toIngestEvent", () => {
       occurred_at: "2026-07-23T00:00:00.000Z",
       client_event_id: "evt-fixed",
       anonymous_id: "agent-1",
-      session_id: "run-1",
+      session_id: "op-1",
       properties: {
         amount: "10000",
         network: "eip155:8453",
@@ -93,10 +93,40 @@ describe("toIngestEvent", () => {
     const event = rec.event({ event_type: "x402.settle.ok", payload: {} });
     const mapped = toIngestEvent(event, { agentId: "agent-1" });
 
+    // No request context, so nothing to group by — and a run is not a session.
     expect(mapped).not.toHaveProperty("session_id");
     expect(mapped).not.toHaveProperty("user_id");
     expect(mapped.properties).not.toHaveProperty("role");
     expect(mapped.properties).not.toHaveProperty("context_id");
+  });
+
+  it("groups by the operation, not by the run", () => {
+    const first = toIngestEvent(
+      rec.event({ event_type: "a", payload: {}, context_id: "op-1" }),
+      { agentId: "agent-1", runId: "run-1" },
+    );
+    const second = toIngestEvent(
+      rec.event({ event_type: "b", payload: {}, context_id: "op-2" }),
+      { agentId: "agent-1", runId: "run-1" },
+    );
+
+    // One run, two operations: the sessions differ, the run id does not.
+    expect([first.session_id, second.session_id]).toEqual(["op-1", "op-2"]);
+    expect([first.meta.run_id, second.meta.run_id]).toEqual(["run-1", "run-1"]);
+  });
+
+  it("drops an over-long context id from session_id but keeps the event", () => {
+    const mapped = toIngestEvent(
+      rec.event({
+        event_type: "x402.settle.ok",
+        payload: {},
+        context_id: "c".repeat(257),
+      }),
+      { agentId: "agent-1" },
+    );
+
+    expect(mapped).not.toHaveProperty("session_id");
+    expect(mapped.properties.context_id).toHaveLength(257);
   });
 
   it("keeps envelope fields out of a payload key's reach", () => {

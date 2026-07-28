@@ -143,12 +143,26 @@ export interface CpIdentity {
   agentId?: string;
   /** Sent as `user_id`, when the run is attributable to a person. */
   userId?: string;
-  /** Sent as `session_id` and recorded in `meta`; the local run this event came from. */
+  /**
+   * The local run these events came from — one start of the recording service.
+   * Recorded in `meta`, not sent as `session_id`: a run is the *file* the events
+   * were written to, which can hold many unrelated operations.
+   */
   runId?: string;
 }
 
 /**
  * Map one TraceEvent onto the ingest envelope.
+ *
+ * `context_id` becomes `session_id`. Both name the same thing on their own side
+ * — one logical operation, the events of a single payment — so an operation is
+ * what the Control Plane groups by, which is the unit a receipt is assembled for
+ * too. The run id is deliberately *not* what is sent here: a run is one start of
+ * the recording service and can span many unrelated operations, so grouping by
+ * it would merge payments that have nothing to do with each other. It travels in
+ * `meta` instead, where it says which capture the row came from. An event
+ * without a request context — a chain confirmation, an attestation — simply
+ * carries no `session_id`.
  *
  * The split between the two free-form objects follows what each is for:
  * `properties` carries what an analysis would group or filter by — the event's
@@ -171,6 +185,9 @@ export function toIngestEvent(
     seq: event.seq,
     adapter: event.adapter,
     ...(event.role !== undefined ? { role: event.role } : {}),
+    // Also a property, not only `session_id`: the operation is the dimension an
+    // analysis reaches for most, and a property is filterable wherever a
+    // free-form key is, which is not yet true of every read surface.
     ...(event.context_id !== undefined ? { context_id: event.context_id } : {}),
   };
 
@@ -184,7 +201,14 @@ export function toIngestEvent(
       ? { anonymous_id: identity.agentId }
       : {}),
     ...(identity.userId !== undefined ? { user_id: identity.userId } : {}),
-    ...(identity.runId !== undefined ? { session_id: identity.runId } : {}),
+    // A `context_id` is an adapter's own string and has no length rule of its
+    // own, so one longer than the API's column is left off rather than allowed
+    // to fail the request: losing the grouping costs less than losing the event.
+    // It stays in `properties` either way.
+    ...(event.context_id !== undefined &&
+    event.context_id.length <= MAX_IDENTITY
+      ? { session_id: event.context_id }
+      : {}),
     properties,
     meta: {
       source: SOURCE,
@@ -397,8 +421,6 @@ export function createCpWriter(options: CpWriterOptions): CpWriter {
     const batches: IngestEvent[][] = [];
     while (queue.length > 0) batches.push(queue.splice(0, batchSize));
 
-    // `catch` guards the chain itself: were a delivery ever to reject, an
-    // unguarded `inFlight` would stay rejected and fail every later flush.
     inFlight = inFlight
       .then(async () => {
         for (const batch of batches) await deliver(batch);
@@ -473,7 +495,10 @@ function assertConfig(options: CpWriterOptions, identity: CpIdentity): void {
       "haia-cp: an identity is required — pass agentId (or userId)",
     );
   }
-  for (const [name, value] of Object.entries(identity)) {
+  // Only the two identity fields are bounded here: `runId` travels in the
+  // free-form `meta`, which has no per-key rule to break.
+  for (const name of ["agentId", "userId"] as const) {
+    const value = identity[name];
     if (value !== undefined && value.length > MAX_IDENTITY) {
       throw new Error(
         `haia-cp: ${name} must be at most ${MAX_IDENTITY} characters`,
