@@ -31,13 +31,15 @@ import {
   type EventReader,
   type EventWriter,
   encodeEventLine,
+  type SinkErrorHandler,
 } from "./sink.js";
+
+// Re-exported so the file sink's options read from one import; the type is
+// declared with the sink contract because every sink implementation uses it.
+export type { SinkErrorHandler } from "./sink.js";
 
 /** Run files carry this extension; also how a directory listing tells them apart. */
 const RUN_EXT = ".ndjson";
-
-/** Observe a sink error (disk full, permissions) without it ever reaching the producer. */
-export type SinkErrorHandler = (err: unknown) => void;
 
 /**
  * Open a writer over an explicit file path. Used for a run file whose path is

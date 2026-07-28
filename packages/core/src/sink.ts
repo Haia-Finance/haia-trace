@@ -20,6 +20,13 @@
 import type { TraceEvent } from "./event.js";
 
 /**
+ * Observe a sink failure (a full disk, a refused upload) without it ever
+ * reaching the producer. Every sink implementation routes its faults here
+ * rather than throwing, which is what makes the fail-open guarantee below hold.
+ */
+export type SinkErrorHandler = (err: unknown) => void;
+
+/**
  * Serialize one event to a single NDJSON line (no trailing newline — the writer
  * adds the separator). Plain `JSON.stringify`, so encoding is deterministic for a
  * given event: the receipt-integrity guarantee starts here.
@@ -77,8 +84,63 @@ export function decodeEventLines(text: string): TraceEvent[] {
 export interface EventWriter {
   /** Append one event. Never throws; a backing-store failure is routed to the writer's error handler. */
   write(event: TraceEvent): void;
+  /**
+   * Settle everything `write` has accepted so far, for a writer that does not
+   * hand the event to its store synchronously.
+   *
+   * Optional because a writer that persists inside `write` — the file sink —
+   * has nothing to settle. A writer that buffers (one that batches events into
+   * network requests) implements it, and a caller that needs "the events are
+   * delivered, not merely accepted" — a process about to exit — awaits it
+   * before `close`. Like `write`, it never rejects: a delivery failure is
+   * routed to the writer's error handler, not thrown at the caller.
+   */
+  flush?(): Promise<void>;
   /** Release any held resource. Safe to call more than once. */
   close(): void;
+}
+
+/**
+ * Fan one event stream out to several writers — how a producer records to more
+ * than one sink at a time (a local run file *and* a remote one, say) without
+ * knowing that it does: the result is an ordinary `EventWriter`.
+ *
+ * Every writer is offered every event, whatever the others do. A writer that
+ * throws out of `write` is breaking the sink contract, and swallowing that here
+ * is deliberate: one misbehaving sink must not deny the events to the rest, and
+ * a writer that honours the contract already routes its failures to its own
+ * error handler, where the caller configured them.
+ */
+export function createMulticastWriter(
+  ...writers: readonly EventWriter[]
+): EventWriter {
+  const each = (act: (writer: EventWriter) => void): void => {
+    for (const writer of writers) {
+      try {
+        act(writer);
+      } catch {
+        /* a writer's failure is its own to report; the others still get the call */
+      }
+    }
+  };
+
+  return {
+    write(event: TraceEvent): void {
+      each((writer) => {
+        writer.write(event);
+      });
+    },
+    async flush(): Promise<void> {
+      // `allSettled`, not `all`: a rejection from one writer must not skip the
+      // others' flushes, and this must resolve however they went.
+      await Promise.allSettled(writers.map((writer) => writer.flush?.()));
+    },
+    close(): void {
+      each((writer) => {
+        writer.close();
+      });
+    },
+  };
 }
 
 /** Where the assembler (or a renderer) reads a run's events from. */
