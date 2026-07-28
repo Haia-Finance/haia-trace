@@ -17,7 +17,9 @@
  * hooks the SDK would invoke. This example fakes the payment, never the trace.
  */
 
-import { createRunWriter } from "@usehaia/trace-core/node";
+import { createMulticastWriter } from "@usehaia/trace-core";
+import { createCpWriter } from "@usehaia/trace-core/cp";
+import { createRunWriter, runIdFromPath } from "@usehaia/trace-core/node";
 import { trace } from "@usehaia/trace-x402";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 
@@ -28,7 +30,27 @@ const agent = new x402HTTPClient(client);
 
 // The run directory is the producer's to choose — `haia-trace build` reads
 // `.trace/events` unless its `--dir` says otherwise, so name the same one.
-const writer = createRunWriter(".trace/events");
+const runWriter = createRunWriter(".trace/events");
+
+// Mirroring to a Haia Control Plane project is optional, and off unless this
+// demo is given a key: with none, the run is recorded locally, which is the
+// whole example. Reading the environment is this script's own choice — the sink
+// is configured through its constructor and never reaches for ambient state.
+const cpWriter = process.env.HAIA_INGEST_KEY
+  ? createCpWriter({
+      url: process.env.HAIA_INGEST_URL,
+      apiKey: process.env.HAIA_INGEST_KEY,
+      agentId: "x402-buyer-demo",
+      runId: runIdFromPath(runWriter.path),
+      onError: (err) => console.warn("  cp:", String(err)),
+    })
+  : null;
+
+// Two sinks compose into one writer; nothing downstream knows the difference.
+const writer = cpWriter
+  ? createMulticastWriter(runWriter, cpWriter)
+  : runWriter;
+
 const capture = trace(agent, { writer });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +149,9 @@ paidCall({
 });
 console.log("  /v1/report   paid · no settlement came back");
 
+// Upload is batched, so settle it before exiting. The file sink hands each event
+// to disk inside `write` and has no `flush` at all — hence the optional call.
+await writer.flush?.();
 writer.close();
-console.log(`\nrun recorded → ${writer.path}`);
+console.log(`\nrun recorded → ${runWriter.path}`);
 console.log("next: haia-trace build\n");
