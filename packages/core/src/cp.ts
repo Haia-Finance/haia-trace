@@ -31,7 +31,7 @@ import type { EventWriter, SinkErrorHandler } from "./sink.js";
 
 /** Path of the ingest batch endpoint, appended to the configured base URL. */
 const BATCH_PATH = "/v1/events:batch";
-/** Header the ingest API reads the project's publishable ingest token from. */
+/** Header the ingest API reads the project's ingest key from. */
 const API_KEY_HEADER = "x-haia-api-key";
 /** Stamped on every event's `meta`, so uploaded rows can be told from an SDK's. */
 const SOURCE = "haia-trace";
@@ -143,7 +143,7 @@ export interface CpIdentity {
    * which is what an autonomous payer is.
    */
   agentId?: string;
-  /** Sent as `user_id`, when the run is attributable to a person. */
+  /** Sent as `user_id`, when the run is also attributable to a person. */
   userId?: string;
   /**
    * The local run these events came from — one start of the recording service.
@@ -173,8 +173,9 @@ export interface CpIdentity {
  * upload itself. The envelope fields are spread *after* the payload so a payload
  * key can never displace one of them.
  *
- * `event_id` becomes `client_event_id`, which the ingest API deduplicates on:
- * re-sending a batch after an ambiguous failure stores nothing twice. A custom
+ * `event_id` becomes `client_event_id`, which the ingest API deduplicates on
+ * within a project: re-sending a batch after an ambiguous failure stores
+ * nothing twice, and the repeat is reported as a duplicate rather than a fault. A custom
  * recorder may mint an id longer than the API accepts, in which case the field
  * is left off — the event still lands, it just loses that protection.
  */
@@ -237,22 +238,33 @@ function unsendableReason(event: IngestEvent): string | null {
     return "event_type may only contain word characters, '$', '-', '.' and spaces";
   }
   if (event.anonymous_id === undefined && event.user_id === undefined) {
-    return "an event needs an identity: configure agentId or userId";
+    // Unreachable through `createCpWriter`, which requires an agent id; the
+    // check stands for `toIngestEvent` used on its own.
+    return "an event needs an identity: pass agentId";
   }
   return null;
 }
 
 // ── Writer ──────────────────────────────────────────────────────────────────
 
-export interface CpWriterOptions extends CpIdentity {
+export interface CpWriterOptions extends Omit<CpIdentity, "agentId"> {
   /**
    * Base URL of the Control Plane ingest service, e.g.
    * `https://ingest.example.com`. The batch endpoint's path is appended, so a
    * trailing slash is harmless.
    */
   url: string;
-  /** The project's publishable ingest token. */
+  /** The project's ingest key, carrying the `ingest:write` capability. */
   apiKey: string;
+  /**
+   * Who the uploaded events belong to — required, not defaulted. The Control
+   * Plane needs an identity on every event, and the only value that could be
+   * derived here is the run, which names a *capture* rather than a payer:
+   * events from the same agent across restarts would land as different
+   * subjects, and there is no way to tell from the outside that the id was
+   * invented. Naming the agent is the caller's decision to make.
+   */
+  agentId: string;
   /** Events per request. Clamped to the API's cap of 500. Default 100. */
   batchSize?: number;
   /**
@@ -530,10 +542,8 @@ function assertConfig(options: CpWriterOptions, identity: CpIdentity): void {
     // every batch would be dropped down the non-retryable-4xx path.
     throw new Error("haia-cp: apiKey is required");
   }
-  if (identity.agentId === undefined && identity.userId === undefined) {
-    throw new Error(
-      "haia-cp: an identity is required — pass agentId (or userId)",
-    );
+  if (typeof identity.agentId !== "string" || identity.agentId.trim() === "") {
+    throw new Error("haia-cp: agentId is required");
   }
   // Only the two identity fields are bounded here: `runId` travels in the
   // free-form `meta`, which has no per-key rule to break.

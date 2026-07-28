@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CpFetch,
   type CpResponse,
+  type CpWriterOptions,
   createCpWriter,
   type IngestEvent,
   toIngestEvent,
@@ -200,7 +201,14 @@ describe("createCpWriter configuration", () => {
     expect(() =>
       createCpWriter({ url: URL, apiKey: "", agentId: "a" }),
     ).toThrow(/apiKey/);
-    expect(() => createCpWriter({ url: URL, apiKey: "k" })).toThrow(/identity/);
+    // The agent id is a required argument: nothing here could invent one that
+    // means what it says.
+    expect(() =>
+      createCpWriter({ url: URL, apiKey: "k" } as unknown as CpWriterOptions),
+    ).toThrow(/agentId is required/);
+    expect(() =>
+      createCpWriter({ url: URL, apiKey: "k", agentId: "   " }),
+    ).toThrow(/agentId is required/);
     expect(() =>
       createCpWriter({ url: URL, apiKey: "k", agentId: "a".repeat(257) }),
     ).toThrow(/at most 256/);
