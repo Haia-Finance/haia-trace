@@ -1,0 +1,20 @@
+{
+  "subscriptionId": "8e29afe0-6d3d-4c47-a11d-8d1d24d8b1a3",
+  "notificationId": "4a9c1e7d-33b2-4d08-9f61-6e2a7b8c9d0e",
+  "notificationType": "contracts.eventLog",
+  "notification": {
+    "contractAddress": "0x92b7e5c1d4f3a2b1c0d9e8f7a6b5c4d3e2f10987",
+    "blockchain": "ARC-TESTNET",
+    "txHash": "0xf7cc8d6b26f1a6a0e0cc0f8f6a222166b9b1d2ab13c1d1a2b3c4d5e6f7089a1b",
+    "eventName": "PaymentCreated(uint256,address,uint256,uint256,address)",
+    "topics": [
+      "0x2c96e8d5a1f0b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819aabbcc",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0000000000000000000000001c8adf5bfa48bfeafcbabe8d1c1b3a1f0d9d3d54",
+      "0x0000000000000000000000006f4bc2a3d1a5c9b8e7f6a5d4c3b2a1908f7e6d5c"
+    ],
+    "data": "0x000000000000000000000000000000000000000000000000000000001dcd65000000000000000000000000000000000000000000000000000000000068879e40"
+  },
+  "timestamp": "2026-07-28T12:00:01.204Z",
+  "version": 2
+}
