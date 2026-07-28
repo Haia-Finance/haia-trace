@@ -139,6 +139,21 @@ describe("createMulticastWriter", () => {
     expect(healthy.flushed).toBe(1);
   });
 
+  it("settles when a writer's flush throws before returning a promise", async () => {
+    const healthy = spyWriter();
+    const throwing: EventWriter = {
+      write(): void {},
+      flush(): Promise<void> {
+        throw new Error("flush failed synchronously");
+      },
+      close(): void {},
+    };
+    const writer = createMulticastWriter(throwing, healthy.writer);
+
+    await expect(writer.flush?.()).resolves.toBeUndefined();
+    expect(healthy.flushed).toBe(1);
+  });
+
   it("tolerates a writer with no flush of its own", async () => {
     const plain: EventWriter = { write(): void {}, close(): void {} };
     await expect(

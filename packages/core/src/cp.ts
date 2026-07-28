@@ -54,6 +54,8 @@ const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
 /** First backoff step; each further attempt doubles it. */
 const RETRY_BASE_MS = 500;
+/** Ceiling on a server-asked wait, so one header cannot stall a shutdown. */
+const MAX_RETRY_AFTER_MS = 30_000;
 
 // ── Platform surface ────────────────────────────────────────────────────────
 //
@@ -304,13 +306,29 @@ export function createCpWriter(options: CpWriterOptions): CpWriter {
   assertConfig(options, identity);
 
   const batchSize = Math.min(
-    Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE),
+    positive("batchSize", options.batchSize ?? DEFAULT_BATCH_SIZE, 1),
     MAX_BATCH,
   );
-  const flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
-  const maxQueue = options.maxQueue ?? DEFAULT_MAX_QUEUE;
-  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const flushIntervalMs = positive(
+    "flushIntervalMs",
+    options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
+    0,
+  );
+  const maxQueue = positive(
+    "maxQueue",
+    options.maxQueue ?? DEFAULT_MAX_QUEUE,
+    1,
+  );
+  const maxRetries = positive(
+    "maxRetries",
+    options.maxRetries ?? DEFAULT_MAX_RETRIES,
+    0,
+  );
+  const timeoutMs = positive(
+    "timeoutMs",
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    0,
+  );
   const onError = options.onError;
 
   const report = (err: unknown): void => {
@@ -322,6 +340,8 @@ export function createCpWriter(options: CpWriterOptions): CpWriter {
   };
 
   const queue: IngestEvent[] = [];
+  /** Events handed to a delivery that has not finished — queued, just not here. */
+  let undelivered = 0;
   let timer: unknown = null;
   let closed = false;
   // Deliveries are chained rather than run concurrently, so batches reach the
@@ -357,9 +377,12 @@ export function createCpWriter(options: CpWriterOptions): CpWriter {
       return;
     }
 
-    const signal = timeout(timeoutMs);
-
     for (let attempt = 0; ; attempt++) {
+      // A fresh deadline per attempt. `AbortSignal.timeout` starts counting when
+      // it is created, so one signal hoisted out of the loop would already be
+      // aborted for every retry after a timeout — the retries would return
+      // instantly and the batch would be dropped on the strength of one attempt.
+      const signal = timeout(timeoutMs);
       let retryAfterMs: number | undefined;
       let fault: unknown;
       try {
@@ -419,11 +442,24 @@ export function createCpWriter(options: CpWriterOptions): CpWriter {
     }
 
     const batches: IngestEvent[][] = [];
-    while (queue.length > 0) batches.push(queue.splice(0, batchSize));
+    while (queue.length > 0) {
+      const batch = queue.splice(0, batchSize);
+      // Taken out of the queue but not yet delivered, so it still counts against
+      // the ceiling: a batch waiting its turn behind a stalled send occupies
+      // memory exactly like a queued event does.
+      undelivered += batch.length;
+      batches.push(batch);
+    }
 
     inFlight = inFlight
       .then(async () => {
-        for (const batch of batches) await deliver(batch);
+        for (const batch of batches) {
+          try {
+            await deliver(batch);
+          } finally {
+            undelivered -= batch.length;
+          }
+        }
       })
       // Guards the chain itself: were a delivery ever to reject, an unguarded
       // `inFlight` would stay rejected and fail every later flush.
@@ -450,7 +486,7 @@ export function createCpWriter(options: CpWriterOptions): CpWriter {
         return;
       }
 
-      if (queue.length >= maxQueue) {
+      if (queue.length + undelivered >= maxQueue) {
         report(
           new Error(
             `haia-cp: queue is full at ${maxQueue} events; dropped 1 event`,
@@ -487,7 +523,11 @@ function assertConfig(options: CpWriterOptions, identity: CpIdentity): void {
       `haia-cp: url must be an http(s) URL, got "${options.url}"`,
     );
   }
-  if (options.apiKey === "") {
+  if (typeof options.apiKey !== "string" || options.apiKey.trim() === "") {
+    // Not just `=== ""`: `apiKey: process.env.HAIA_KEY!` with the variable unset
+    // is exactly the wiring bug this check is here to catch, and it arrives as
+    // `undefined`. Left through, every request would go out unauthenticated and
+    // every batch would be dropped down the non-retryable-4xx path.
     throw new Error("haia-cp: apiKey is required");
   }
   if (identity.agentId === undefined && identity.userId === undefined) {
@@ -505,6 +545,22 @@ function assertConfig(options: CpWriterOptions, identity: CpIdentity): void {
       );
     }
   }
+}
+
+/**
+ * Reject a numeric option that cannot be honoured. `NaN` is the case that
+ * matters — it arrives from ordinary config plumbing (`Number(process.env.X)`
+ * with the variable unset) and silently disables the very bound it sets: a
+ * `NaN` batch size makes `splice(0, NaN)` remove nothing, spinning the drain
+ * loop forever, and a `NaN` ceiling never trips.
+ */
+function positive(name: string, value: number, min: number): number {
+  if (!Number.isFinite(value) || value < min) {
+    throw new Error(
+      `haia-cp: ${name} must be a finite number >= ${min}, got ${value}`,
+    );
+  }
+  return Math.floor(value);
 }
 
 /** A per-request timeout signal, when the runtime offers one. */
@@ -525,9 +581,17 @@ function sleep(ms: number): Promise<void> {
  */
 function retryAfter(response: CpResponse): number | undefined {
   const header = response.headers?.get("retry-after");
-  if (header === undefined || header === null) return undefined;
+  // `Number("")` is 0, which would read as "retry immediately" — a blank header
+  // says nothing, so fall back to the exponential backoff instead.
+  if (header === undefined || header === null || header.trim() === "") {
+    return undefined;
+  }
   const seconds = Number(header);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  // Capped: `flush()` is what a process awaits before exiting, and an hour-long
+  // `Retry-After` would turn that into a hang. Waiting the cap and then giving
+  // up loses the batch, which the caller hears about; hanging loses the process.
+  return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
 }
 
 /** Read the batch verdict, tolerating a body that is not the JSON we expect. */
@@ -552,14 +616,19 @@ function reportRejections(
   batch: IngestEvent[],
   report: (err: unknown) => void,
 ): void {
-  const rejections = result?.rejections ?? [];
+  // Every field is read defensively because this runs inside the delivery's
+  // `try`: a body shaped differently than expected would otherwise throw, be
+  // caught as a transport fault, and have an *accepted* batch re-sent and then
+  // reported as dropped — a loss that never happened.
+  const rejections = Array.isArray(result?.rejections) ? result.rejections : [];
   if (rejections.length === 0) return;
 
   const detail = rejections
     .map((rejection) => {
       const event = batch[rejection.index];
-      const codes = rejection.issues.map((issue) => issue.code).join(", ");
-      return `${event?.event_type ?? `#${rejection.index}`}: ${codes}`;
+      const issues = Array.isArray(rejection?.issues) ? rejection.issues : [];
+      const codes = issues.map((issue) => issue?.code).join(", ");
+      return `${event?.event_type ?? `#${rejection?.index}`}: ${codes}`;
     })
     .join("; ");
   report(

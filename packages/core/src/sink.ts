@@ -132,8 +132,11 @@ export function createMulticastWriter(
     },
     async flush(): Promise<void> {
       // `allSettled`, not `all`: a rejection from one writer must not skip the
-      // others' flushes, and this must resolve however they went.
-      await Promise.allSettled(writers.map((writer) => writer.flush?.()));
+      // others' flushes, and this must resolve however they went. The call is
+      // wrapped as well, so a `flush` that throws *synchronously* — before it
+      // ever returns a promise — is a settled outcome here rather than an
+      // exception thrown out of the `map`, which would skip the writers after it.
+      await Promise.allSettled(writers.map(async (writer) => writer.flush?.()));
     },
     close(): void {
       each((writer) => {

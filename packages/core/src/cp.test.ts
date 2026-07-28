@@ -33,17 +33,25 @@ function response(init: Partial<CpResponse> & { body?: string }): CpResponse {
 }
 
 /** A fetch stub that records every call and answers with the queued responses. */
+interface StubCall {
+  url: string;
+  body: string;
+  headers: Record<string, string>;
+  signal?: unknown;
+}
+
 function stubFetch(...queued: CpResponse[]): {
   fetch: CpFetch;
-  calls: { url: string; body: string; headers: Record<string, string> }[];
+  calls: StubCall[];
 } {
-  const calls: {
-    url: string;
-    body: string;
-    headers: Record<string, string>;
-  }[] = [];
+  const calls: StubCall[] = [];
   const fetch: CpFetch = async (url, init) => {
-    calls.push({ url, body: init.body, headers: init.headers });
+    calls.push({
+      url,
+      body: init.body,
+      headers: init.headers,
+      signal: init.signal,
+    });
     return (
       queued[Math.min(calls.length - 1, queued.length - 1)] ?? response({})
     );
@@ -158,6 +166,33 @@ describe("toIngestEvent", () => {
 });
 
 describe("createCpWriter configuration", () => {
+  it("rejects a numeric option that would disable the bound it sets", () => {
+    // NaN is what `Number(process.env.X)` yields for an unset variable, and it
+    // would otherwise spin the drain loop forever.
+    expect(() =>
+      createCpWriter({ url: URL, apiKey: "k", agentId: "a", batchSize: NaN }),
+    ).toThrow(/batchSize must be a finite number/);
+    expect(() =>
+      createCpWriter({ url: URL, apiKey: "k", agentId: "a", maxQueue: NaN }),
+    ).toThrow(/maxQueue must be a finite number/);
+    expect(() =>
+      createCpWriter({ url: URL, apiKey: "k", agentId: "a", batchSize: 0 }),
+    ).toThrow(/batchSize/);
+  });
+
+  it("rejects a missing api key, not only an empty one", () => {
+    expect(() =>
+      createCpWriter({
+        url: URL,
+        apiKey: undefined as unknown as string,
+        agentId: "a",
+      }),
+    ).toThrow(/apiKey is required/);
+    expect(() =>
+      createCpWriter({ url: URL, apiKey: "  ", agentId: "a" }),
+    ).toThrow(/apiKey is required/);
+  });
+
   it("rejects a configuration the ingest API would refuse", () => {
     expect(() =>
       createCpWriter({ url: "ingest.example.com", apiKey: "k", agentId: "a" }),
@@ -447,6 +482,81 @@ describe("createCpWriter failure handling", () => {
     writer.write(event());
 
     expect(String(onError.mock.calls[0]?.[0])).toMatch(/closed/);
+  });
+
+  it("gives every retry its own deadline", async () => {
+    const { fetch, calls } = stubFetch(
+      response({ ok: false, status: 503, headers: { get: () => "0" } }),
+    );
+    const writer = createCpWriter({
+      url: URL,
+      apiKey: "k",
+      agentId: "agent-1",
+      maxRetries: 2,
+      timeoutMs: 50,
+      fetch,
+    });
+
+    writer.write(event());
+    await writer.flush();
+
+    // A signal hoisted out of the retry loop would already be aborted by the
+    // second attempt, so the retries would return instantly without ever
+    // reaching the network.
+    expect(calls).toHaveLength(3);
+    const signals = calls.map((call) => call.signal);
+    expect(new Set(signals).size).toBe(3);
+    expect(
+      signals.every((signal) => !(signal as AbortSignal | undefined)?.aborted),
+    ).toBe(true);
+  });
+
+  it("counts events already handed to a stalled delivery against the ceiling", async () => {
+    const onError = vi.fn();
+    // A delivery that never finishes: the events leave the queue but are not
+    // delivered, which is exactly the state the ceiling has to notice.
+    const writer = createCpWriter({
+      url: URL,
+      apiKey: "k",
+      agentId: "agent-1",
+      batchSize: 2,
+      maxQueue: 4,
+      onError,
+      fetch: () => new Promise<CpResponse>(() => {}),
+    });
+
+    for (let i = 0; i < 20; i++) writer.write(event());
+
+    expect(String(onError.mock.calls[0]?.[0])).toMatch(/queue is full/);
+  });
+
+  it("does not re-send an accepted batch over a malformed rejections body", async () => {
+    const onError = vi.fn();
+    const { fetch, calls } = stubFetch(
+      response({
+        // `issues` absent — a shape the reader must survive rather than throw on.
+        body: JSON.stringify({
+          accepted: 1,
+          duplicates: 0,
+          rejections: [{ index: 0 }],
+        }),
+      }),
+    );
+    const writer = createCpWriter({
+      url: URL,
+      apiKey: "k",
+      agentId: "agent-1",
+      onError,
+      fetch,
+    });
+
+    writer.write(event());
+    await writer.flush();
+
+    expect(calls).toHaveLength(1);
+    expect(
+      onError.mock.calls.map((call) => String(call[0])).join(" "),
+    ).not.toMatch(/dropped/);
   });
 
   it("survives a runtime with no fetch", async () => {
