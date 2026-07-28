@@ -198,6 +198,14 @@ describe("createCpWriter configuration", () => {
     expect(() =>
       createCpWriter({ url: "ingest.example.com", apiKey: "k", agentId: "a" }),
     ).toThrow(/http\(s\) URL/);
+    // A missing url must be named, not surface as a TypeError from the first
+    // line that happens to read it.
+    expect(() =>
+      createCpWriter({
+        apiKey: "k",
+        agentId: "a",
+      } as unknown as CpWriterOptions),
+    ).toThrow(/http\(s\) URL/);
     expect(() =>
       createCpWriter({ url: URL, apiKey: "", agentId: "a" }),
     ).toThrow(/apiKey/);
@@ -565,6 +573,55 @@ describe("createCpWriter failure handling", () => {
     expect(
       onError.mock.calls.map((call) => String(call[0])).join(" "),
     ).not.toMatch(/dropped/);
+  });
+
+  it("does not re-send an accepted batch over a malformed rejection entry", async () => {
+    const onError = vi.fn();
+    const { fetch, calls } = stubFetch(
+      response({
+        // A rejection that is not an object at all — the reader must survive it
+        // rather than throw inside the delivery and read as a transport fault.
+        body: JSON.stringify({
+          accepted: 1,
+          duplicates: 0,
+          rejections: [null],
+        }),
+      }),
+    );
+    const writer = createCpWriter({
+      url: URL,
+      apiKey: "k",
+      agentId: "agent-1",
+      onError,
+      fetch,
+    });
+
+    writer.write(event());
+    await writer.flush();
+
+    expect(calls).toHaveLength(1);
+    expect(
+      onError.mock.calls.map((call) => String(call[0])).join(" "),
+    ).not.toMatch(/dropped/);
+  });
+
+  it("treats timeoutMs 0 as no deadline rather than an instant abort", async () => {
+    const { fetch, calls } = stubFetch(response({}));
+    const writer = createCpWriter({
+      url: URL,
+      apiKey: "k",
+      agentId: "agent-1",
+      timeoutMs: 0,
+      fetch,
+    });
+
+    writer.write(event());
+    await writer.flush();
+
+    // An `AbortSignal.timeout(0)` would already be aborted when the request
+    // starts, so every batch would be dropped instead of sent.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.signal).toBeUndefined();
   });
 
   it("survives a runtime with no fetch", async () => {

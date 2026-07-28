@@ -33,18 +33,22 @@ const agent = new x402HTTPClient(client);
 const runWriter = createRunWriter(".trace/events");
 
 // Mirroring to a Haia Control Plane project is optional, and off unless this
-// demo is given a key: with none, the run is recorded locally, which is the
-// whole example. Reading the environment is this script's own choice — the sink
-// is configured through its constructor and never reaches for ambient state.
-const cpWriter = process.env.HAIA_INGEST_KEY
-  ? createCpWriter({
-      url: process.env.HAIA_INGEST_URL,
-      apiKey: process.env.HAIA_INGEST_KEY,
-      agentId: "x402-buyer-demo",
-      runId: runIdFromPath(runWriter.path),
-      onError: (err) => console.warn("  cp:", String(err)),
-    })
-  : null;
+// demo is given somewhere to send to: with nothing configured the run is
+// recorded locally, which is the whole example. Both variables are required
+// together — half a configuration is a typo, and a demo should record the run
+// rather than fail on one. Reading the environment is this script's own choice;
+// the sink takes its configuration from its constructor and never reaches for
+// ambient state.
+const cpWriter =
+  process.env.HAIA_INGEST_URL && process.env.HAIA_INGEST_KEY
+    ? createCpWriter({
+        url: process.env.HAIA_INGEST_URL,
+        apiKey: process.env.HAIA_INGEST_KEY,
+        agentId: "x402-buyer-demo",
+        runId: runIdFromPath(runWriter.path),
+        onError: (err) => console.warn("  cp:", String(err)),
+      })
+    : null;
 
 // Two sinks compose into one writer; nothing downstream knows the difference.
 const writer = cpWriter

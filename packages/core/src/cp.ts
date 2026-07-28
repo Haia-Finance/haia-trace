@@ -309,13 +309,17 @@ export interface CpWriter extends EventWriter {
  * after construction is fail-open.
  */
 export function createCpWriter(options: CpWriterOptions): CpWriter {
-  const endpoint = `${options.url.replace(/\/+$/, "")}${BATCH_PATH}`;
   const identity: CpIdentity = {
     agentId: options.agentId,
     userId: options.userId,
     runId: options.runId,
   };
+  // Before anything reads the options: a missing `url` would otherwise surface
+  // as an opaque `TypeError` from the line below, rather than as the wiring
+  // error this check is written to name.
   assertConfig(options, identity);
+
+  const endpoint = `${options.url.replace(/\/+$/, "")}${BATCH_PATH}`;
 
   const batchSize = Math.min(
     positive("batchSize", options.batchSize ?? DEFAULT_BATCH_SIZE, 1),
@@ -573,14 +577,28 @@ function positive(name: string, value: number, min: number): number {
   return Math.floor(value);
 }
 
-/** A per-request timeout signal, when the runtime offers one. */
+/**
+ * A per-request timeout signal, when the runtime offers one. `0` means "no
+ * deadline": `AbortSignal.timeout(0)` is already aborted by the time the
+ * request starts, so honouring it literally would drop every batch — the
+ * opposite of what turning a timeout off is meant to do.
+ */
 function timeout(ms: number): unknown {
+  if (ms <= 0) return undefined;
   return platform.AbortSignal?.timeout?.(ms);
 }
 
+/**
+ * Wait out a retry backoff. Deliberately *not* unref'd, unlike the flush timer:
+ * during a backoff there is no request in flight, so an unref'd timer would be
+ * the only thing holding the loop open — and Node would exit mid-`flush()`,
+ * abandoning the awaited promise and losing the batch without a word. A retry
+ * already under way is work the caller asked for; the wait is bounded by the
+ * backoff and the `Retry-After` cap.
+ */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    unref(platform.setTimeout(resolve, ms));
+    platform.setTimeout(resolve, ms);
   });
 }
 
@@ -635,7 +653,7 @@ function reportRejections(
 
   const detail = rejections
     .map((rejection) => {
-      const event = batch[rejection.index];
+      const event = batch[rejection?.index];
       const issues = Array.isArray(rejection?.issues) ? rejection.issues : [];
       const codes = issues.map((issue) => issue?.code).join(", ");
       return `${event?.event_type ?? `#${rejection?.index}`}: ${codes}`;
