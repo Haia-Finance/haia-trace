@@ -34,6 +34,17 @@ export {
   type NotificationEnvelope,
   parseNotificationEnvelope,
 } from "./envelope.js";
+export {
+  ADAPTER_ID,
+  createWebhookHandler,
+  type HandleResult,
+  type HeaderBag,
+  KEY_ID_HEADER,
+  type NormalizeNotification,
+  SIGNATURE_HEADER,
+  type WebhookHandler,
+  type WebhookHandlerOptions,
+} from "./handle.js";
 
 export {
   createVerifier,

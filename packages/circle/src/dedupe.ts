@@ -15,7 +15,7 @@
  * replayed duplicate that outlives the window will reach the sink.
  */
 
-/** Answers "have we already accepted this notification?" — one method, so a
+/** Answers "have we already accepted this notification?" — two methods, so a
  *  durable implementation (a table, a KV namespace) is trivial to slot in. */
 export interface DedupeStore {
   /**
@@ -24,6 +24,13 @@ export interface DedupeStore {
    * still answered 200 by the caller — Circle should stop resending.)
    */
   firstSeen(notificationId: string): boolean;
+  /**
+   * Un-record an id whose processing failed after `firstSeen` claimed it.
+   * Without this, a delivery whose write failed would look like a duplicate on
+   * Circle's retry and be acknowledged without ever reaching the sink — the
+   * one loss mode deduplication must never introduce.
+   */
+  forget(notificationId: string): void;
 }
 
 export interface MemoryDedupeOptions {
@@ -57,6 +64,9 @@ export function createMemoryDedupeStore(
       }
       seen.add(notificationId);
       return true;
+    },
+    forget(notificationId: string): void {
+      seen.delete(notificationId);
     },
   };
 }

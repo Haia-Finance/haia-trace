@@ -19,6 +19,13 @@ describe("createMemoryDedupeStore", () => {
     expect(store.firstSeen("c")).toBe(false); // still remembered
   });
 
+  it("forgets a claimed id, so a failed delivery's retry looks new again", () => {
+    const store = createMemoryDedupeStore();
+    expect(store.firstSeen("n-1")).toBe(true);
+    store.forget("n-1");
+    expect(store.firstSeen("n-1")).toBe(true);
+  });
+
   it("refreshes recency on a retry, so actively-retried ids survive eviction", () => {
     const store = createMemoryDedupeStore({ capacity: 2 });
     store.firstSeen("a");

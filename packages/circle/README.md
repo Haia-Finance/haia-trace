@@ -11,14 +11,56 @@ so the pieces embed into whatever server receives the POSTs.
 
 Zero runtime dependencies beyond `@usehaia/trace-core`.
 
-> **Status: early.** Signature verification, envelope validation, and
-> deduplication are implemented; normalization into Trace events lands next.
+> **Status: early.** The pipeline (verify → parse → dedupe → record) is
+> implemented; the default event vocabulary for the mapping lands next — until
+> then, `normalize` is supplied by the caller.
 
 ## Install
 
 ```sh
 npm install @usehaia/trace-circle
 ```
+
+## Handle a delivery
+
+`createWebhookHandler` composes the pieces and returns the HTTP decision; the
+surrounding server only relays it:
+
+```ts
+import { createWebhookHandler, createVerifier } from "@usehaia/trace-circle";
+import { createFileWriter } from "@usehaia/trace-core/node";
+
+const handler = createWebhookHandler({
+  verifier: createVerifier({ resolveKey }), // see below
+  // The event mapping is injected; the pipeline does not fix the vocabulary.
+  normalize: (envelope) => [
+    {
+      event_type: `circle.${envelope.notification_type}`,
+      payload: { notification_id: envelope.notification_id },
+    },
+  ],
+  // MUST throw on failure so the handler answers 500 and Circle retries.
+  // Core's file sink is fail-open by design; a throwing error handler turns it
+  // into the fail-loud write a webhook needs:
+  write: createFileWriter(".trace/events/webhooks.ndjson", (err) => {
+    throw err;
+  }).write,
+});
+
+// In your route (any framework — the handler is structural about headers):
+const result = await handler.handle(rawBody, request.headers);
+return respond(result.status);
+```
+
+The decision contract: **400** — not a valid Circle notification (bad
+signature, malformed envelope), retrying cannot fix it; **500** — our side
+failed (key resolution, persistence), Circle should retry; **200** — accepted,
+including retries of already-accepted deliveries. One handler serves any number
+of route paths: Circle requires a unique URL per subscription, but a delivery's
+source is identified by `notification_type`, not by the URL it arrived on.
+
+The pieces below are what the handler composes — usable directly if you need a
+different pipeline.
 
 ## Verify a notification
 
