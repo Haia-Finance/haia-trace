@@ -13,12 +13,21 @@ packages/
           cli/templates/*.yaml  operation templates — shipped in the CLI package
 examples/
   x402-agent/                   runnable demo: a traced buyer agent
+docs/                           the public docs site (Mintlify, .mdx)
+  cli/ sdk/ concepts/           command reference, package docs, product model
 ```
 
 `x402` and `cli` depend on `core` via `"@usehaia/trace-core": "workspace:*"`.
 The templates are plain yaml data (not code, not a workspace package); they live
 in `packages/cli/templates/` and ride into the published tarball via the CLI's
 `files` list, so every install carries them.
+
+`docs/` is **not** a workspace package — it is the published site, and it carries
+its own copy of what the package READMEs say. A change to a public API, flag, or
+default therefore lands in **both** places: the README next to the code *and* the
+matching page under `docs/`. `docs/sdk/*` mirrors the package READMEs and
+`docs/cli/*` the CLI's; `docs/README.md` explains previewing it locally. Grep
+`docs/` for the symbol you changed before calling a docs update done.
 
 ## Toolchain
 
