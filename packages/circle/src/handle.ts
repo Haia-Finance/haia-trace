@@ -37,6 +37,7 @@ import {
   type NotificationEnvelope,
   parseNotificationEnvelope,
 } from "./envelope.js";
+import { normalizeNotification } from "./normalize.js";
 import type { NotificationVerifier } from "./verify.js";
 
 /** Header names Circle signs deliveries with, lowercase. */
@@ -119,8 +120,9 @@ export type HandleResult =
 export interface WebhookHandlerOptions {
   /** Verifies `X-Circle-Signature` against the raw body; see `createVerifier`. */
   verifier: NotificationVerifier;
-  /** The envelope → event-inputs mapping; see `NormalizeNotification`. */
-  normalize: NormalizeNotification;
+  /** The envelope → event-inputs mapping; defaults to the package's
+   *  `normalizeNotification` (`circle.*` vocabulary). */
+  normalize?: NormalizeNotification;
   /**
    * Persist one stamped event. MUST throw on failure — the handler answers 500
    * so Circle retries — never swallow (see the module comment for the
@@ -157,13 +159,20 @@ function message(err: unknown): string {
 export function createWebhookHandler(
   options: WebhookHandlerOptions,
 ): WebhookHandler {
-  const { verifier, normalize, write } = options;
+  const { verifier, write } = options;
+  const normalize = options.normalize ?? normalizeNotification;
   const dedupe = options.dedupe ?? createMemoryDedupeStore();
   const recorder = createRecorder({
     adapter: ADAPTER_ID,
     ...(options.now !== undefined ? { now: options.now } : {}),
     ...(options.newId !== undefined ? { newId: options.newId } : {}),
   });
+  // One attestation per capture session, emitted alongside the first verified
+  // delivery — "no events in the sink" must never be mistakable for "the
+  // webhook receiver was never wired up" (the same honesty rule the x402
+  // adapter's trace.attached serves). Context-less by design: it attests the
+  // session, not any one operation.
+  let attested = false;
 
   return {
     async handle(rawBody, headers) {
@@ -213,10 +222,23 @@ export function createWebhookHandler(
       }
 
       try {
-        const events = normalize(envelope).map((input) =>
-          recorder.event(input),
-        );
-        for (const event of events) write(event);
+        const events: TraceEvent[] = [];
+        if (!attested) {
+          const attestation = recorder.event({
+            event_type: "trace.attached",
+            payload: { source: "circle-webhook" },
+          });
+          write(attestation);
+          // Only after the write survives: a failed write leaves the session
+          // unattested so the next delivery attests again.
+          attested = true;
+          events.push(attestation);
+        }
+        for (const input of normalize(envelope)) {
+          const event = recorder.event(input);
+          write(event);
+          events.push(event);
+        }
         return { status: 200, outcome: "recorded", envelope, events };
       } catch (err) {
         // The claim must not outlive the failure: un-record the id so Circle's

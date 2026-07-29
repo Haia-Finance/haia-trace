@@ -46,6 +46,7 @@ export {
   type WebhookHandlerOptions,
 } from "./handle.js";
 
+export { normalizeNotification } from "./normalize.js";
 export {
   createVerifier,
   type NotificationVerifier,

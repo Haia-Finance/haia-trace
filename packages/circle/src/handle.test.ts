@@ -108,19 +108,36 @@ function makeHandler(overrides: Partial<WebhookHandlerOptions> = {}) {
 }
 
 describe("createWebhookHandler", () => {
-  it("records a valid delivery: 200, event stamped with the adapter id", async () => {
+  it("records a valid delivery: 200, attestation + event stamped with the adapter id", async () => {
     const { handler, written } = makeHandler();
     const { body, headers } = await signedRequest(envelopeFor("n-1"));
 
     const result = await handler.handle(body, headers);
     expect(result).toMatchObject({ status: 200, outcome: "recorded" });
-    expect(written).toHaveLength(1);
+    // The first verified delivery carries the session attestation ahead of it.
+    expect(written.map((event) => event.event_type)).toEqual([
+      "trace.attached",
+      "test.transactions.inbound",
+    ]);
     expect(written[0]?.adapter).toBe(ADAPTER_ID);
-    expect(written[0]?.event_type).toBe("test.transactions.inbound");
+    // The attestation belongs to the session, not to any operation.
+    expect("context_id" in (written[0] ?? {})).toBe(false);
     if (result.outcome === "recorded") {
       expect(result.events).toEqual(written);
       expect(result.envelope.notification_id).toBe("n-1");
     }
+  });
+
+  it("attests once per session — later deliveries record only their events", async () => {
+    const { handler, written } = makeHandler();
+    const first = await signedRequest(envelopeFor("n-1"));
+    const second = await signedRequest(envelopeFor("n-2"));
+
+    await handler.handle(first.body, first.headers);
+    await handler.handle(second.body, second.headers);
+    expect(
+      written.filter((event) => event.event_type === "trace.attached"),
+    ).toHaveLength(1);
   });
 
   it("acknowledges a retry as a duplicate without writing again", async () => {
@@ -128,9 +145,10 @@ describe("createWebhookHandler", () => {
     const request = await signedRequest(envelopeFor("n-1"));
 
     await handler.handle(request.body, request.headers);
+    const before = written.length;
     const retry = await handler.handle(request.body, request.headers);
     expect(retry).toMatchObject({ status: 200, outcome: "duplicate" });
-    expect(written).toHaveLength(1);
+    expect(written).toHaveLength(before);
   });
 
   it("rejects a missing header with 400 before touching anything", async () => {
@@ -200,17 +218,40 @@ describe("createWebhookHandler", () => {
     failNext = false;
     const retry = await handler.handle(request.body, request.headers);
     expect(retry).toMatchObject({ status: 200, outcome: "recorded" });
-    expect(written).toHaveLength(1);
+    // Attestation + the delivery's event: the failed write attested nothing.
+    expect(written.map((event) => event.event_type)).toEqual([
+      "trace.attached",
+      "test.transactions.inbound",
+    ]);
   });
 
-  it("acknowledges a type normalize maps to nothing — accepted, nothing written", async () => {
+  it("acknowledges a type normalize maps to nothing — only the attestation is written", async () => {
     const { handler, written } = makeHandler({ normalize: () => [] });
     const { body, headers } = await signedRequest(envelopeFor("n-1"));
 
     const result = await handler.handle(body, headers);
     expect(result).toMatchObject({ status: 200, outcome: "recorded" });
-    if (result.outcome === "recorded") expect(result.events).toEqual([]);
-    expect(written).toHaveLength(0);
+    expect(written.map((event) => event.event_type)).toEqual([
+      "trace.attached",
+    ]);
+    if (result.outcome === "recorded") expect(result.events).toEqual(written);
+  });
+
+  it("defaults normalize to the package vocabulary when not supplied", async () => {
+    const written: TraceEvent[] = [];
+    const handler = createWebhookHandler({
+      verifier: createVerifier({ resolveKey: resolver }),
+      write: (event) => written.push(event),
+    });
+    const { body, headers } = await signedRequest(envelopeFor("n-1"));
+
+    const result = await handler.handle(body, headers);
+    expect(result).toMatchObject({ status: 200, outcome: "recorded" });
+    // envelopeFor is transactions.inbound with state COMPLETE.
+    expect(written.map((event) => event.event_type)).toEqual([
+      "trace.attached",
+      "circle.transaction.inbound.complete",
+    ]);
   });
 
   it("reads headers case-insensitively and from Headers-like objects", async () => {
@@ -237,6 +278,7 @@ describe("createWebhookHandler", () => {
 
     await handler.handle(first.body, first.headers);
     await handler.handle(second.body, second.headers);
-    expect(written.map((event) => event.seq)).toEqual([0, 1]);
+    // seq 0 is the session attestation; deliveries continue from there.
+    expect(written.map((event) => event.seq)).toEqual([0, 1, 2]);
   });
 });

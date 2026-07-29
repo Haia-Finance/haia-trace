@@ -18,8 +18,12 @@ Confirm against real captures (Circle Console → Webhook Logs) before relying
 on exact field sets, and replace these files with captured bodies as they
 become available — the file names and shapes are the contract, not the values.
 
+The three files tell one coherent story around a single escrow contract
+(`0x92b7…0987`), so replaying them all yields ONE operation: a failed deposit
+attempt, a successful lock, and funds arriving back out of the contract.
+
 | File | What it represents |
 |---|---|
-| `transactions-inbound-complete.json` | USDC arrived at a wallet; terminal `COMPLETE` (on Arc, `CONFIRMED` may be skipped entirely) |
-| `transactions-outbound-failed.json` | An outbound transfer that failed, with `errorReason` |
+| `transactions-inbound-complete.json` | USDC arriving at a wallet FROM the escrow contract (source = contract); terminal `COMPLETE` (on Arc, `CONFIRMED` may be skipped entirely) |
+| `transactions-outbound-failed.json` | A failed deposit attempt TOWARD the contract (destination = contract), with `errorReason` |
 | `contracts-eventlog-payment-created.json` | An event monitor firing for `PaymentCreated` — funds locked in the escrow contract |
