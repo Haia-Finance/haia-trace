@@ -17,7 +17,11 @@ import {
 
 describe("template loading", () => {
   it("lists the templates shipped with the CLI", () => {
-    expect(listTemplates()).toEqual(["x402-buyer", "x402-seller"]);
+    expect(listTemplates()).toEqual([
+      "x402-buyer",
+      "x402-facilitator",
+      "x402-seller",
+    ]);
   });
 
   it("loads and validates the x402-buyer template", () => {
@@ -39,7 +43,7 @@ describe("template loading", () => {
   });
 
   it("gives every buyer stage a witness for every client kind", () => {
-    // Per-kind flows from packages/x402/src/hooks.ts: the HTTP client emits
+    // Per-kind flows from packages/x402/src/roles/client/capture.ts: the HTTP client emits
     // required/submitted/responded, the MCP client required/requested/responded,
     // the bare x402Client creating/submitted/responded. Each flow must close
     // every required stage, or that kind's clean payment assembles as partial.
@@ -122,8 +126,40 @@ describe("template loading", () => {
     }
   });
 
+  it("loads and validates the x402-facilitator template", () => {
+    const template = loadTemplate("x402-facilitator");
+    expect(template.template).toBe("x402-facilitator");
+    expect(template.stages.map((s) => s.id)).toEqual([
+      "verification",
+      "settlement",
+    ]);
+    // No request gate, and no cancellation exception: a facilitator has neither
+    // hook, and listing them would promise witnesses that can never arrive.
+    expect(template.exceptions).toEqual([
+      "x402.verify.failed",
+      "x402.settle.failed",
+    ]);
+  });
+
+  it("keeps the seller and the facilitator apart on their shared vocabulary", () => {
+    // Both record x402.verify.ok and x402.settle.ok for the same payment, so
+    // every witness of either template has to name the role it means — without
+    // that, a run tracing both would close one side's stages on the other's
+    // events.
+    for (const [name, role] of [
+      ["x402-seller", "server"],
+      ["x402-facilitator", "facilitator"],
+    ] as const) {
+      for (const stage of loadTemplate(name).stages) {
+        for (const witness of stage.match) {
+          expect(witness.role, `${name} / ${stage.id}`).toBe(role);
+        }
+      }
+    }
+  });
+
   it("covers every failure event the x402 adapter can record", () => {
-    // The failure vocabulary of packages/x402/src/events.ts. Each type must be an
+    // The failure vocabulary of packages/x402/src/roles. Each type must be an
     // exception in at least one shipped template, or an observed fault could
     // assemble into a clean-looking receipt.
     const adapterFailures = [
@@ -142,7 +178,7 @@ describe("template loading", () => {
   });
 
   it("matches only events the adapter can record — no invented witnesses", () => {
-    // The success/progress vocabulary of packages/x402/src/events.ts. A stage
+    // The success/progress vocabulary of packages/x402/src/roles. A stage
     // matching an event no adapter emits could never close.
     const adapterEvents = new Set([
       "x402.payment.required",
@@ -312,6 +348,7 @@ stages:
     expect(all.map((t) => [t.name, t.origin])).toEqual([
       ["my-op", "local"],
       ["x402-buyer", "local"],
+      ["x402-facilitator", "builtin"],
       ["x402-seller", "builtin"],
     ]);
     expect(all[1]?.path).toBe(join(templatesDir, "x402-buyer.yaml"));
@@ -324,6 +361,7 @@ stages:
     expect(listLocalTemplates(templatesDir)).toEqual([]);
     expect(listAllTemplates(templatesDir).map((t) => t.name)).toEqual([
       "x402-buyer",
+      "x402-facilitator",
       "x402-seller",
     ]);
   });

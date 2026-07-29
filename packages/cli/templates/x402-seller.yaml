@@ -2,22 +2,31 @@
 # Every event here is one the trace-x402 adapter records with `role: server`.
 # `request` is optional because only the HTTP resource server has a request
 # gate; the `*.started` events are progress markers, not milestones.
+#
+# Every witness names its role, because a facilitator records the same
+# verify/settle vocabulary for the same payment: without the constraint, a run
+# that traced both would close these stages on the facilitator's events and the
+# receipt would claim the seller verified what it did not. Assemble a
+# facilitator capture with `x402-facilitator` instead.
 template: x402-seller
-version: 1
+version: 2
 stages:
   - id: request
     required: false
     match:
       - event: x402.request.protected
+        role: server
   - id: verification
     required: true
     match:
       - event: x402.verify.ok
+        role: server
     missing_explanation: "the payment was never verified"
   - id: settlement
     required: true
     match:
       - event: x402.settle.ok
+        role: server
     missing_explanation: "settlement of the payment was not observed"
 exceptions:
   - x402.verify.failed
