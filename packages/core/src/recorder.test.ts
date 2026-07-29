@@ -50,6 +50,28 @@ describe("createRecorder", () => {
     expect(b.event_id).toBe("evt-1");
   });
 
+  it("prefers a supplied occurred_at over the clock — fact time for after-the-fact sources", () => {
+    const rec = createRecorder({
+      adapter: "trace-circle",
+      now: () => "2026-07-29T12:15:00.000Z", // delivery time — must NOT win
+    });
+    const e = rec.event({
+      event_type: "circle.transactions.inbound",
+      payload: {},
+      occurred_at: "2026-07-29T12:00:00.412Z", // the fact's own timestamp
+    });
+    expect(e.occurred_at).toBe("2026-07-29T12:00:00.412Z");
+  });
+
+  it("falls back to the clock when occurred_at is not supplied", () => {
+    const rec = createRecorder({
+      adapter: "trace-x402",
+      now: () => "2026-07-29T12:15:00.000Z",
+    });
+    const e = rec.event({ event_type: "x402.settle.ok", payload: {} });
+    expect(e.occurred_at).toBe("2026-07-29T12:15:00.000Z");
+  });
+
   it("defaults event_id to a unique uuid per event", () => {
     const rec = createRecorder({ adapter: "trace-x402" });
     const ids = new Set(
