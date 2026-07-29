@@ -19,16 +19,15 @@
  * nothing must not be able to read as "nothing to block on".
  *
  * This is the store layer, kept out of core: core assembles receipts but never
- * decides where they live. `build` writes here now; `last` / `rerun` will reuse it.
+ * decides where they live. Nor does this module — the directory is an argument,
+ * resolved from the Trace root by `./paths.js`. `build` writes here now;
+ * `last` / `rerun` will reuse it.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Receipt } from "@usehaia/trace-core";
-
-/** Default receipts directory, relative to the working directory. */
-export const RECEIPTS_DIR = join(".trace", "receipts");
 
 /**
  * Joins the run and the operation in a receipt's file name. Outside the set
@@ -64,7 +63,7 @@ function safeName(id: string): string {
 export function writeReceipt(
   receipt: Receipt,
   run: string,
-  dir: string = RECEIPTS_DIR,
+  dir: string,
 ): string {
   const id = receipt.operation.operation_id ?? "operation";
   mkdirSync(dir, { recursive: true });

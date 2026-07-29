@@ -34,20 +34,17 @@ import {
 } from "@usehaia/trace-core";
 import {
   createFileReader,
-  DEFAULT_RUN_DIR,
   listRunFiles,
   runIdFromPath,
 } from "@usehaia/trace-core/node";
 import type { Command } from "commander";
 
+import { traceDirs } from "../paths.js";
 import { renderReceipt } from "../render/receipt.js";
-import { RECEIPTS_DIR, writeReceipt } from "../store.js";
-import {
-  resolveTemplateSource,
-  type TemplateSource,
-  USER_TEMPLATES_DIR,
-} from "../templates.js";
+import { writeReceipt } from "../store.js";
+import { resolveTemplateSource, type TemplateSource } from "../templates.js";
 import { color, spinner } from "../ui.js";
+import { withTraceDir } from "./options.js";
 import type { TraceCommand } from "./types.js";
 
 /** The template applied when `--template` is omitted. */
@@ -60,15 +57,17 @@ export interface BuildOptions {
    * Defaults to `x402-buyer`.
    */
   template?: string;
-  /** Directory of the project's own templates. Defaults to `.trace/templates`. */
+  /** Root directory the three below hang off. Defaults to `.trace`. */
+  dir?: string;
+  /** Directory of the project's own templates. Defaults to `<dir>/templates`. */
   templatesDir?: string;
   /** Emit machine-readable JSON instead of a terminal summary. */
   json?: boolean;
   /** Build every run in the events directory instead of only the latest. */
   all?: boolean;
-  /** Run-events directory to resolve runs from when no file is given. */
+  /** Run-events directory to resolve runs from when no file is given. Defaults to `<dir>/events`. */
   eventsDir?: string;
-  /** Directory receipts are written to. */
+  /** Directory receipts are written to. Defaults to `<dir>/receipts`. */
   receiptsDir?: string;
 }
 
@@ -169,10 +168,12 @@ export function runBuild(
   options: BuildOptions = {},
 ): BuildResult {
   const templateName = options.template ?? DEFAULT_TEMPLATE;
-  const templatesDir = options.templatesDir ?? USER_TEMPLATES_DIR;
   const json = options.json ?? false;
-  const eventsDir = options.eventsDir ?? DEFAULT_RUN_DIR;
-  const receiptsDir = options.receiptsDir ?? RECEIPTS_DIR;
+  // `--dir` moves the root; a narrower directory, when given, outranks it.
+  const dirs = traceDirs(options.dir);
+  const templatesDir = options.templatesDir ?? dirs.templates;
+  const eventsDir = options.eventsDir ?? dirs.events;
+  const receiptsDir = options.receiptsDir ?? dirs.receipts;
 
   const paths = selectRuns(files, options.all ?? false, eventsDir);
   const ids = runIdsOf(paths);
@@ -311,11 +312,11 @@ export function runBuild(
 
 export const buildCommand: TraceCommand = {
   register(program: Command): void {
-    program
+    const build = program
       .command("build")
       .argument(
         "[file...]",
-        "ndjson run files to build from (default: the latest in .trace/events)",
+        "ndjson run files to build from (default: the latest in the events directory)",
       )
       .option(
         "--all",
@@ -325,11 +326,15 @@ export const buildCommand: TraceCommand = {
         "--template <name|path>",
         "operation template to apply to every operation",
         DEFAULT_TEMPLATE,
-      )
+      );
+
+    // No commander default here: left undefined, "not given" stays
+    // distinguishable from "given", which is what lets `--dir` supply the
+    // templates directory and an explicit `--templates-dir` still outrank it.
+    withTraceDir(build)
       .option(
         "--templates-dir <path>",
-        "directory holding the project's own templates",
-        USER_TEMPLATES_DIR,
+        "directory holding the project's own templates (overrides --dir)",
       )
       .option(
         "--json",
@@ -342,13 +347,15 @@ export const buildCommand: TraceCommand = {
           opts: {
             all?: boolean;
             template: string;
-            templatesDir: string;
+            dir: string;
+            templatesDir?: string;
             json?: boolean;
           },
         ) => {
           runBuild(files, {
             all: opts.all,
             template: opts.template,
+            dir: opts.dir,
             templatesDir: opts.templatesDir,
             json: opts.json,
           });

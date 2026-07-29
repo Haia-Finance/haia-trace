@@ -86,8 +86,12 @@ edited template is never lost to a repeated command.
 
 | Option                   | Applies to    | Meaning                                                       |
 | ------------------------ | ------------- | ------------------------------------------------------------- |
-| `--templates-dir <path>` | `list`, `new` | Where your own templates live. Default: `.trace/templates/`.   |
+| `--dir <path>`           | `list`, `new` | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`. |
+| `--templates-dir <path>` | `list`, `new` | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
 | `--force`                | `new`         | Overwrite the file if it already exists.                       |
+
+The command `new` prints when it's done carries whichever of the two flags you
+used, so the follow-up `build` resolves the file it just wrote.
 
 <Tip>
   A local template shadows a built-in of the same name — writing

@@ -10,7 +10,8 @@
  * the two halves of that loop need no flags to meet.
  *
  * Both `run*` functions stay free of commander so they test directly, and neither
- * decides where templates live — that contract belongs to `../templates.js`.
+ * decides where templates live — that contract belongs to `../paths.js`, which
+ * turns a Trace root into the directory `../templates.js` then reads and writes.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -18,19 +19,22 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import type { Command } from "commander";
 
 import { isErrno } from "../fs.js";
+import { DEFAULT_TRACE_DIR, traceDirs } from "../paths.js";
 import { renderScaffold } from "../scaffold.js";
 import {
   listAllTemplates,
   listTemplates,
   TEMPLATE_NAME,
   templatePath,
-  USER_TEMPLATES_DIR,
 } from "../templates.js";
 import { color, emoji, symbol } from "../ui.js";
+import { withTraceDir } from "./options.js";
 import type { TraceCommand } from "./types.js";
 
 export interface TemplateListOptions {
-  /** Directory of the project's own templates. Defaults to `.trace/templates`. */
+  /** Root Trace directory. Defaults to `.trace`. */
+  dir?: string;
+  /** Directory of the project's own templates. Defaults to `<dir>/templates`. */
   templatesDir?: string;
 }
 
@@ -41,7 +45,7 @@ export interface TemplateNewOptions extends TemplateListOptions {
 
 /** Print every template `build --template` can resolve, and where each comes from. */
 export function runTemplateList(options: TemplateListOptions = {}): void {
-  const dir = options.templatesDir ?? USER_TEMPLATES_DIR;
+  const dir = options.templatesDir ?? traceDirs(options.dir).templates;
   const sources = listAllTemplates(dir);
 
   if (sources.length === 0) {
@@ -84,7 +88,8 @@ export function runTemplateNew(
     );
   }
 
-  const dir = options.templatesDir ?? USER_TEMPLATES_DIR;
+  const dirs = traceDirs(options.dir);
+  const dir = options.templatesDir ?? dirs.templates;
   const path = templatePath(dir, name);
 
   mkdirSync(dir, { recursive: true });
@@ -110,10 +115,19 @@ export function runTemplateNew(
       `${symbol.warning} ${color.yellow(`This shadows the built-in ${name} template.`)}\n`,
     );
   }
-  // Carry the directory into the suggestion when it isn't the default one, so the
-  // line printed is a command that actually resolves what was just written.
-  const where =
-    dir === USER_TEMPLATES_DIR ? "" : ` --templates-dir ${JSON.stringify(dir)}`;
+  // Carry *every* flag that moved a directory into the suggestion, so the line
+  // printed is a command that actually resolves what was just written. Both can
+  // apply at once, and echoing only the narrower one would be worse than echoing
+  // neither: the next `build` would read runs from the default root — silently,
+  // and against the wrong project, if a stale one happens to be on disk.
+  const where = [
+    dirs.root === DEFAULT_TRACE_DIR
+      ? ""
+      : ` --dir ${JSON.stringify(dirs.root)}`,
+    options.templatesDir === undefined
+      ? ""
+      : ` --templates-dir ${JSON.stringify(options.templatesDir)}`,
+  ].join("");
   console.log(color.dim("  Edit the stages to match your events, then:"));
   console.log(`  haia-trace build --template ${name}${where}\n`);
 
@@ -128,31 +142,37 @@ export const templateCommand: TraceCommand = {
         "Work with operation templates — the shape a receipt is assembled against",
       );
 
-    template
-      .command("list")
-      .description("List the templates available to build against")
+    withTraceDir(
+      template
+        .command("list")
+        .description("List the templates available to build against"),
+    )
       .option(
         "--templates-dir <path>",
-        "directory holding the project's own templates",
-        USER_TEMPLATES_DIR,
+        "directory holding the project's own templates (overrides --dir)",
       )
-      .action((opts: { templatesDir: string }) => {
-        runTemplateList({ templatesDir: opts.templatesDir });
+      .action((opts: { dir: string; templatesDir?: string }) => {
+        runTemplateList({ dir: opts.dir, templatesDir: opts.templatesDir });
       });
 
-    template
-      .command("new")
-      .argument("<name>", "name for the new template")
-      .description("Scaffold a new operation template to edit")
+    withTraceDir(
+      template
+        .command("new")
+        .argument("<name>", "name for the new template")
+        .description("Scaffold a new operation template to edit"),
+    )
       .option(
         "--templates-dir <path>",
-        "directory to create the template in",
-        USER_TEMPLATES_DIR,
+        "directory to create the template in (overrides --dir)",
       )
       .option("--force", "overwrite the file if it already exists")
       .action(
-        (name: string, opts: { templatesDir: string; force?: boolean }) => {
+        (
+          name: string,
+          opts: { dir: string; templatesDir?: string; force?: boolean },
+        ) => {
           runTemplateNew(name, {
+            dir: opts.dir,
             templatesDir: opts.templatesDir,
             force: opts.force,
           });

@@ -70,15 +70,17 @@ haia-trace build ./run.ndjson          # build a specific run file
 haia-trace build .trace/events/17217*.ndjson   # or a few of them
 haia-trace build --template x402-seller
 haia-trace build --template my-op      # your own, from .trace/templates/
+haia-trace build --dir .my-trace       # read and write a different root
 haia-trace build --json                # machine-readable output for agents
 ```
 
 | Argument / option        | Meaning                                                                    |
 | ------------------------ | -------------------------------------------------------------------------- |
-| `[file...]`              | NDJSON run files to build from. Default: the latest in `.trace/events/`.   |
+| `[file...]`              | NDJSON run files to build from. Default: the latest in the events directory. |
 | `--all`                  | Build every run in the events directory. Not combinable with `[file...]`.  |
 | `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.      |
-| `--templates-dir <path>` | Where your own templates live. Default: `.trace/templates/`.                |
+| `--dir <path>`           | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`.    |
+| `--templates-dir <path>` | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
 | `--json`                 | Emit `{ runs: [{ run, path, receipts, unassigned }], template }` as JSON instead of a terminal summary. |
 
 Several runs mean several builds, never one merged event set. An event carries no
@@ -136,8 +138,10 @@ file `build` would actually load:
 `new` writes a commented starter template into `.trace/templates/` — the same
 directory `build` searches first, so `haia-trace build --template my-op` picks it
 up as soon as you've edited the stages. It refuses to overwrite an existing file
-unless you pass `--force`, and both subcommands take `--templates-dir <path>` if
-your templates live somewhere else.
+unless you pass `--force`, and both subcommands take `--dir <path>` (a different
+root) or `--templates-dir <path>` (templates alone) if your templates live
+somewhere else. The command `new` prints when it's done carries whichever of the
+two you used, so the follow-up `build` resolves the file it just wrote.
 
 ### Global flags
 
@@ -160,6 +164,13 @@ A run file is newline-delimited JSON — one event per line, append-only. It's t
 source of truth; a Receipt is a derived, reproducible artifact, so re-building
 the same run always yields the same Receipt.
 
+`--dir` moves the root — `haia-trace build --dir .my-trace` — for a second project
+in one checkout, or a scratch run that shouldn't touch the committed tree. What's
+*inside* the root never changes: `events/`, `receipts/`, `templates/`. That's what
+makes one flag enough, and what keeps a relocated directory readable by anyone who
+only knows the default one. Every command that touches these takes `--dir`, and
+`--templates-dir` still outranks it when you want templates alone somewhere else.
+
 `events/` and `receipts/` are derived and belong in `.gitignore`; `templates/` is
 source you write, so ignore the two subdirectories rather than `.trace/` as a
 whole:
@@ -169,15 +180,32 @@ whole:
 .trace/receipts/
 ```
 
+A relocated root needs its own entries — those two cover `.trace/` only, so
+output under `.my-trace/` is untracked but not ignored, and the next `git add -A`
+would commit it.
+
 ## Producing a run file
 
-`build` needs a `.trace/events/*.ndjson` run file.
+`build` needs an `events/*.ndjson` run file under the root.
 [`@usehaia/trace-x402`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/x402)
-writes one from a live x402 app — attach it to your client or resource server and
-`build` picks the run up with no path to configure, since both sides default to
-`.trace/events`. Any NDJSON whose lines match the Event Contract works just as
-well (the bundled [`fixtures/x402-buyer.ndjson`](./fixtures/x402-buyer.ndjson) is
-a working example).
+writes one from a live x402 app — attach it to your client or resource server:
+
+```ts
+import { createRunWriter } from "@usehaia/trace-core/node";
+import { trace } from "@usehaia/trace-x402";
+
+trace(client, { writer: createRunWriter(".trace/events") });
+```
+
+The recorder names its directory explicitly, so it's the one thing that has to
+agree with the CLI: point it at `events/` under whatever root you `build` with. If
+the directory you point `build` at is empty it says so by name; if it holds runs
+from an *earlier* session, though, `build` assembles the newest of those without
+complaint — so clear out or ignore a root you've stopped recording into.
+
+Any NDJSON
+whose lines match the Event Contract works just as well (the bundled
+[`fixtures/x402-buyer.ndjson`](./fixtures/x402-buyer.ndjson) is a working example).
 
 Build a capture against the template for the side that recorded it: `x402-buyer`
 is the default, `--template x402-seller` for a resource server.

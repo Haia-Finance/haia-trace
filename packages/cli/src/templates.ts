@@ -10,8 +10,10 @@
  * A template comes from one of two places. The **built-in** set ships inside this
  * package (`packages/cli/templates/`) and is carried into the published tarball by
  * the `files` list, so every install has it without a network fetch. A project's
- * **own** templates live in `.trace/templates/`, alongside the events and receipts
- * — authored by the user, resolved first, and free to shadow a built-in name.
+ * **own** templates live in a directory the caller names — `templates/` under the
+ * Trace root, per `./paths.js` — authored by the user, resolved first, and free to
+ * shadow a built-in name. That directory is always an argument here: a default
+ * would let a lookup land in `.trace/templates` while `--dir` pointed elsewhere.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -49,14 +51,6 @@ const BUILTIN_TEMPLATES_DIR = join(
   "..",
   "templates",
 );
-
-/**
- * Where a project's own templates live, relative to the working directory. Sits
- * beside `.trace/events` and `.trace/receipts` so one directory holds everything
- * Trace reads and writes — but unlike those two this one is *source*, authored by
- * the user and worth committing.
- */
-export const USER_TEMPLATES_DIR = join(".trace", "templates");
 
 /**
  * Where a resolved template came from — the project's own directory, the built-in
@@ -129,7 +123,7 @@ export function listTemplates(): string[] {
  * case — most projects author none — so it reads as an empty list, the opposite of
  * the built-in directory, whose absence is a broken install.
  */
-export function listLocalTemplates(dir: string = USER_TEMPLATES_DIR): string[] {
+export function listLocalTemplates(dir: string): string[] {
   try {
     return listDir(dir);
   } catch (err) {
@@ -151,9 +145,7 @@ export function listLocalTemplates(dir: string = USER_TEMPLATES_DIR): string[] {
  * that compared strings would call that name built-in while `build` loaded the
  * local file.
  */
-export function listAllTemplates(
-  dir: string = USER_TEMPLATES_DIR,
-): TemplateSource[] {
+export function listAllTemplates(dir: string): TemplateSource[] {
   const names = [
     ...new Set([...listLocalTemplates(dir), ...listTemplates()]),
   ].sort((a, b) => a.localeCompare(b));
@@ -202,10 +194,7 @@ function readTemplateIfPresent(
  * dot. That keeps one rule for both forms, and leaves the name path unable to reach
  * outside the directories it is joined onto.
  */
-export function resolveTemplate(
-  ref: string,
-  dir: string = USER_TEMPLATES_DIR,
-): OperationTemplate {
+export function resolveTemplate(ref: string, dir: string): OperationTemplate {
   return resolveTemplateSource(ref, dir).template;
 }
 
@@ -218,7 +207,7 @@ export function resolveTemplate(
  */
 export function resolveTemplateSource(
   ref: string,
-  dir: string = USER_TEMPLATES_DIR,
+  dir: string,
 ): TemplateSource & { template: OperationTemplate } {
   if (!TEMPLATE_NAME.test(ref)) {
     return {

@@ -323,3 +323,101 @@ describe("haia-trace build", () => {
     expect(program.commands.map((c) => c.name())).toContain("build");
   });
 });
+
+describe("haia-trace build --dir", () => {
+  /** A Trace root with a run and a project template already in it. */
+  function seedRoot(root: string): string {
+    mkdirSync(join(root, "events"), { recursive: true });
+    mkdirSync(join(root, "templates"), { recursive: true });
+    const run = join(root, "events", "100.ndjson");
+    writeFileSync(run, NDJSON);
+    writeFileSync(
+      join(root, "templates", "x402-buyer.yaml"),
+      "template: x402-buyer\nversion: 1\nstages:\n  - id: outcome\n    required: true\n    match:\n      - event: x402.settle.failed\n",
+    );
+    return run;
+  }
+
+  it("moves events, receipts and templates together", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const root = join(dir, "my-trace");
+    const run = seedRoot(root);
+
+    const result = runBuild([], { dir: root });
+
+    // Read the run from <root>/events...
+    expect(result.runs.map((r) => r.path)).toEqual([run]);
+    // ...judged against the template in <root>/templates...
+    expect(result.template).toMatchObject({
+      path: join(root, "templates", "x402-buyer.yaml"),
+      origin: "local",
+    });
+    // ...and wrote the receipts to <root>/receipts.
+    expect(readdirSync(join(root, "receipts")).sort()).toEqual([
+      "100~op-1.json",
+      "100~op-2.json",
+    ]);
+    // Nothing landed beside the default root.
+    expect(existsSync(join(dir, "receipts"))).toBe(false);
+  });
+
+  it("lets --templates-dir outrank it, and only for templates", () => {
+    // Templates are committed source; events and receipts are output. Pointing
+    // runs at a scratch root must not orphan the templates.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const root = join(dir, "my-trace");
+    seedRoot(root);
+    const shared = join(dir, "ops");
+    mkdirSync(shared);
+    writeFileSync(
+      join(shared, "x402-buyer.yaml"),
+      "template: x402-buyer\nversion: 1\nstages:\n  - id: shared\n    required: true\n    match:\n      - event: x402.payment.required\n",
+    );
+
+    const result = runBuild([], { dir: root, templatesDir: shared });
+
+    expect(result.template).toMatchObject({
+      path: join(shared, "x402-buyer.yaml"),
+      origin: "local",
+    });
+    expect(result.runs[0]?.receipts[0]?.stages.map((s) => s.id)).toEqual([
+      "shared",
+    ]);
+    // The root still supplied the other two.
+    expect(readdirSync(join(root, "receipts"))).toHaveLength(2);
+  });
+
+  it("still yields to an explicit run file, while receipts follow the root", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const root = join(dir, "my-trace");
+    seedRoot(root);
+
+    const result = runBuild([file], { dir: root });
+
+    expect(result.runs.map((r) => r.run)).toEqual(["run"]);
+    expect(readdirSync(join(root, "receipts")).sort()).toEqual([
+      "run~op-1.json",
+      "run~op-2.json",
+    ]);
+  });
+
+  it("names the directory it searched when the root holds no runs", () => {
+    expect(() => runBuild([], { dir: join(dir, "nowhere") })).toThrow(
+      join(dir, "nowhere", "events"),
+    );
+  });
+
+  it("registers --templates-dir with no default, so --dir can supply it", () => {
+    // With a commander default, `templatesDir` is always set and "given" cannot
+    // be told from "not given" — the override would silently beat --dir always.
+    const program = new Command();
+    buildCommand.register(program);
+    const build = program.commands.find((c) => c.name() === "build");
+    const option = (long: string) =>
+      build?.options.find((o) => o.long === long);
+
+    expect(option("--dir")?.defaultValue).toBe(".trace");
+    expect(option("--templates-dir")).toBeDefined();
+    expect(option("--templates-dir")?.defaultValue).toBeUndefined();
+  });
+});

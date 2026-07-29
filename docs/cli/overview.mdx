@@ -59,6 +59,26 @@ A run file is newline-delimited JSON — one event per line, append-only. It's t
 source of truth; a Receipt is a derived, reproducible artifact, so re-building
 the same run always yields the same Receipt.
 
+### Moving the root with `--dir`
+
+`--dir` relocates the whole root — `haia-trace build --dir .my-trace` — for a
+second project in one checkout, or a scratch run that shouldn't touch the
+committed tree. What's *inside* the root never changes: `events/`, `receipts/`,
+`templates/`. That's what makes one flag enough, and what keeps a relocated
+directory readable by anyone who only knows the default one. Every command that
+touches these takes `--dir`, and `--templates-dir` still outranks it when you
+want templates alone somewhere else.
+
+The recorder is the one thing `--dir` can't reach: it names its own directory
+(`createRunWriter(".trace/events")`), so point it at `events/` under whatever
+root you build with.
+
+<Warning>
+  A relocated root needs its own `.gitignore` entries — the ones below cover
+  `.trace/` only. Derived output under `.my-trace/` is untracked but *not*
+  ignored, so the next `git add -A` would commit it.
+</Warning>
+
 `events/` and `receipts/` are recorded and derived, so they belong in
 `.gitignore`. `templates/` is source you author — ignore the two subdirectories
 rather than `.trace/` as a whole:

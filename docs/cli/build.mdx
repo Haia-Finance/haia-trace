@@ -22,6 +22,7 @@ haia-trace build ./run.ndjson             # build a specific run file
 haia-trace build .trace/events/17217*.ndjson  # or a few of them
 haia-trace build --template x402-seller   # apply a specific template
 haia-trace build --template my-op         # apply one of your own
+haia-trace build --dir .my-trace          # read and write a different root
 haia-trace build --json                   # machine-readable output for agents
 ```
 
@@ -29,10 +30,11 @@ haia-trace build --json                   # machine-readable output for agents
 
 | Argument / option         | Meaning                                                                 |
 | ------------------------- | ----------------------------------------------------------------------- |
-| `[file...]`               | NDJSON run files to build from. Default: the latest in `.trace/events/`. |
+| `[file...]`               | NDJSON run files to build from. Default: the latest in the events directory. |
 | `--all`                   | Build every run in the events directory. Not combinable with `[file...]`. |
 | `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.    |
-| `--templates-dir <path>`  | Where your own templates live. Default: `.trace/templates/`.             |
+| `--dir <path>`            | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`.  |
+| `--templates-dir <path>`  | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
 | `--json`                  | Emit `{ runs: [{ run, path, receipts, unassigned }], template }` as JSON instead of a terminal summary. |
 
 ## One build per run
@@ -88,14 +90,17 @@ unique within its run: a flat list can hold two different payments both called
 
 ## Producing a run file
 
-`build` needs a `.trace/events/*.ndjson` run file. Today you can point it at any
-NDJSON file whose lines match the [Event
+`build` needs an `events/*.ndjson` run file under the root. Today you can point it
+at any NDJSON file whose lines match the [Event
 Contract](/sdk/core) — the CLI ships a working example fixture.
 
 <Note>
   For automatic capture from a live x402 app, point
-  [`@usehaia/trace-x402`](/sdk/x402) at `.trace/events` — `trace(...)` then feeds
-  `build` directly. Pick the template matching the side you traced: `x402-buyer`
-  (the default) for a client capture, `--template x402-seller` for a resource
-  server or facilitator capture.
+  [`@usehaia/trace-x402`](/sdk/x402) at `.trace/events` with
+  `createRunWriter(".trace/events")` — `trace(...)` then feeds `build` directly.
+  The recorder names its directory explicitly, so it's the one thing that has to
+  agree with the CLI: point it at `events/` under whatever root you build with.
+  Pick the template matching the side you traced: `x402-buyer` (the default) for a
+  client capture, `--template x402-seller` for a resource server or facilitator
+  capture.
 </Note>

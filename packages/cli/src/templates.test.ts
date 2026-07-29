@@ -13,7 +13,6 @@ import {
   parseTemplate,
   resolveTemplate,
   resolveTemplateSource,
-  USER_TEMPLATES_DIR,
 } from "./index.js";
 
 describe("template loading", () => {
@@ -237,10 +236,6 @@ stages:
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("defaults to .trace/templates, beside the events and receipts", () => {
-    expect(USER_TEMPLATES_DIR).toBe(join(".trace", "templates"));
   });
 
   it("resolves a project template by name", () => {

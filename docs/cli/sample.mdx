@@ -16,8 +16,10 @@ template file plus a fixture file — never a code change.
 The template is resolved exactly as [`build`](/cli/build) resolves it, so a name
 means the same file in both commands: editing `.trace/templates/x402-buyer.yaml`
 changes what you sample too, and `sample` prints the path when the template isn't
-the shipped one. Only the *events* are always built-in — a template with no bundled
-fixture set has nothing to replay and says so.
+the shipped one. `--dir` and `--templates-dir` work here for the same reason —
+they have to reach the same file `build` would. Only the *events* are always
+built-in — a template with no bundled fixture set has nothing to replay and says
+so.
 
 ## Example
 

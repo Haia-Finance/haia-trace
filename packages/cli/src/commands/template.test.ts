@@ -123,6 +123,77 @@ describe("haia-trace template new", () => {
   });
 });
 
+describe("haia-trace template --dir", () => {
+  it("scaffolds into <root>/templates and lists it back from there", () => {
+    const root = join(dir, "my-trace");
+
+    let path = "";
+    output(() => {
+      path = runTemplateNew("my-op", { dir: root });
+    });
+
+    expect(path).toBe(join(root, "templates", "my-op.yaml"));
+    expect(readFileSync(path, "utf8")).toContain("template: my-op");
+    const listed = output(() => runTemplateList({ dir: root }));
+    expect(listed).toContain(path);
+  });
+
+  it("echoes --dir in the follow-up command when the root moved", () => {
+    // The printed line has to be a command that actually resolves the file just
+    // written — and the next `build` wants the same root, not just the same
+    // templates, so the narrower flag would say the wrong thing here.
+    const root = join(dir, "my-trace");
+    const text = output(() => {
+      runTemplateNew("my-op", { dir: root });
+    });
+    expect(text).toContain(`haia-trace build --template my-op --dir "${root}"`);
+    expect(text).not.toContain("--templates-dir");
+  });
+
+  it("echoes --templates-dir instead when that is what moved", () => {
+    const text = output(() => {
+      runTemplateNew("my-op", { templatesDir: dir });
+    });
+    expect(text).toContain(
+      `haia-trace build --template my-op --templates-dir "${dir}"`,
+    );
+  });
+
+  it("echoes no directory flag at all under the default root", () => {
+    // `.trace` is the default, so a bare command already resolves it. Run in a
+    // temp cwd so the assertion is about the default, not this working directory.
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const text = output(() => {
+        runTemplateNew("my-op");
+      });
+      expect(text).toContain(join(".trace", "templates", "my-op.yaml"));
+      expect(text).toContain("haia-trace build --template my-op\n");
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
+  it("lets --templates-dir outrank --dir", () => {
+    const root = join(dir, "my-trace");
+    const shared = join(dir, "ops");
+
+    let path = "";
+    const text = output(() => {
+      path = runTemplateNew("my-op", { dir: root, templatesDir: shared });
+    });
+
+    expect(path).toBe(join(shared, "my-op.yaml"));
+    // Both flags moved a directory, so both have to survive into the suggestion.
+    // Echoing only the narrower one would send the next `build` at the default
+    // root — silently building another project's runs if one is on disk.
+    expect(text).toContain(
+      `haia-trace build --template my-op --dir "${root}" --templates-dir "${shared}"`,
+    );
+  });
+});
+
 describe("registration", () => {
   it("registers `template` with the `list` and `new` subcommands", () => {
     const program = new Command();

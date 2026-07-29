@@ -1,16 +1,16 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { runSample, sampleCommand } from "./sample.js";
+import { runSample, type SampleOptions, sampleCommand } from "./sample.js";
 
 /** Run the sample and capture everything it printed. */
-function sampleOutput(template?: string, templatesDir?: string): string {
+function sampleOutput(template?: string, options: SampleOptions = {}): string {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
-  runSample(template, { templatesDir });
+  runSample(template, options);
   return log.mock.calls.map((args) => args.join(" ")).join("\n");
 }
 
@@ -67,10 +67,28 @@ describe("haia-trace sample", () => {
         "template: x402-buyer\nversion: 1\nstages:\n  - id: only\n    required: true\n    match:\n      - event: x402.payment.required\n",
       );
 
-      const out = sampleOutput("x402-buyer", dir);
+      const out = sampleOutput("x402-buyer", { templatesDir: dir });
       expect(out).toContain(join(dir, "x402-buyer.yaml"));
       expect(out).toContain("only");
       // The shipped template's stages are gone — this really is the local one.
+      expect(out).not.toContain("challenge");
+    });
+
+    it("finds that template under --dir too", () => {
+      // `sample` resolves a name exactly as `build` does, so a relocated root has
+      // to reach the same file here as it would there.
+      dir = mkdtempSync(join(tmpdir(), "trace-sample-"));
+      const root = join(dir, "my-trace");
+      const path = join(root, "templates", "x402-buyer.yaml");
+      mkdirSync(join(root, "templates"), { recursive: true });
+      writeFileSync(
+        path,
+        "template: x402-buyer\nversion: 1\nstages:\n  - id: only\n    required: true\n    match:\n      - event: x402.payment.required\n",
+      );
+
+      const out = sampleOutput("x402-buyer", { dir: root });
+
+      expect(out).toContain(path);
       expect(out).not.toContain("challenge");
     });
   });

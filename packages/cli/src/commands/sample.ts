@@ -22,16 +22,20 @@ import { assembleReceipts } from "@usehaia/trace-core";
 import type { Command } from "commander";
 
 import { loadFixtureEvents } from "../fixtures.js";
+import { traceDirs } from "../paths.js";
 import { renderReceipt } from "../render/receipt.js";
-import { resolveTemplateSource, USER_TEMPLATES_DIR } from "../templates.js";
+import { resolveTemplateSource } from "../templates.js";
 import { color } from "../ui.js";
+import { withTraceDir } from "./options.js";
 import type { TraceCommand } from "./types.js";
 
 /** The template sampled when the argument is omitted. */
 const DEFAULT_TEMPLATE = "x402-buyer";
 
 export interface SampleOptions {
-  /** Directory of the project's own templates. Defaults to `.trace/templates`. */
+  /** Root Trace directory. Defaults to `.trace`. */
+  dir?: string;
+  /** Directory of the project's own templates. Defaults to `<dir>/templates`. */
   templatesDir?: string;
 }
 
@@ -42,7 +46,7 @@ export function runSample(
 ): void {
   const source = resolveTemplateSource(
     templateName,
-    options.templatesDir ?? USER_TEMPLATES_DIR,
+    options.templatesDir ?? traceDirs(options.dir).templates,
   );
   const events = loadFixtureEvents(templateName);
   const { receipts } = assembleReceipts(events, source.template);
@@ -66,19 +70,28 @@ export function runSample(
 
 export const sampleCommand: TraceCommand = {
   register(program: Command): void {
-    program
-      .command("sample")
-      .argument("[template]", "operation template to sample", DEFAULT_TEMPLATE)
+    withTraceDir(
+      program
+        .command("sample")
+        .argument(
+          "[template]",
+          "operation template to sample",
+          DEFAULT_TEMPLATE,
+        ),
+    )
       .option(
         "--templates-dir <path>",
-        "directory holding the project's own templates",
-        USER_TEMPLATES_DIR,
+        "directory holding the project's own templates (overrides --dir)",
       )
       .description(
         "Assemble receipts from bundled fixtures — the first, zero-setup taste of Trace",
       )
-      .action((template: string, opts: { templatesDir: string }) =>
-        runSample(template, { templatesDir: opts.templatesDir }),
+      .action(
+        (template: string, opts: { dir: string; templatesDir?: string }) =>
+          runSample(template, {
+            dir: opts.dir,
+            templatesDir: opts.templatesDir,
+          }),
       );
   },
 };
