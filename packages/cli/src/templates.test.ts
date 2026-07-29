@@ -133,8 +133,7 @@ describe("template loading", () => {
       "verification",
       "settlement",
     ]);
-    // No request gate, and no cancellation exception: a facilitator has neither
-    // hook, and listing them would promise witnesses that can never arrive.
+    // No request gate and no cancellation exception: a facilitator has neither hook.
     expect(template.exceptions).toEqual([
       "x402.verify.failed",
       "x402.settle.failed",
@@ -142,10 +141,8 @@ describe("template loading", () => {
   });
 
   it("keeps the seller and the facilitator apart on their shared vocabulary", () => {
-    // Both record x402.verify.ok and x402.settle.ok for the same payment, so
-    // every witness of either template has to name the role it means — without
-    // that, a run tracing both would close one side's stages on the other's
-    // events.
+    // The two roles record the same verify/settle event types for the same
+    // payment, so every witness in both templates has to name its role.
     for (const [name, role] of [
       ["x402-seller", "server"],
       ["x402-facilitator", "facilitator"],

@@ -3,11 +3,9 @@
 # `request` is optional because only the HTTP resource server has a request
 # gate; the `*.started` events are progress markers, not milestones.
 #
-# Every witness names its role, because a facilitator records the same
-# verify/settle vocabulary for the same payment: without the constraint, a run
-# that traced both would close these stages on the facilitator's events and the
-# receipt would claim the seller verified what it did not. Assemble a
-# facilitator capture with `x402-facilitator` instead.
+# Every witness names its role: a facilitator records the same verify/settle
+# vocabulary, and without the constraint its events would close these stages.
+# Assemble a facilitator capture with `x402-facilitator` instead.
 template: x402-seller
 version: 2
 stages:

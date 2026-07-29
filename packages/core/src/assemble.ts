@@ -102,11 +102,7 @@ function startDraft(
   template.stages.forEach((stage, index) => {
     for (const { event, role } of stage.match) {
       const stages = typeToStages.get(event) ?? [];
-      // Dedupe the witness so one listed twice in a match-set still records a
-      // matching event only once on that stage.
-      if (!stages.some((s) => s.stage === index && s.role === role)) {
-        stages.push({ stage: index, role });
-      }
+      stages.push({ stage: index, role });
       typeToStages.set(event, stages);
     }
   });
@@ -128,10 +124,15 @@ function applyEvent(draft: Draft, event: TraceEvent): void {
 
   const stages = draft.typeToStages.get(event.event_type);
   if (stages !== undefined) {
+    // Dedupe per stage: an event matching several of a stage's witnesses (e.g.
+    // listed both with and without a role) still records once on that stage.
+    const closed = new Set<number>();
     for (const { stage, role } of stages) {
       // A witness with no role is closed by any observer; one with a role only
       // by that side.
       if (role !== undefined && role !== event.role) continue;
+      if (closed.has(stage)) continue;
+      closed.add(stage);
       // Aligned with `template.stages`, so the entry always exists; the guard is
       // for `noUncheckedIndexedAccess`.
       draft.stageEvents[stage]?.push(event.event_id);

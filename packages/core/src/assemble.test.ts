@@ -555,8 +555,6 @@ describe("assembleReceiptsProgressively", () => {
 });
 
 describe("role-constrained witnesses", () => {
-  // A resource server and a facilitator record the same event type for the same
-  // payment, so a seller's receipt has to be able to say which one it means.
   const sellerVerify: OperationTemplate = {
     template: "seller-verify",
     version: 1,
@@ -601,10 +599,32 @@ describe("role-constrained witnesses", () => {
       sellerVerify,
     );
 
-    // Only the server's event is a witness; the facilitator's stays out of the
-    // stage even though both are in the receipt's event list.
+    // evt-1 is the server's event; the facilitator's evt-0 stays out of the stage.
     expect(stage(receipt, "verification")?.events).toEqual(["evt-1"]);
     expect(receipt.completeness).toBe("full");
+  });
+
+  it("records an event once on a stage it matches through several witnesses", () => {
+    const constrainedAndOpen: OperationTemplate = {
+      ...sellerVerify,
+      stages: [
+        {
+          id: "verification",
+          required: true,
+          match: [
+            { event: "x402.verify.ok", role: "server" },
+            { event: "x402.verify.ok" },
+          ],
+        },
+      ],
+    };
+
+    const receipt = assembleReceipt(
+      makeRoleEvents([["server", "x402.verify.ok"]]),
+      constrainedAndOpen,
+    );
+
+    expect(stage(receipt, "verification")?.events).toEqual(["evt-0"]);
   });
 
   it("leaves an unconstrained witness open to any role", () => {

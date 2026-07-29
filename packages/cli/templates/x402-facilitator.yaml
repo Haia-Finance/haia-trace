@@ -1,16 +1,9 @@
-# The x402 payment as the facilitator — the service that actually verifies and
-# settles it — witnesses it. Every event here is one the trace-x402 adapter
-# records with `role: facilitator`, which is what separates this from the
-# seller's receipt: the two share the verify/settle vocabulary exactly, and only
-# the role says who did the verifying.
+# The x402 payment as the facilitator — the service that verifies and settles
+# it — witnesses it. It shares the seller's verify/settle vocabulary, so every
+# witness names `role: facilitator`; only the role says who did the verifying.
 #
-# There is no request stage (a facilitator has no request gate) and no
-# `x402.payment.canceled` exception (it has no cancellation hook — that is the
-# very method that tells a resource server apart from a facilitator).
-#
-# One asymmetry worth knowing when reading a receipt: the SDK delivers a
-# facilitator's clean "not valid" to its failure hook rather than its result
-# hook, so a decline arrives as `x402.verify.failed` carrying the reason in
+# No request stage and no `x402.payment.canceled` exception: a facilitator has
+# neither hook. A decline is `x402.verify.failed` with the reason in
 # `error.message`, where a seller's carries `verify.invalid_reason`.
 template: x402-facilitator
 version: 1
@@ -26,7 +19,7 @@ stages:
     match:
       - event: x402.settle.ok
         role: facilitator
-    missing_explanation: "the payment verified, but the facilitator did not settle it"
+    missing_explanation: "the facilitator did not settle the payment"
 exceptions:
   - x402.verify.failed
   - x402.settle.failed

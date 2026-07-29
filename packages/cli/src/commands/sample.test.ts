@@ -45,7 +45,7 @@ describe("haia-trace sample", () => {
 
     expect(out).toContain("FULL");
     expect(out).toContain("PARTIAL");
-    expect(out).toContain("the facilitator did not settle it");
+    expect(out).toContain("the facilitator did not settle the payment");
     expect(out).toContain("x402.verify.failed");
   });
 

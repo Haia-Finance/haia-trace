@@ -66,7 +66,6 @@ by `check-types`) and `tsconfig.build.json` (excludes tests, used by `build` so
   `.js` extension** in source: `import { x } from "./foo.js"` (not `"./foo"`).
   Cross-package imports use the bare specifier: `from "@usehaia/trace-core"`.
 - TypeScript **strict** (plus `noUncheckedIndexedAccess`); see `tsconfig.base.json`.
-- Tests are co-located as `src/*.test.ts` and use `vitest`.
 - **Comments are public-facing.** This repo is public — every comment must make
   sense to an outside reader with no access to internal material. Do not cite
   private design docs, internal spec section numbers (`§7.1`), tickets, or

@@ -24,12 +24,9 @@ export interface StageMatch {
   event: EventType;
   /**
    * Restrict the witness to one observing side, matched against
-   * `TraceEvent.role`. Absent means any role closes the stage.
-   *
-   * It is load-bearing where two roles share a vocabulary: a resource server and
-   * a facilitator both record `x402.verify.ok` for the same payment, so a
-   * seller's receipt would otherwise be closed by the facilitator's witness — a
-   * claim about who verified that the run does not support.
+   * `TraceEvent.role`; absent means any role closes the stage. Load-bearing
+   * where two roles record the same event type for the same payment, as a
+   * resource server and a facilitator do.
    */
   role?: Role;
 }
@@ -148,8 +145,7 @@ export function assertOperationTemplate(
         fail(`${at}, match ${j}: \`event\` must be a non-empty string`);
       }
       const role = witness?.role;
-      // An empty role narrows the witness to nothing rather than widening it to
-      // every role, so hold it to the same non-empty rule.
+      // An empty role would match nothing, not every role.
       if (role !== undefined && (typeof role !== "string" || role === "")) {
         fail(`${at}, match ${j}: \`role\` must be a non-empty string`);
       }
