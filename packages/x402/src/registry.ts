@@ -39,7 +39,22 @@ export const hooksOf = (kind: TraceInstanceKind): string[] =>
  * before it is trusted to index `SPECS`. A Set, not an `in` check, so a prototype
  * key such as `"constructor"` can't slip through.
  */
-export const KNOWN_KINDS = new Set<string>(Object.keys(SPECS));
+const KNOWN_KINDS = new Set<string>(Object.keys(SPECS));
+
+/**
+ * The kind to capture an instance as. An explicit, recognized override wins over
+ * inference; an unrecognized one — a plain-JS caller, or a prototype key such as
+ * `"constructor"` — is ignored in favour of inference rather than indexing into
+ * a spec that isn't there, because `trace()` must never break the caller it wraps.
+ */
+export function resolveKind(
+  target: Record<string, unknown>,
+  override?: string,
+): TraceKind {
+  return override !== undefined && KNOWN_KINDS.has(override)
+    ? (override as TraceInstanceKind)
+    : inferKind(target);
+}
 
 /**
  * Infer an instance's kind from its method set, checked most-specific first.
@@ -56,7 +71,7 @@ export const KNOWN_KINDS = new Set<string>(Object.keys(SPECS));
  * verify/settle events would then be tagged `role: "facilitator"`. Pass an
  * explicit `kind` to correct such a case.
  */
-export function resolveKind(target: Record<string, unknown>): TraceKind {
+function inferKind(target: Record<string, unknown>): TraceKind {
   const has = (method: string): boolean => typeof target[method] === "function";
   if (has("onBeforePayment") || has("onAfterPayment")) return "mcpClient";
   if (has("onProtectedRequest")) return "httpResourceServer";
