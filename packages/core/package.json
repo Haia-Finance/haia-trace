@@ -36,6 +36,10 @@
     "./node": {
       "types": "./dist/node.d.ts",
       "default": "./dist/node.js"
+    },
+    "./cp": {
+      "types": "./dist/cp.d.ts",
+      "default": "./dist/cp.js"
     }
   },
   "files": [

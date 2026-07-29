@@ -39,7 +39,9 @@ one — a default would be a filesystem convention two packages had to keep
 agreeing on. That path is relative to the working directory, which is what an app
 started from its own project root wants; a process whose cwd is not fixed should
 pass an absolute path. Without a `writer`, events go to stdout as NDJSON — the
-same encoding, so it can simply be piped into a file.
+same encoding, so it can simply be piped into a file. A run can also be mirrored to a Haia
+Control Plane project while it is written locally — see
+[Mirror events to the Control Plane](/sdk/core#mirror-events-to-the-control-plane).
 
 `trace()` inspects the instance's method set to resolve its **kind**, attaches to
 that kind's lifecycle hooks — following into the instance a wrapper holds, so one

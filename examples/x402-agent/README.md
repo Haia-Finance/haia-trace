@@ -72,6 +72,30 @@ The run directory is the producer's to choose; `.trace/events` is the one
 `haia-trace build` reads from unless its `--dir` says otherwise, so naming it here
 is what makes recording and assembling meet.
 
+### Mirroring to the Control Plane
+
+Give the demo an ingest key and the same events also go to a Haia Control Plane
+project, where the dashboard can show them:
+
+```sh
+HAIA_INGEST_URL=https://<host> HAIA_INGEST_KEY=<key> pnpm demo
+```
+
+Nothing about the recording changes — two sinks compose into one writer:
+
+```js
+const writer = createMulticastWriter(runWriter, cpWriter);
+```
+
+The local run file stays the source of truth the receipts are assembled from;
+the Control Plane is a mirror. Uploading is batched, so `buyer.mjs` awaits
+`writer.flush?.()` before it exits — the file sink writes inside `write` and has
+no `flush` to call, which is why the call is optional.
+
+The environment variables belong to this script, not to the library: the sink
+takes its configuration through its constructor and never reads ambient state.
+With no key set, the demo runs entirely offline.
+
 `trace()` returns an attestation (`kind`, `attached`, `missing`, `complete`), so
 a run that recorded nothing is distinguishable from a recorder that never
 connected. The demo prints it on startup.
