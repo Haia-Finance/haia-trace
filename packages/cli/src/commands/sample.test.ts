@@ -40,6 +40,15 @@ describe("haia-trace sample", () => {
     expect(out).toContain("x402.verify.failed");
   });
 
+  it("assembles three facilitator receipts — full, partial, exception", () => {
+    const out = sampleOutput("x402-facilitator");
+
+    expect(out).toContain("FULL");
+    expect(out).toContain("PARTIAL");
+    expect(out).toContain("the facilitator did not settle the payment");
+    expect(out).toContain("x402.verify.failed");
+  });
+
   it("defaults to x402-buyer when no template is given", () => {
     expect(sampleOutput()).toContain("x402-buyer");
   });

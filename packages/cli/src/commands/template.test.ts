@@ -36,7 +36,8 @@ describe("haia-trace template list", () => {
     expect(text).toContain("x402-buyer");
     expect(text).toContain("x402-seller");
     expect(text).toContain("built-in");
-    expect(text).toContain("2 templates available.");
+    expect(text).toContain("x402-facilitator");
+    expect(text).toContain("3 templates available.");
   });
 
   it("lists a project template by the path build would load it from", () => {
@@ -48,7 +49,7 @@ describe("haia-trace template list", () => {
     const text = output(() => runTemplateList({ templatesDir: dir }));
     expect(text).toContain("my-op");
     expect(text).toContain(path);
-    expect(text).toContain("3 templates available.");
+    expect(text).toContain("4 templates available.");
   });
 });
 

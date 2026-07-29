@@ -1,6 +1,35 @@
 import { describe, expect, it } from "vitest";
 
-import { createCorrelator } from "./correlate.js";
+import { createCorrelator, paymentAttemptKey } from "../event/correlate.js";
+
+describe("paymentAttemptKey", () => {
+  const signed = (payload: Record<string, unknown>) => ({ payload });
+
+  it("identifies an attempt by the authorization nonce", () => {
+    expect(
+      paymentAttemptKey(signed({ authorization: { nonce: "0x01" } })),
+    ).toBe("payment:0x01");
+  });
+
+  it("falls back to a top-level nonce, then to the signature", () => {
+    // Not every scheme nests its nonce, and some carry none at all — the
+    // signature is then the only per-payment value on offer.
+    expect(paymentAttemptKey(signed({ nonce: "0x02" }))).toBe("payment:0x02");
+    expect(paymentAttemptKey(signed({ signature: "0xsig" }))).toBe(
+      "payment:0xsig",
+    );
+  });
+
+  it("yields no key when nothing identifies the attempt", () => {
+    // A firing with no key is recorded without a `context_id` rather than
+    // guessed into some operation.
+    expect(paymentAttemptKey(undefined)).toBeUndefined();
+    expect(
+      paymentAttemptKey(signed({ authorization: { nonce: 42 } })),
+    ).toBeUndefined();
+    expect(paymentAttemptKey({})).toBeUndefined();
+  });
+});
 
 /** Stands in for the `PaymentRequired` object the SDK threads through the hooks. */
 const anchor = () => ({ resource: { url: "https://api.example.com/report" } });

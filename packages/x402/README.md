@@ -229,12 +229,19 @@ file feeds [`haia-trace
 build`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/cli), and
 concurrent payments come out as separate receipts.
 
-The shipped templates are per-role: assemble a client capture with `x402-buyer`
-and a server capture with `x402-seller`. Each matches only events that side's
-hooks record, and every buyer stage has a witness in each client kind's flow
-(HTTP, MCP, and the bare `x402Client`), so a clean payment assembles as `full`
-on either side. A facilitator capture shares the server's verify/settle
-vocabulary and assembles with `x402-seller` too.
+The shipped templates are per-role — assemble a capture with the one for the side
+that recorded it: `x402-buyer` for a client, `x402-seller` for a resource server,
+`x402-facilitator` for a facilitator. Each matches only events that side's hooks
+record *and* only when its own `role` observed them, so a run that traced two
+sides still yields one honest receipt per side. Every buyer stage has a witness
+in each client kind's flow (HTTP, MCP, and the bare `x402Client`), so a clean
+payment assembles as `full` whichever side you look from.
+
+The server and the facilitator share the verify/settle vocabulary exactly, which
+is why the role constraint matters — but they do not share how a decline reads.
+The SDK hands a facilitator its clean "not valid" through the failure hook, so
+the reason arrives in `error.message`; a resource server gets it as a result, so
+the reason arrives in `verify.invalid_reason`. Both are `x402.verify.failed`.
 
 ## License
 

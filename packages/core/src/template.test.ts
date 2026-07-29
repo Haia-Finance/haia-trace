@@ -156,6 +156,30 @@ describe("assertOperationTemplate", () => {
     );
   });
 
+  it("rejects a match entry that is not a mapping at all", () => {
+    const bareString = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: ["an.event"] }],
+    };
+    expect(() => assertOperationTemplate(bareString)).toThrow(
+      /stage intent, match 0: `event` must be a non-empty string/,
+    );
+  });
+
+  it("rejects an empty-string role on a witness", () => {
+    const blankRole = {
+      template: "x",
+      version: 1,
+      stages: [
+        { id: "intent", required: true, match: [{ event: "a", role: "" }] },
+      ],
+    };
+    expect(() => assertOperationTemplate(blankRole)).toThrow(
+      /stage intent, match 0: `role` must be a non-empty string/,
+    );
+  });
+
   it("rejects an empty-string event witness (a stage that could never close)", () => {
     const blankEvent = {
       template: "x",

@@ -25,7 +25,8 @@ npm install @usehaia/trace-core
 - **Template** — a declarative description of an operation as a sequence of
   milestone **stages**. Each stage's `match` is a match-set: any one of its
   events closes the stage, since different roles witness the same milestone
-  differently.
+  differently. A witness may name the `role` that has to have observed it, for
+  the case where two roles share a vocabulary.
 - **Receipt** — the verdict the assembler produces from `(events, template)`:
   each stage's state with the evidence behind it, the required stages still
   `missing` (each with an explanation), the `exceptions` observed, and the full

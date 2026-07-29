@@ -5,25 +5,33 @@
 # so payment creation doubles as its proof an offer was in hand). The
 # verify/settle failures appear because the client observes them in the
 # server's payment response.
+#
+# Every witness names its role, so a run that traced both sides of a payment
+# still yields a buyer receipt built only from what the buyer saw.
 template: x402-buyer
-version: 1
+version: 2
 stages:
   - id: challenge
     required: true
     match:
       - event: x402.payment.required   # the server's 402 offer (HTTP and MCP)
+        role: client
       - event: x402.payment.creating   # bare client: creation starts from an offer in hand
+        role: client
     missing_explanation: "a payment was made without an observed 402 challenge"
   - id: payment
     required: true
     match:
       - event: x402.payment.submitted  # a signed payment left the client
+        role: client
       - event: x402.payment.requested  # MCP: payment for a tool call initiated
+        role: client
     missing_explanation: "the challenge was observed, but no payment was initiated"
   - id: settlement
     required: true
     match:
       - event: x402.payment.responded  # only a settlement that succeeded
+        role: client
     missing_explanation: "the payment was submitted, but no settlement response was observed"
 exceptions:
   - x402.payment.creation_failed
