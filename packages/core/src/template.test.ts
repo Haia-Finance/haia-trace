@@ -156,6 +156,21 @@ describe("assertOperationTemplate", () => {
     );
   });
 
+  it("rejects an empty-string role on a witness", () => {
+    // An empty role narrows the witness to nothing rather than widening it to
+    // every role, so it could never close the stage either.
+    const blankRole = {
+      template: "x",
+      version: 1,
+      stages: [
+        { id: "intent", required: true, match: [{ event: "a", role: "" }] },
+      ],
+    };
+    expect(() => assertOperationTemplate(blankRole)).toThrow(
+      /stage intent, match 0: `role` must be a non-empty string/,
+    );
+  });
+
   it("rejects an empty-string event witness (a stage that could never close)", () => {
     const blankEvent = {
       template: "x",

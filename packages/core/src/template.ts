@@ -12,7 +12,7 @@
  * follows for its on-disk NDJSON shape.
  */
 
-import type { EventType } from "./event.js";
+import type { EventType, Role } from "./event.js";
 
 /**
  * One event-type witness in a stage's match-set. An object rather than a bare
@@ -22,6 +22,16 @@ import type { EventType } from "./event.js";
 export interface StageMatch {
   /** The event type that, when observed, closes the stage. Matched against `TraceEvent.event_type`. */
   event: EventType;
+  /**
+   * Restrict the witness to one observing side, matched against
+   * `TraceEvent.role`. Absent means any role closes the stage.
+   *
+   * It is load-bearing where two roles share a vocabulary: a resource server and
+   * a facilitator both record `x402.verify.ok` for the same payment, so a
+   * seller's receipt would otherwise be closed by the facilitator's witness — a
+   * claim about who verified that the run does not support.
+   */
+  role?: Role;
 }
 
 /**
@@ -124,10 +134,11 @@ export function assertOperationTemplate(
       fail(`${at}: \`match\` must be a non-empty list`);
     }
     (s.match as unknown[]).forEach((m, j) => {
-      const event =
+      const witness =
         typeof m === "object" && m !== null
-          ? (m as Record<string, unknown>).event
+          ? (m as Record<string, unknown>)
           : undefined;
+      const event = witness?.event;
       // The witness is matched by equality against `TraceEvent.event_type`. An
       // empty string can never equal a real (namespaced) event type, so a
       // required stage carrying it could never close — the assembler would report
@@ -135,6 +146,12 @@ export function assertOperationTemplate(
       // loudly as a missing event, the same as the non-empty `id` rule above.
       if (typeof event !== "string" || event === "") {
         fail(`${at}, match ${j}: \`event\` must be a non-empty string`);
+      }
+      const role = witness?.role;
+      // An empty role narrows the witness to nothing rather than widening it to
+      // every role, so hold it to the same non-empty rule.
+      if (role !== undefined && (typeof role !== "string" || role === "")) {
+        fail(`${at}, match ${j}: \`role\` must be a non-empty string`);
       }
     });
     if (
