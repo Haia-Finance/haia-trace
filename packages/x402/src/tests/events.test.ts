@@ -326,7 +326,6 @@ describe("what a server records", () => {
     // `atob` is absent in some runtimes, so the header cannot be decoded there —
     // which costs grouping for this one event and nothing else.
     const { atob: decode } = globalThis;
-    // biome-ignore lint/performance/noDelete: modelling a runtime that has none
     delete (globalThis as { atob?: unknown }).atob;
     try {
       const event = recordOne("httpResourceServer", "onProtectedRequest", {
