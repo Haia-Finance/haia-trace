@@ -201,6 +201,69 @@ describe("what a client records", () => {
       error: { name: "Error", message: "no signer for base-sepolia" },
     });
   });
+
+  it("reports the response by its outcome, not as a settlement", () => {
+    // `x402.payment.responded` is the client-side witness a template reads as
+    // "the payment settled", so only a successful settlement may carry it.
+    const { fire, events } = capture("httpClient");
+    const base = {
+      paymentPayload: paymentPayload("0x01"),
+      requirements: REQUIREMENTS,
+    };
+
+    fire("onPaymentResponse", {
+      ...base,
+      settleResponse: settleResponse(true),
+    });
+    fire("onPaymentResponse", {
+      ...base,
+      settleResponse: settleResponse(false),
+    });
+    // Verification failed: the server answered with a fresh 402, no settlement.
+    fire("onPaymentResponse", { ...base, paymentRequired: paymentRequired() });
+    // Transport or parse error: no settlement, no 402.
+    fire("onPaymentResponse", { ...base, error: new Error("socket hung up") });
+    // Nothing the SDK's discriminant recognizes — never reported as settled.
+    fire("onPaymentResponse", { ...base });
+
+    expect(payments(events).map((event) => event.event_type)).toEqual([
+      "x402.payment.responded",
+      "x402.settle.failed",
+      "x402.verify.failed",
+      "x402.payment.failed",
+      "x402.payment.failed",
+    ]);
+  });
+
+  it("reports a paid MCP call that came back unsettled as a failure", () => {
+    const { fire, events } = capture("mcpClient");
+    const base = {
+      toolName: "get_report",
+      paymentPayload: paymentPayload("0x01"),
+    };
+
+    fire("onAfterPayment", { ...base, settleResponse: settleResponse(true) });
+    // The MCP client passes null when the paid call came back unsettled.
+    fire("onAfterPayment", { ...base, settleResponse: null });
+
+    expect(payments(events).map((event) => event.event_type)).toEqual([
+      "x402.payment.responded",
+      "x402.payment.failed",
+    ]);
+  });
+
+  it("records an offer that arrives without its resource or accepts list", () => {
+    // A v1 server's 402 body has no `resource` at all — a normalizer must never
+    // be the reason a firing goes unrecorded.
+    const event = recordOne("httpClient", "onPaymentRequired", {
+      paymentRequired: { x402Version: 1, error: "insufficient_funds" },
+    });
+
+    expect(event).toMatchObject({
+      event_type: "x402.payment.required",
+      payload: { x402_version: 1, error: "insufficient_funds", accepts: [] },
+    });
+  });
 });
 
 describe("what a server records", () => {
@@ -260,6 +323,34 @@ describe("what a server records", () => {
       x402_version: 2,
       resource: RESOURCE_FACTS,
       requirements: REQUIREMENTS_FACTS,
+    });
+  });
+
+  it("reads the outcome off the after-hooks instead of assuming success", () => {
+    const { fire, events } = capture("resourceServer");
+    const base = attempt();
+
+    fire("onAfterVerify", {
+      ...base,
+      result: { isValid: false, invalidReason: "insufficient_funds" },
+    });
+    fire("onAfterSettle", {
+      ...base,
+      result: {
+        success: false,
+        transaction: "",
+        network: "base-sepolia",
+        errorReason: "reverted",
+      },
+    });
+
+    expect(payments(events).map((event) => event.event_type)).toEqual([
+      "x402.verify.failed",
+      "x402.settle.failed",
+    ]);
+    expect(payments(events)[0]!.payload.verify).toEqual({
+      is_valid: false,
+      invalid_reason: "insufficient_funds",
     });
   });
 });
