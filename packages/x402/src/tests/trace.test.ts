@@ -5,10 +5,9 @@
 
 import { createRecorder } from "@usehaia/trace-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { hooksOf } from "../capture/registry.js";
+import { consoleWriter } from "../capture/session.js";
 import { resetTraceSession, trace } from "../index.js";
-import { hooksOf } from "../registry.js";
-import { consoleWriter } from "../session.js";
 import {
   fakeInstance,
   memoryWriter,

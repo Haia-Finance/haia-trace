@@ -14,7 +14,7 @@ import {
   encodeEventLine,
 } from "@usehaia/trace-core";
 
-import { type Correlator, createCorrelator } from "./correlate.js";
+import { type Correlator, createCorrelator } from "../event/correlate.js";
 
 const ADAPTER = "trace-x402";
 

@@ -12,8 +12,8 @@
  */
 
 import type { EventType } from "@usehaia/trace-core";
-
-import { paymentAttemptKey } from "../correlate.js";
+import type { HookEvent } from "../capture/spec.js";
+import { paymentAttemptKey } from "../event/correlate.js";
 import {
   compact,
   normalizeError,
@@ -24,8 +24,7 @@ import {
   type RequirementsLike,
   type SettleResponseLike,
   type VerifyResponseLike,
-} from "../normalize.js";
-import type { HookEvent } from "../spec.js";
+} from "../event/normalize.js";
 
 /** One payment being verified or settled, as both roles' contexts carry it. */
 interface Exchange {

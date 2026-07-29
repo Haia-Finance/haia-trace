@@ -3,14 +3,14 @@
  * facilitator, plus the two hooks only a resource server has.
  */
 
-import { paymentAttemptKey } from "../../correlate.js";
+import { defineCapture, type HookMappers } from "../../capture/spec.js";
+import { paymentAttemptKey } from "../../event/correlate.js";
 import {
   compact,
   normalizeError,
   type PaymentPayloadLike,
   paymentFacts,
-} from "../../normalize.js";
-import { defineCapture, type HookMappers } from "../../spec.js";
+} from "../../event/normalize.js";
 import { VERIFY_SETTLE_MAPPERS } from "../verify-settle.js";
 import type { HttpResourceServerHooks, ResourceServerHooks } from "./hooks.js";
 

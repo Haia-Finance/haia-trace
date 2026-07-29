@@ -8,9 +8,8 @@ import type { EventWriter } from "@usehaia/trace-core";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { x402HTTPResourceServer, x402ResourceServer } from "@x402/core/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { hooksOf } from "../capture/registry.js";
 import { resetTraceSession, trace } from "../index.js";
-import { hooksOf } from "../registry.js";
 import {
   fakeInstance,
   memoryWriter,

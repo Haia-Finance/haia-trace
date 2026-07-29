@@ -10,7 +10,11 @@
  * re-exported here is internal, however it is spelled inside `src/`.
  */
 
-export type { TraceAttestation } from "./attach.js";
-export { resetTraceSession } from "./session.js";
-export type { TraceInstanceKind, TraceKind, TraceRole } from "./spec.js";
-export { type TraceOptions, trace } from "./trace.js";
+export type { TraceAttestation } from "./capture/attach.js";
+export { resetTraceSession } from "./capture/session.js";
+export type {
+  TraceInstanceKind,
+  TraceKind,
+  TraceRole,
+} from "./capture/spec.js";
+export { type TraceOptions, trace } from "./capture/trace.js";

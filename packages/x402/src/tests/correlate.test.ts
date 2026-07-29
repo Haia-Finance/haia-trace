@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createCorrelator, paymentAttemptKey } from "../correlate.js";
+import { createCorrelator, paymentAttemptKey } from "../event/correlate.js";
 
 describe("paymentAttemptKey", () => {
   const signed = (payload: Record<string, unknown>) => ({ payload });

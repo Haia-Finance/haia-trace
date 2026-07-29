@@ -13,7 +13,7 @@
  * fault, and inventing the difference is the guess this recorder exists to avoid.
  */
 
-import { defineCapture } from "../../spec.js";
+import { defineCapture } from "../../capture/spec.js";
 import { VERIFY_SETTLE_MAPPERS } from "../verify-settle.js";
 import type { FacilitatorHooks } from "./hooks.js";
 

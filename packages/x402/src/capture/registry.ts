@@ -9,12 +9,12 @@ import {
   CLIENT_SPEC,
   HTTP_CLIENT_SPEC,
   MCP_CLIENT_SPEC,
-} from "./roles/client/capture.js";
-import { FACILITATOR_SPEC } from "./roles/facilitator/capture.js";
+} from "../roles/client/capture.js";
+import { FACILITATOR_SPEC } from "../roles/facilitator/capture.js";
 import {
   HTTP_RESOURCE_SERVER_SPEC,
   RESOURCE_SERVER_SPEC,
-} from "./roles/server/capture.js";
+} from "../roles/server/capture.js";
 import type { ErasedSpec, TraceInstanceKind, TraceKind } from "./spec.js";
 
 export const SPECS: Record<TraceInstanceKind, ErasedSpec> = {

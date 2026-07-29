@@ -4,8 +4,12 @@
  */
 
 import type { EventType } from "@usehaia/trace-core";
-
-import { paymentAttemptKey } from "../../correlate.js";
+import {
+  defineCapture,
+  type HookEvent,
+  type HookMappers,
+} from "../../capture/spec.js";
+import { paymentAttemptKey } from "../../event/correlate.js";
 import {
   compact,
   normalizeError,
@@ -15,8 +19,7 @@ import {
   normalizeSettleResponse,
   type PaymentRequiredLike,
   paymentFacts,
-} from "../../normalize.js";
-import { defineCapture, type HookEvent, type HookMappers } from "../../spec.js";
+} from "../../event/normalize.js";
 import type { ClientHooks, HttpClientHooks, McpClientHooks } from "./hooks.js";
 
 /**

@@ -8,7 +8,7 @@ import {
   normalizeResource,
   normalizeSettleResponse,
   normalizeVerifyResponse,
-} from "../normalize.js";
+} from "../event/normalize.js";
 
 describe("compact", () => {
   it("drops absent fields but keeps every falsy value that is present", () => {

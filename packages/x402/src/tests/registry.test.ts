@@ -4,9 +4,8 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-
+import { hooksOf } from "../capture/registry.js";
 import { resetTraceSession, trace } from "../index.js";
-import { hooksOf } from "../registry.js";
 import {
   fakeInstance,
   memoryWriter,

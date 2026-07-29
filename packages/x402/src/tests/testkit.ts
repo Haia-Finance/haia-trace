@@ -8,10 +8,9 @@
 
 import type { EventWriter, TraceEvent } from "@usehaia/trace-core";
 import { vi } from "vitest";
-
+import { hooksOf } from "../capture/registry.js";
+import type { TraceInstanceKind } from "../capture/spec.js";
 import { type TraceOptions, trace } from "../index.js";
-import { hooksOf } from "../registry.js";
-import type { TraceInstanceKind } from "../spec.js";
 
 /**
  * A fake x402 instance: each named hook method is a `vi.fn()` that captures the

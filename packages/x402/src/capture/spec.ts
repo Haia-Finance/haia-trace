@@ -5,7 +5,7 @@
 
 import type { EventType } from "@usehaia/trace-core";
 
-import type { CorrelationKeys } from "./correlate.js";
+import type { CorrelationKeys } from "../event/correlate.js";
 
 /** The x402 instance kinds `trace()` recognizes. */
 export type TraceInstanceKind =

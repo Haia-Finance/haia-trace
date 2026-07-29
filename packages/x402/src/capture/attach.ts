@@ -9,7 +9,7 @@
 
 import type { EventRecorder, EventWriter } from "@usehaia/trace-core";
 
-import type { Correlator } from "./correlate.js";
+import type { Correlator } from "../event/correlate.js";
 import { SPECS } from "./registry.js";
 import type { ErasedSpec, HookEvent, TraceKind, TraceRole } from "./spec.js";
 

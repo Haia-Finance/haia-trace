@@ -4,10 +4,9 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-
+import { hooksOf } from "../capture/registry.js";
+import type { TraceInstanceKind } from "../capture/spec.js";
 import { resetTraceSession } from "../index.js";
-import { hooksOf } from "../registry.js";
-import type { TraceInstanceKind } from "../spec.js";
 import {
   capture,
   paymentPayload,
