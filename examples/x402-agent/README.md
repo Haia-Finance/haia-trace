@@ -50,6 +50,14 @@ non-zero:
     fault   x402.payment.failed
 ```
 
+Each `pnpm demo` is its own run, and receipts are keyed by run
+(`.trace/receipts/<run>~<operation>.json`), so a second demo adds two more
+receipts rather than replacing the first two — the agent numbers its operations
+per session, so both runs really do contain an `op-1`. The policy judges the
+latest run, the one the demo just built, and says how many earlier runs are still
+on disk: old evidence is kept, but a payment that failed an hour ago is not what
+decides whether the agent may spend now.
+
 ## The integration
 
 One line, plus the sink it writes to:

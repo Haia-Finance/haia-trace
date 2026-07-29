@@ -9,7 +9,9 @@ import {
   createFileWriter,
   createRunWriter,
   DEFAULT_RUN_DIR,
+  listRunFiles,
   readLatestRun,
+  runIdFromPath,
 } from "./node.js";
 import { createRecorder } from "./recorder.js";
 
@@ -107,6 +109,34 @@ describe("createFileWriter", () => {
       writer.write(rec.event({ event_type: "a", payload: {} })),
     ).not.toThrow();
     expect(reported).toBeDefined();
+  });
+});
+
+describe("listRunFiles", () => {
+  it("lists every run oldest first, names being start timestamps", () => {
+    for (const at of [300, 100, 200]) createRunWriter({ dir, now: () => at });
+    expect(listRunFiles(dir)).toEqual([
+      join(dir, "100.ndjson"),
+      join(dir, "200.ndjson"),
+      join(dir, "300.ndjson"),
+    ]);
+  });
+
+  it("ignores non-run files in the directory", () => {
+    writeFileSync(join(dir, "notes.txt"), "ignore me");
+    createRunWriter({ dir, now: () => 1 });
+    expect(listRunFiles(dir)).toEqual([join(dir, "1.ndjson")]);
+  });
+
+  it("reports no runs for a directory that does not exist", () => {
+    expect(listRunFiles(join(dir, "nope"))).toEqual([]);
+  });
+});
+
+describe("runIdFromPath", () => {
+  it("reads the run id back out of the file name", () => {
+    const writer = createRunWriter({ dir, now: () => 1721709600000 });
+    expect(runIdFromPath(writer.path)).toBe("1721709600000");
   });
 });
 

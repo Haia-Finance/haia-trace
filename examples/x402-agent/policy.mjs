@@ -5,6 +5,12 @@
  * The rule is one line — do not continue a spend chain on an operation that is
  * not complete — and everything else here is reporting. Exits non-zero when any
  * operation is unresolved, so the same file works as a CI gate.
+ *
+ * It judges the *latest* run, which is the one `pnpm demo` just built. Receipts
+ * are named `<run>~<operation>.json` and accumulate, so every earlier run stays
+ * on disk as evidence — but a payment that failed an hour ago is not a reason to
+ * block the spending an agent is doing now, and a gate that can only be cleared
+ * by deleting old receipts would teach exactly the wrong habit.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -12,7 +18,13 @@ import { join } from "node:path";
 
 const RECEIPTS_DIR = ".trace/receipts";
 
-function loadReceipts(dir) {
+/** The run a receipt file belongs to — the name up to the separator. */
+function runOf(name) {
+  const cut = name.indexOf("~");
+  return cut === -1 ? "" : name.slice(0, cut);
+}
+
+function loadLatestRun(dir) {
   let names;
   try {
     names = readdirSync(dir);
@@ -20,14 +32,25 @@ function loadReceipts(dir) {
     console.error(`no receipts in ${dir} — run \`pnpm demo\` first`);
     process.exit(2);
   }
-  return names
-    .filter((name) => name.endsWith(".json"))
-    .sort()
-    .map((name) => JSON.parse(readFileSync(join(dir, name), "utf8")));
+  const files = names.filter((name) => name.endsWith(".json")).sort();
+  // Run ids are start timestamps, so the greatest is the most recent.
+  const latest = files.map(runOf).reduce((a, b) => (a > b ? a : b), "");
+  const runs = new Set(files.map(runOf));
+  return {
+    run: latest,
+    older: runs.size - 1,
+    receipts: files
+      .filter((name) => runOf(name) === latest)
+      .map((name) => JSON.parse(readFileSync(join(dir, name), "utf8"))),
+  };
 }
 
-const receipts = loadReceipts(RECEIPTS_DIR);
+const { run, older, receipts } = loadLatestRun(RECEIPTS_DIR);
 let blocked = 0;
+
+console.log(
+  `run ${run}${older > 0 ? ` · ${older} earlier ${older === 1 ? "run" : "runs"} kept on disk` : ""}\n`,
+);
 
 for (const receipt of receipts) {
   const id = receipt.operation.operation_id ?? "operation";

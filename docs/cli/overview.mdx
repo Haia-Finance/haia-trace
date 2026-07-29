@@ -51,7 +51,7 @@ database, no network:
 ```text
 .trace/
   events/<run_id>.ndjson      # recorded events; one run = one file (the input)
-  receipts/<context_id>.json  # assembled receipts, one per operation (the output)
+  receipts/<run>~<context_id>.json  # assembled receipts, one per operation (the output)
   templates/<name>.yaml       # your own operation templates (yours to edit)
 ```
 

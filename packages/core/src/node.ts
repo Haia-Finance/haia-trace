@@ -23,7 +23,7 @@ import {
   readdirSync,
   readFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import type { TraceEvent } from "./event.js";
 import {
@@ -134,20 +134,46 @@ export function createFileReader(path: string): EventReader {
 }
 
 /**
+ * The run id of a run file — its name without the extension. The id is the file
+ * name rather than a field on every event, so this is the one place that
+ * convention is turned back into an id.
+ */
+export function runIdFromPath(path: string): string {
+  return basename(path, RUN_EXT);
+}
+
+/**
+ * Every run in `dir`, as paths, oldest first — names being start timestamps,
+ * sorting by name sorts by time. An unreadable directory yields no runs rather
+ * than an error: no directory yet simply means nothing has been recorded.
+ *
+ * Deliberately a *list*, not a reader over the concatenation of all runs. Events
+ * carry no run id, and `context_id` is only unique within a run — an adapter is
+ * free to number operations per session — so concatenating two runs and grouping
+ * by `context_id` would fold unrelated operations into one receipt. A consumer
+ * that wants several runs assembles each one separately.
+ */
+export function listRunFiles(dir: string): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((name) => name.endsWith(RUN_EXT))
+    .sort()
+    .map((name) => join(dir, name));
+}
+
+/**
  * A reader over the most recent run in `dir` — the newest run file by name, which
  * (names being start timestamps) is the newest by time. Returns `null` when the
  * directory has no run files. Backs "show the last operation" without an index.
  */
 export function readLatestRun(dir: string): EventReader | null {
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    // No directory yet means no runs, not an error to surface here.
-    return null;
-  }
-  const runs = entries.filter((name) => name.endsWith(RUN_EXT)).sort();
+  const runs = listRunFiles(dir);
   const latest = runs[runs.length - 1];
   if (latest === undefined) return null;
-  return createFileReader(join(dir, latest));
+  return createFileReader(latest);
 }

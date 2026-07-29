@@ -82,9 +82,12 @@ The event sink is defined as a runtime-agnostic contract in the root export
 
 ```ts
 import {
+  createFileReader,
   createRunWriter,
   DEFAULT_RUN_DIR,
+  listRunFiles,
   readLatestRun,
+  runIdFromPath,
 } from "@usehaia/trace-core/node";
 
 // Producing: one run file per session, named for its start time.
@@ -93,7 +96,18 @@ writer.write(event);
 
 // Reading it back: the newest run in that directory.
 const events = readLatestRun(DEFAULT_RUN_DIR)?.read() ?? [];
+
+// Or every run, oldest first — assembled one at a time, never concatenated:
+for (const path of listRunFiles(DEFAULT_RUN_DIR)) {
+  assembleReceipts(createFileReader(path).read(), template);  // per run
+  runIdFromPath(path);                                        // e.g. "1721709600000"
+}
 ```
+
+`listRunFiles` is a list rather than a reader over every run at once on purpose.
+Events carry no run id, and `context_id` is only unique within a run — an adapter
+is free to number operations per session — so concatenating two runs and grouping
+by `context_id` would fold unrelated operations into a single receipt.
 
 `createRunWriter()` and the CLI's `build` share one default directory, so a
 producer that configures nothing and the assembler meet without a path being

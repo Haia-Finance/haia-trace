@@ -55,17 +55,19 @@ The template resolves exactly as `build` resolves it (`--templates-dir` included
 so a name means the same file in both commands. Only the *events* are always
 built-in: a template with no bundled fixture set has nothing to replay.
 
-### `haia-trace build [file] [options]`
+### `haia-trace build [file...] [options]`
 
 The core command. Read a run's events and produce **one Receipt per operation**.
 
 Events are grouped into operations by their `context_id`; each group is folded
 through the assembler independently. Every assembled receipt is written to
-`.trace/receipts/<context_id>.json`.
+`.trace/receipts/<run>~<context_id>.json`.
 
 ```sh
 haia-trace build                       # build the latest run in .trace/events/
+haia-trace build --all                 # build every run in .trace/events/
 haia-trace build ./run.ndjson          # build a specific run file
+haia-trace build .trace/events/17217*.ndjson   # or a few of them
 haia-trace build --template x402-seller
 haia-trace build --template my-op      # your own, from .trace/templates/
 haia-trace build --json                # machine-readable output for agents
@@ -73,10 +75,24 @@ haia-trace build --json                # machine-readable output for agents
 
 | Argument / option        | Meaning                                                                    |
 | ------------------------ | -------------------------------------------------------------------------- |
-| `[file]`                 | NDJSON run file to build from. Default: the latest in `.trace/events/`.     |
+| `[file...]`              | NDJSON run files to build from. Default: the latest in `.trace/events/`.   |
+| `--all`                  | Build every run in the events directory. Not combinable with `[file...]`.  |
 | `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.      |
 | `--templates-dir <path>` | Where your own templates live. Default: `.trace/templates/`.                |
-| `--json`                 | Emit `{ receipts, unassigned, template }` as JSON instead of a terminal summary. |
+| `--json`                 | Emit `{ runs: [{ run, path, receipts, unassigned }], template }` as JSON instead of a terminal summary. |
+
+Several runs mean several builds, never one merged event set. An event carries no
+run id — the run *is* its file name — and `context_id` is only unique within a
+run, since an adapter may number operations per session (the x402 one does:
+`op-1`, `op-2`, …). Folding two runs together would therefore merge two unrelated
+payments that happen to share an id. So each run is read, assembled and reported
+on its own, and its receipts are stored under its run id — which is also why the
+receipt file name carries both.
+
+For the same reason, two run files with the *same name* in different directories
+are refused rather than built: their receipts would collide on disk, and the
+second would silently replace the first. Build them one command at a time, or
+rename one.
 
 A `--template` **name** is looked up in `.trace/templates/` first and then in the
 templates shipped with the CLI, so your own `my-op` is found with no extra flags
@@ -136,7 +152,7 @@ database, no network:
 ```text
 .trace/
   events/<run_id>.ndjson     # recorded events; one run = one file (the input)
-  receipts/<context_id>.json # assembled receipts, one per operation (the output)
+  receipts/<run>~<context_id>.json # assembled receipts, one per operation (the output)
   templates/<name>.yaml      # your own operation templates (yours to edit)
 ```
 
