@@ -11,9 +11,10 @@ so the pieces embed into whatever server receives the POSTs.
 
 Zero runtime dependencies beyond `@usehaia/trace-core`.
 
-> **Status: early.** The pipeline (verify → parse → dedupe → record) is
-> implemented; the default event vocabulary for the mapping lands next — until
-> then, `normalize` is supplied by the caller.
+> **Status: early.** The full pipeline is implemented — verification, envelope
+> validation, deduplication, and a default `circle.*` event vocabulary — and
+> exercised end to end by replay tests. The shipped fixtures are synthetic
+> (documented shapes); confirmation against live captures is pending.
 
 ## Install
 
@@ -32,13 +33,6 @@ import { createFileWriter } from "@usehaia/trace-core/node";
 
 const handler = createWebhookHandler({
   verifier: createVerifier({ resolveKey }), // see below
-  // The event mapping is injected; the pipeline does not fix the vocabulary.
-  normalize: (envelope) => [
-    {
-      event_type: `circle.${envelope.notification_type}`,
-      payload: { notification_id: envelope.notification_id },
-    },
-  ],
   // MUST throw on failure so the handler answers 500 and Circle retries.
   // Core's file sink is fail-open by design; a throwing error handler turns it
   // into the fail-loud write a webhook needs:
@@ -58,6 +52,18 @@ failed (key resolution, persistence), Circle should retry; **200** — accepted,
 including retries of already-accepted deliveries. One handler serves any number
 of route paths: Circle requires a unique URL per subscription, but a delivery's
 source is identified by `notification_type`, not by the URL it arrived on.
+
+Events are recorded in the default `circle.*` vocabulary (see
+`normalizeNotification`): terminal wallet transactions become
+`circle.transaction.{inbound|outbound}.{complete|failed}` (with `CONFIRMED`
+and `COMPLETE` folded together — chains with instant finality can skip
+`CONFIRMED`), and monitored contract events become
+`circle.contract.{payment_created|withdrawal|refund}`. Payloads are strictly
+allowlisted, `occurred_at` is the fact's own time from the payload (never the
+delivery time), and `context_id` is the escrow contract's address. A first
+verified delivery also records one session-level `trace.attached` attestation,
+so "no events" can never be mistaken for "the receiver was never wired up".
+Pass your own `normalize` to use a different vocabulary.
 
 The pieces below are what the handler composes — usable directly if you need a
 different pipeline.
