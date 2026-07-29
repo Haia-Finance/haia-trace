@@ -9,7 +9,42 @@ import {
 
 describe("template loading", () => {
   it("lists the templates shipped with the CLI", () => {
-    expect(listTemplates()).toEqual(["x402-buyer", "x402-seller"]);
+    expect(listTemplates()).toEqual(["escrow-arc", "x402-buyer", "x402-seller"]);
+  });
+
+  it("loads and validates the escrow-arc template", () => {
+    const template = loadTemplate("escrow-arc");
+    expect(template.template).toBe("escrow-arc");
+    expect(template.stages.map((s) => s.id)).toEqual([
+      "agreement",
+      "terms_accepted",
+      "deposit",
+      "delivery",
+      "criteria",
+      "review",
+      "disposition",
+      "record",
+    ]);
+    // The optional stages: review is conditional, record is bookkeeping.
+    expect(
+      template.stages.filter((s) => !s.required).map((s) => s.id),
+    ).toEqual(["review", "record"]);
+    expect(template.exceptions).toEqual([
+      "circle.transaction.outbound.failed",
+      "circle.transaction.inbound.failed",
+      "escrow.criteria.evaluation_failed",
+    ]);
+  });
+
+  it("witnesses escrow money stages by contract events, not wallet transactions", () => {
+    // An outbound wallet transaction toward the contract is ambiguous (a
+    // deposit call and a release call look identical), so the deposit stage
+    // must be closed only by the contract's own PaymentCreated.
+    const template = loadTemplate("escrow-arc");
+    const deposit = template.stages.find((s) => s.id === "deposit");
+    expect(deposit?.match.map((m) => m.event)).toEqual([
+      "circle.contract.payment_created",
+    ]);
   });
 
   it("loads and validates the x402-buyer template", () => {
