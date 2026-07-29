@@ -43,6 +43,29 @@ export interface Correlator {
   resolve(keys: CorrelationKeys): string | undefined;
 }
 
+/** Just enough of a payment payload to read the value that identifies one attempt. */
+interface SignedPayment {
+  readonly payload?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The unique key of one payment attempt, read from the scheme-specific signed
+ * payload: the nonce in the standard schemes, falling back to the signature when
+ * a scheme has no nonce. Grouping only — this value is never recorded, because
+ * `normalize.ts` refuses to copy the object it comes from.
+ */
+export function paymentAttemptKey(
+  payment: SignedPayment | undefined,
+): string | undefined {
+  const signed = payment?.payload;
+  if (signed === undefined) return undefined;
+  const authorization = signed.authorization as
+    | Record<string, unknown>
+    | undefined;
+  const attempt = authorization?.nonce ?? signed.nonce ?? signed.signature;
+  return typeof attempt === "string" ? `payment:${attempt}` : undefined;
+}
+
 export interface CorrelatorOptions {
   /**
    * Mints the id for a newly seen operation. The default is a per-correlator

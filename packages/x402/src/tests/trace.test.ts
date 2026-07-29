@@ -4,9 +4,9 @@ import { x402HTTPResourceServer, x402ResourceServer } from "@x402/core/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetTraceSession, trace } from "../index.js";
+import { hooksOf } from "../registry.js";
 import {
   fakeInstance,
-  hooksOf,
   memoryWriter,
   paymentPayload,
   paymentRequired,

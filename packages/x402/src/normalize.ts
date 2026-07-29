@@ -24,14 +24,14 @@
  * spellings alike.
  */
 
-interface ResourceLike {
+export interface ResourceLike {
   readonly url: string;
   readonly description?: string;
   readonly mimeType?: string;
   readonly serviceName?: string;
 }
 
-interface RequirementsLike {
+export interface RequirementsLike {
   readonly scheme: string;
   readonly network: string;
   readonly asset: string;
@@ -59,14 +59,14 @@ export interface PaymentPayloadLike {
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
-interface VerifyResponseLike {
+export interface VerifyResponseLike {
   readonly isValid: boolean;
   readonly invalidReason?: string;
   readonly invalidMessage?: string;
   readonly payer?: string;
 }
 
-interface SettleResponseLike {
+export interface SettleResponseLike {
   readonly success: boolean;
   readonly errorReason?: string;
   readonly errorMessage?: string;
@@ -109,6 +109,24 @@ export function normalizeRequirements(
     pay_to: requirements.payTo,
     max_timeout_seconds: requirements.maxTimeoutSeconds,
   });
+}
+
+/**
+ * The facts that identify a payment on almost every event: which protocol
+ * version, what resource, and on which terms. `payment` is the signed payload on
+ * the verify/settle hooks and the 402 offer on the ones that fire before a
+ * payload exists — both carry the same two fields, so one helper covers each
+ * side of the payment.
+ */
+export function paymentFacts(
+  payment: { readonly x402Version: number; readonly resource?: ResourceLike },
+  requirements: RequirementsLike | undefined,
+): Record<string, unknown> {
+  return {
+    x402_version: payment.x402Version,
+    resource: normalizeResource(payment.resource),
+    requirements: normalizeRequirements(requirements),
+  };
 }
 
 /** The full 402 offer, as the server declared it. */

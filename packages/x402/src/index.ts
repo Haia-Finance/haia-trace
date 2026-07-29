@@ -3,12 +3,13 @@
  * Hooks reference: https://docs.x402.org/advanced-concepts/lifecycle-hooks
  *
  * `trace(instance)` resolves the instance's kind (client, resource server,
- * facilitator, …), duck-typing-attaches to that kind's lifecycle hooks — including
- * the ones on the instance a wrapper kind holds (`hooks.ts`) — and turns
- * every firing into an Event Contract `TraceEvent`: an allowlisted payload
- * (`events.ts` / `normalize.ts`), the observing `role` fixed by the kind, and the
- * `context_id` that groups one request's events (`correlate.ts`). Events are
- * stamped by a `@usehaia/trace-core` recorder and handed to an `EventWriter`.
+ * facilitator, …) by duck-typing (`registry.ts`), attaches to that kind's
+ * lifecycle hooks — including the ones on the instance a wrapper kind holds —
+ * and turns every firing into an Event Contract `TraceEvent`: an allowlisted
+ * payload (each role's `capture.ts` over `normalize.ts`), the observing `role`
+ * fixed by the kind, and the `context_id` that groups one request's events
+ * (`correlate.ts`). Events are stamped by a `@usehaia/trace-core` recorder and
+ * handed to an `EventWriter`.
  *
  * Strictly passive — the load-bearing invariant. x402 lifecycle hooks can steer
  * the payment flow through their return value (`{ abort }`, `{ skip }`,
@@ -24,20 +25,16 @@ import {
 } from "@usehaia/trace-core";
 
 import { type Correlator, createCorrelator } from "./correlate.js";
-import { HOOK_EVENTS, type HookEvent } from "./events.js";
-import {
-  HOOKS_BY_KIND,
-  type HookContextMap,
-  INNER_BY_KIND,
-  KNOWN_INSTANCE_KINDS,
-  ROLE_BY_KIND,
-  resolveKind,
-  type TraceInstanceKind,
-  type TraceKind,
-  type TraceRole,
-} from "./hooks.js";
+import { KNOWN_KINDS, resolveKind, SPECS } from "./registry.js";
+import type {
+  ErasedSpec,
+  HookEvent,
+  TraceInstanceKind,
+  TraceKind,
+  TraceRole,
+} from "./spec.js";
 
-export type { TraceInstanceKind, TraceKind, TraceRole } from "./hooks.js";
+export type { TraceInstanceKind, TraceKind, TraceRole } from "./spec.js";
 
 /** Id stamped on every event this package produces. */
 const ADAPTER = "trace-x402";
@@ -155,7 +152,7 @@ function inertAttestation(): TraceAttestation {
 function findInner(
   target: Record<string, unknown>,
   props: readonly string[],
-  hooks: readonly (keyof HookContextMap)[],
+  hooks: readonly string[],
 ): { host: Record<string, unknown>; prop: string } | undefined {
   for (const prop of props) {
     let candidate: unknown;
@@ -253,25 +250,28 @@ export function trace(
   // nothing to attach and the run reports `trace.attach_failed` below.
   const override = options.kind;
   const kind: TraceKind =
-    override !== undefined && KNOWN_INSTANCE_KINDS.has(override)
+    override !== undefined && KNOWN_KINDS.has(override)
       ? override
       : resolveKind(target);
-  const role = ROLE_BY_KIND[kind];
-  const methods: readonly (keyof HookContextMap)[] =
-    kind === "unknown" ? [] : HOOKS_BY_KIND[kind];
+  const spec = kind === "unknown" ? undefined : SPECS[kind];
+  const role: TraceRole = spec?.role ?? "unknown";
+  const hooks = spec === undefined ? [] : Object.keys(spec.mappers);
 
   const attached: string[] = [];
   // Coverage is per hook name, not per location: a hook registered on the
   // wrapped instance covers the kind's expectation just as one on the instance.
   const covered = new Set<string>();
 
-  // Generic over the hook name, so each mapper gets the context its hook is
-  // actually handed. `role` is fixed for this instance.
+  // `role` is fixed for this instance — the kind decides it, not the hook.
   const makeHandler =
-    <K extends keyof HookContextMap>(hook: K) =>
-    (context: HookContextMap[K]): undefined => {
+    (hook: string, mapper: (context: never) => HookEvent) =>
+    (context: unknown): undefined => {
       try {
-        const mapped: HookEvent = HOOK_EVENTS[hook](context);
+        // The SDK only ever calls this handler with the context its hook is
+        // declared to hand out, which is the one the mapper is typed against —
+        // so widening it back here is safe, and it is the only place the spec's
+        // erased hook types are re-opened.
+        const mapped = (mapper as (context: unknown) => HookEvent)(context);
         const contextId = correlator.resolve(mapped);
         record(mapped.event_type, mapped.payload, role, contextId);
       } catch (err) {
@@ -288,22 +288,18 @@ export function trace(
 
   const attachGroup = (
     host: Record<string, unknown>,
-    hooks: readonly (keyof HookContextMap)[],
+    group: ErasedSpec,
     prefix: string,
   ): void => {
-    for (const name of hooks) {
+    for (const [name, mapper] of Object.entries(group.mappers)) {
       const register = host[name];
       if (typeof register !== "function") continue;
       try {
-        // The typed handler is registered through an `unknown`-context slot;
-        // widening the parameter is safe because the SDK only ever calls it with
-        // that hook's real context.
-        const handler = makeHandler(name) as (context: unknown) => undefined;
         // x402 hooks are chainable and support multiple registrations, so
         // adding our handler runs alongside — never displaces — the user's hooks.
         (
           register as (handler: (context: unknown) => undefined) => unknown
-        ).call(host, handler);
+        ).call(host, makeHandler(name, mapper));
         attached.push(`${prefix}${name}`);
         covered.add(name);
       } catch (err) {
@@ -312,23 +308,27 @@ export function trace(
     }
   };
 
-  attachGroup(target, methods, "");
+  if (spec !== undefined) attachGroup(target, spec, "");
 
   // The HTTP kinds are wrappers around the instance that owns the rest of their
   // hooks, so capture has to follow. Skipped when that instance was traced on its
   // own, which would otherwise register a second handler and double its events.
-  const nested = kind === "unknown" ? undefined : INNER_BY_KIND[kind];
+  const nested = spec?.inner;
   let innerHost: Record<string, unknown> | undefined;
   if (nested !== undefined) {
-    const innerHooks = HOOKS_BY_KIND[nested.kind];
-    const found = findInner(target, nested.props, innerHooks);
+    const innerSpec = SPECS[nested.kind];
+    const found = findInner(
+      target,
+      nested.props,
+      Object.keys(innerSpec.mappers),
+    );
     if (found !== undefined && !traced.has(found.host)) {
       innerHost = found.host;
-      attachGroup(found.host, innerHooks, `${found.prop}.`);
+      attachGroup(found.host, innerSpec, `${found.prop}.`);
     }
   }
 
-  const missing = methods.filter((name) => !covered.has(name));
+  const missing = hooks.filter((name) => !covered.has(name));
   const ok = attached.length > 0;
   const complete = ok && missing.length === 0;
 

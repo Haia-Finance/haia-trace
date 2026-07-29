@@ -12,17 +12,9 @@
 import type { EventWriter, TraceEvent } from "@usehaia/trace-core";
 import { vi } from "vitest";
 
-import { HOOKS_BY_KIND, type TraceInstanceKind } from "../hooks.js";
 import { type TraceOptions, trace } from "../index.js";
-
-/**
- * The hook names a kind exposes, read from the adapter's own map. A suite that
- * spelled the list out by hand would silently stop covering a hook the day one
- * is added.
- */
-export const hooksOf = (kind: TraceInstanceKind): string[] => [
-  ...HOOKS_BY_KIND[kind],
-];
+import { hooksOf } from "../registry.js";
+import type { TraceInstanceKind } from "../spec.js";
 
 /**
  * A fake x402 instance: each named hook method is a `vi.fn()` that captures the
