@@ -1,6 +1,6 @@
 {
   "name": "@usehaia/trace-x402",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Haia Trace capture adapter for the x402 payment SDK.",
   "keywords": [
     "x402",
