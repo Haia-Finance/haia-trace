@@ -9,7 +9,11 @@ import {
 
 describe("template loading", () => {
   it("lists the templates shipped with the CLI", () => {
-    expect(listTemplates()).toEqual(["escrow-arc", "x402-buyer", "x402-seller"]);
+    expect(listTemplates()).toEqual([
+      "escrow-arc",
+      "x402-buyer",
+      "x402-seller",
+    ]);
   });
 
   it("loads and validates the escrow-arc template", () => {
@@ -26,9 +30,9 @@ describe("template loading", () => {
       "record",
     ]);
     // The optional stages: review is conditional, record is bookkeeping.
-    expect(
-      template.stages.filter((s) => !s.required).map((s) => s.id),
-    ).toEqual(["review", "record"]);
+    expect(template.stages.filter((s) => !s.required).map((s) => s.id)).toEqual(
+      ["review", "record"],
+    );
     expect(template.exceptions).toEqual([
       "circle.transaction.outbound.failed",
       "circle.transaction.inbound.failed",
@@ -169,9 +173,10 @@ describe("template loading", () => {
   });
 
   it("matches only events the adapter can record — no invented witnesses", () => {
-    // The success/progress vocabulary of packages/x402/src/events.ts. A stage
-    // matching an event no adapter emits could never close.
-    const adapterEvents = new Set([
+    // A stage matching an event no adapter emits could never close, so every
+    // witness must come from a known emitter's vocabulary.
+    // The success/progress vocabulary of packages/x402/src/events.ts:
+    const x402Events = [
       "x402.payment.required",
       "x402.payment.requested",
       "x402.payment.creating",
@@ -182,6 +187,35 @@ describe("template loading", () => {
       "x402.verify.ok",
       "x402.settle.started",
       "x402.settle.ok",
+    ];
+    // The trace-circle adapter's vocabulary (packages/circle/src/normalize.ts):
+    const circleEvents = [
+      "circle.transaction.inbound.complete",
+      "circle.transaction.inbound.failed",
+      "circle.transaction.outbound.complete",
+      "circle.transaction.outbound.failed",
+      "circle.contract.payment_created",
+      "circle.contract.withdrawal",
+      "circle.contract.refund",
+    ];
+    // The escrow demo backend's obligation vocabulary — emitted by the demo
+    // service's own recorder, an adapter that lives outside this repo; the
+    // escrow-arc template is the contract that fixes these names.
+    const escrowBackendEvents = [
+      "escrow.agreement.created",
+      "escrow.terms.accepted",
+      "escrow.work.delivered",
+      "escrow.criteria.evaluated",
+      "escrow.criteria.assessed",
+      "escrow.criteria.evaluation_failed",
+      "escrow.review.approved",
+      "escrow.review.rejected",
+      "escrow.record.reconciled",
+    ];
+    const adapterEvents = new Set([
+      ...x402Events,
+      ...circleEvents,
+      ...escrowBackendEvents,
     ]);
     for (const name of listTemplates()) {
       for (const stage of loadTemplate(name).stages) {

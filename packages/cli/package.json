@@ -58,6 +58,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@usehaia/trace-circle": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
