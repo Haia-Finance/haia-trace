@@ -26,7 +26,9 @@ const agent = new x402HTTPClient(client);
 
 // ─── Haia Trace: the entire integration ──────────────────────────────────────
 
-const writer = createRunWriter();
+// The run directory is the producer's to choose — `haia-trace build` reads
+// `.trace/events` unless its `--dir` says otherwise, so name the same one.
+const writer = createRunWriter(".trace/events");
 const capture = trace(agent, { writer });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -8,7 +8,6 @@ import {
   createFileReader,
   createFileWriter,
   createRunWriter,
-  DEFAULT_RUN_DIR,
   listRunFiles,
   readLatestRun,
   runIdFromPath,
@@ -33,7 +32,7 @@ afterEach(() => {
 
 describe("createRunWriter", () => {
   it("names the file with the start timestamp and no illegal characters", () => {
-    const writer = createRunWriter({ dir, now: () => 1721709600000 });
+    const writer = createRunWriter(dir, { now: () => 1721709600000 });
     expect(writer.path).toBe(join(dir, "1721709600000.ndjson"));
     // The file *name* must be filesystem-safe on every OS — notably no ':' (which
     // an ISO timestamp would carry, and which Windows forbids). Check the basename,
@@ -42,29 +41,39 @@ describe("createRunWriter", () => {
   });
 
   it("creates the file eagerly, so an event-less run is still visible", () => {
-    const writer = createRunWriter({ dir, now: () => 1 });
+    const writer = createRunWriter(dir, { now: () => 1 });
     expect(readFileSync(writer.path, "utf8")).toBe("");
   });
 
-  it("defaults to the run directory the CLI reads, so no path has to be agreed", () => {
-    // A producer that configures nothing must land where `haia-trace build`
-    // looks; run it in a temp cwd so the assertion is about the default, not
-    // about this repository's working directory.
-    const cwd = process.cwd();
-    process.chdir(dir);
-    try {
-      const writer = createRunWriter({ now: () => 1 });
-      expect(writer.path).toBe(join(DEFAULT_RUN_DIR, "1.ndjson"));
-      expect(readFileSync(writer.path, "utf8")).toBe("");
-      // And the reader finds it without being told where either.
-      expect(readLatestRun(DEFAULT_RUN_DIR)).not.toBeNull();
-    } finally {
-      process.chdir(cwd);
+  it("refuses a missing or empty directory with a message that names the fix", () => {
+    // The fail-open policy covers the disk, not the caller: without a directory
+    // there is no run file to fail open to. An untyped caller gets no compile
+    // error, so the message has to carry the migration from the older form.
+    for (const bad of [undefined, null, "", "   "]) {
+      expect(() =>
+        createRunWriter(bad as unknown as string, { now: () => 1 }),
+      ).toThrow(/createRunWriter requires a run directory/);
     }
+    // And it is the argument that is rejected, not the disk — `onError` is for
+    // I/O and must not be handed a caller mistake it cannot act on.
+    const reported: unknown[] = [];
+    expect(() =>
+      createRunWriter("", { onError: (err) => reported.push(err) }),
+    ).toThrow(TypeError);
+    expect(reported).toEqual([]);
+  });
+
+  it("creates the run directory when it does not exist yet", () => {
+    // A producer names a directory, not a directory that already exists — the
+    // first run of a fresh checkout must not have to mkdir first.
+    const nested = join(dir, "deep", "events");
+    const writer = createRunWriter(nested, { now: () => 1 });
+    expect(writer.path).toBe(join(nested, "1.ndjson"));
+    expect(readFileSync(writer.path, "utf8")).toBe("");
   });
 
   it("round-trips events through the file", () => {
-    const writer = createRunWriter({ dir, now: () => 1 });
+    const writer = createRunWriter(dir, { now: () => 1 });
     const a = rec.event({
       event_type: "x402.payment.required",
       payload: {},
@@ -114,7 +123,7 @@ describe("createFileWriter", () => {
 
 describe("listRunFiles", () => {
   it("lists every run oldest first, names being start timestamps", () => {
-    for (const at of [300, 100, 200]) createRunWriter({ dir, now: () => at });
+    for (const at of [300, 100, 200]) createRunWriter(dir, { now: () => at });
     expect(listRunFiles(dir)).toEqual([
       join(dir, "100.ndjson"),
       join(dir, "200.ndjson"),
@@ -124,7 +133,7 @@ describe("listRunFiles", () => {
 
   it("ignores non-run files in the directory", () => {
     writeFileSync(join(dir, "notes.txt"), "ignore me");
-    createRunWriter({ dir, now: () => 1 });
+    createRunWriter(dir, { now: () => 1 });
     expect(listRunFiles(dir)).toEqual([join(dir, "1.ndjson")]);
   });
 
@@ -135,20 +144,20 @@ describe("listRunFiles", () => {
 
 describe("runIdFromPath", () => {
   it("reads the run id back out of the file name", () => {
-    const writer = createRunWriter({ dir, now: () => 1721709600000 });
+    const writer = createRunWriter(dir, { now: () => 1721709600000 });
     expect(runIdFromPath(writer.path)).toBe("1721709600000");
   });
 });
 
 describe("readLatestRun", () => {
   it("selects the newest run by timestamped name", () => {
-    createRunWriter({ dir, now: () => 100 }).write(
+    createRunWriter(dir, { now: () => 100 }).write(
       rec.event({ event_type: "old", payload: {} }),
     );
-    createRunWriter({ dir, now: () => 300 }).write(
+    createRunWriter(dir, { now: () => 300 }).write(
       rec.event({ event_type: "new", payload: {} }),
     );
-    createRunWriter({ dir, now: () => 200 }).write(
+    createRunWriter(dir, { now: () => 200 }).write(
       rec.event({ event_type: "mid", payload: {} }),
     );
     const reader = readLatestRun(dir);
@@ -161,7 +170,7 @@ describe("readLatestRun", () => {
 
   it("ignores non-run files in the directory", () => {
     writeFileSync(join(dir, "notes.txt"), "ignore me");
-    createRunWriter({ dir, now: () => 1 }).write(
+    createRunWriter(dir, { now: () => 1 }).write(
       rec.event({ event_type: "only", payload: {} }),
     );
     expect(

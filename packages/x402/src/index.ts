@@ -46,7 +46,7 @@ export interface TraceOptions {
   /**
    * Where recorded events go. Default: one NDJSON line per event on stdout —
    * the same encoding the file sink uses, so it can be piped straight into a run
-   * file. Pass `createRunWriter({ dir: ".trace/events" })` from
+   * file. Pass `createRunWriter(".trace/events")` from
    * `@usehaia/trace-core/node` to persist a run. The writer's lifetime is the
    * caller's: `trace()` never closes it.
    */

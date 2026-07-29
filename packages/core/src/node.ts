@@ -66,18 +66,8 @@ export function createFileWriter(
   };
 }
 
-/**
- * The run directory a recorder writes to and the CLI reads from, relative to the
- * working directory. It is one constant rather than a convention repeated on
- * both sides: a producer that takes the default and `haia-trace build` meet at
- * the same path without either being configured.
- */
-export const DEFAULT_RUN_DIR = join(".trace", "events");
-
 /** Options for a run writer, whose file name is stamped from the service's start time. */
 export interface RunWriterOptions {
-  /** Directory the run file is created in. Created if absent. Defaults to `.trace/events`. */
-  dir?: string;
   /**
    * Epoch-millisecond clock for the file name; injectable so tests are
    * deterministic. Defaults to `Date.now`. Epoch ms is filesystem-safe (unlike an
@@ -90,22 +80,42 @@ export interface RunWriterOptions {
 
 /** A run writer, plus the resolved path of the file it created. */
 export interface RunWriter extends EventWriter {
-  /** Absolute-or-relative path of this run's file, e.g. `.trace/events/1721709600000.ndjson`. */
+  /** Absolute-or-relative path of this run's file, e.g. `<dir>/1721709600000.ndjson`. */
   readonly path: string;
 }
 
 /**
- * Create the run file for a service start and return a writer over it. The name
- * is the start timestamp, so each start (and each restart) gets its own file —
- * the run id is the file name, not a field repeated on every event.
+ * Create the run file for a service start in `dir` and return a writer over it.
+ * The name is the start timestamp, so each start (and each restart) gets its own
+ * file — the run id is the file name, not a field repeated on every event.
+ *
+ * `dir` is required rather than defaulted: core describes events, it does not own
+ * a directory layout, and a default here would be a filesystem convention two
+ * packages had to keep agreeing on. The producer and whoever reads the runs back
+ * must therefore be pointed at the same directory — `haia-trace` writes and reads
+ * `.trace/events` unless its `--dir` says otherwise.
  *
  * The file is created eagerly, at construction: an empty run file records that
  * capture was attached and simply saw nothing, which must never read as "capture
  * failed" (the honesty invariant).
  */
-export function createRunWriter(options: RunWriterOptions = {}): RunWriter {
+export function createRunWriter(
+  dir: string,
+  options: RunWriterOptions = {},
+): RunWriter {
+  // A caller mistake, not a disk condition, so it is *not* covered by the
+  // fail-open policy below: there is no run file to fail open to without a
+  // directory, and silently picking one is the agreeing-on-a-convention this
+  // signature exists to refuse. Said in one line here because an untyped caller
+  // gets no compile error — notably one carrying the older, argument-less form,
+  // for whom the alternative is `ERR_INVALID_ARG_TYPE` from inside `node:path`.
+  if (typeof dir !== "string" || dir.trim() === "") {
+    throw new TypeError(
+      'createRunWriter requires a run directory, e.g. createRunWriter(".trace/events")',
+    );
+  }
+
   const now = options.now ?? Date.now;
-  const dir = options.dir ?? DEFAULT_RUN_DIR;
   const path = join(dir, `${now()}${RUN_EXT}`);
 
   try {

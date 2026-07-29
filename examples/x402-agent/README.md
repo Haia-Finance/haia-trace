@@ -63,13 +63,14 @@ decides whether the agent may spend now.
 One line, plus the sink it writes to:
 
 ```js
-const writer = createRunWriter();
+const writer = createRunWriter(".trace/events");
 
 trace(agent, { writer });
 ```
 
-The writer defaults to the same run directory `haia-trace build` reads from, so
-recording and assembling meet without a path being configured on either side.
+The run directory is the producer's to choose; `.trace/events` is the one
+`haia-trace build` reads from unless its `--dir` says otherwise, so naming it here
+is what makes recording and assembling meet.
 
 `trace()` returns an attestation (`kind`, `attached`, `missing`, `complete`), so
 a run that recorded nothing is distinguishable from a recorder that never

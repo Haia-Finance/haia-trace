@@ -29,15 +29,17 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 const client = new x402HTTPClient(new x402Client());
 
 // Attach the recorder and write the run to disk. One line, idempotent per instance.
-trace(client, { writer: createRunWriter() });
+trace(client, { writer: createRunWriter(".trace/events") });
 ```
 
-The writer defaults to `.trace/events` — the directory
-[`haia-trace build`](/cli/build) reads from, so neither side has to be told where
-the run lives. That path is relative to the working directory, which is what an
-app started from its own project root wants; a process whose cwd is not fixed
-should pass `dir` explicitly. Without a `writer`, events go to stdout as NDJSON —
-the same encoding, so it can simply be piped into a file.
+`.trace/events` is where [`haia-trace build`](/cli/build) reads from unless its
+[`--dir`](/cli/overview) says otherwise, so naming it here is what makes the two
+sides meet. The writer takes the directory explicitly rather than defaulting to
+one — a default would be a filesystem convention two packages had to keep
+agreeing on. That path is relative to the working directory, which is what an app
+started from its own project root wants; a process whose cwd is not fixed should
+pass an absolute path. Without a `writer`, events go to stdout as NDJSON — the
+same encoding, so it can simply be piped into a file.
 
 `trace()` inspects the instance's method set to resolve its **kind**, attaches to
 that kind's lifecycle hooks — following into the instance a wrapper holds, so one
@@ -170,7 +172,7 @@ of one operation assemble into one receipt.
 trace(instance, {
   // Where events go. Default: NDJSON on stdout. The writer's lifetime is yours —
   // trace() never closes it.
-  writer: createRunWriter(),
+  writer: createRunWriter(".trace/events"),
 
   // Recorder that stamps event_id / occurred_at / seq. Defaults to a
   // process-wide one, so several traced instances share one ordered session.
