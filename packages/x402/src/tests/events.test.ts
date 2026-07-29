@@ -356,6 +356,37 @@ describe("what a server records", () => {
 });
 
 describe("what a facilitator records", () => {
+  it("reports a decline as a failure like the server, but explains it differently", () => {
+    // The SDK routes a facilitator's clean "not valid" to onVerifyFailure with a
+    // synthesized Error, while a server gets the same decline as an onAfterVerify
+    // result. Both must land on x402.verify.failed so a template reads them
+    // alike; only where the reason sits differs.
+    const declined = {
+      paymentPayload: paymentPayload("0x01"),
+      requirements: REQUIREMENTS,
+    };
+
+    const facilitator = recordOne("facilitator", "onVerifyFailure", {
+      ...declined,
+      error: new Error("insufficient_funds"),
+    });
+    const server = recordOne("resourceServer", "onAfterVerify", {
+      ...declined,
+      result: { isValid: false, invalidReason: "insufficient_funds" },
+    });
+
+    expect(facilitator.event_type).toBe("x402.verify.failed");
+    expect(server.event_type).toBe("x402.verify.failed");
+    expect(facilitator.payload.error).toEqual({
+      name: "Error",
+      message: "insufficient_funds",
+    });
+    expect(server.payload.verify).toMatchObject({
+      is_valid: false,
+      invalid_reason: "insufficient_funds",
+    });
+  });
+
   it("tags the shared verify/settle hooks with its own role", () => {
     // The server and the facilitator expose the same six hook names; only the
     // role separates their events.
