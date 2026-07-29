@@ -1,12 +1,6 @@
 /**
- * The capture contract every role implements: which hooks one kind of x402
- * instance exposes, what each firing becomes, and which side observed it.
- *
- * One spec per kind is the single source of truth. The runtime hook list is
- * `Object.keys(spec.mappers)`, so a hook without a mapper — or a mapper for a
- * hook the kind does not have — cannot be written down. That also keeps each
- * mapper's context exact: the server and the facilitator share six hook *names*
- * but not their context types, and a spec per kind never has to union them.
+ * The capture contract: one spec per x402 instance kind — which hooks it
+ * exposes, what each firing becomes, and which side observed it.
  */
 
 import type { EventType } from "@usehaia/trace-core";
@@ -40,13 +34,10 @@ export type HookMappers<Hooks> = {
 };
 
 /**
- * Where a wrapper kind keeps the instance that owns the rest of its hooks.
- *
- * The two HTTP types are wrappers: `x402HTTPClient` exposes only
- * `onPaymentRequired` and `x402HTTPResourceServer` only `onProtectedRequest`,
- * while the payment-creation and verify/settle hooks live on the `x402Client` /
- * `x402ResourceServer` each holds. Attaching to the wrapper alone would register
- * one hook of the kind's group and still look like a connected recorder.
+ * Where a wrapper kind keeps the instance owning the rest of its hooks:
+ * `x402HTTPClient` exposes only `onPaymentRequired` and `x402HTTPResourceServer`
+ * only `onProtectedRequest`, so attaching to the wrapper alone would register
+ * one hook and still look connected.
  */
 export interface InnerInstance {
   /** Candidate property names, tried in order. */
@@ -55,31 +46,32 @@ export interface InnerInstance {
   kind: TraceInstanceKind;
 }
 
-/** Everything `trace()` needs to know about one kind of x402 instance. */
-export interface CaptureSpec<Hooks> {
+interface SpecIdentity {
   kind: TraceInstanceKind;
   role: TraceRole;
+  inner?: InnerInstance;
+}
+
+/**
+ * Everything `trace()` needs about one kind. The runtime hook list is
+ * `Object.keys(mappers)`, so a hook without a mapper — or a mapper for a hook
+ * the kind lacks — is a compile error, and each mapper's context stays exact:
+ * the server and the facilitator share six hook *names* but not their types.
+ */
+export interface CaptureSpec<Hooks> extends SpecIdentity {
   mappers: HookMappers<Hooks>;
-  inner?: InnerInstance;
 }
 
 /**
- * A spec with its hook contexts erased, so specs of every kind sit in one
- * registry. `never` as the parameter is what makes the erasure sound: any
- * concrete mapper is assignable to it, and calling one requires the deliberate
- * widening the attach layer does in a single place.
+ * A spec with its hook contexts erased, so every kind's sits in one registry.
+ * `never` is what makes the erasure sound: any concrete mapper is assignable to
+ * it, and calling one takes the deliberate widening `attach.ts` does once.
  */
-export interface ErasedSpec {
-  kind: TraceInstanceKind;
-  role: TraceRole;
+export interface ErasedSpec extends SpecIdentity {
   mappers: Readonly<Record<string, (context: never) => HookEvent>>;
-  inner?: InnerInstance;
 }
 
-/**
- * Declare a kind's capture: type-checks the mappers against the kind's hook
- * interface — every hook mapped, nothing extra — then erases them for the registry.
- */
+/** Type-check a kind's mappers against its hook interface, then erase them. */
 export function defineCapture<Hooks>(spec: CaptureSpec<Hooks>): ErasedSpec {
   return spec as ErasedSpec;
 }

@@ -1,14 +1,6 @@
 /**
  * What the payee records: the verify/settle exchange it shares with the
  * facilitator, plus the two hooks only a resource server has.
- *
- * | hook                        | event_type               |
- * | --------------------------- | ------------------------ |
- * | `onProtectedRequest`        | `x402.request.protected` |
- * | `onVerifiedPaymentCanceled` | `x402.payment.canceled`  |
- *
- * Every failure type produced here is listed in the `exceptions` of the shipped
- * seller template, so a fault surfaces on the receipt instead of passing silently.
  */
 
 import { paymentAttemptKey } from "../../correlate.js";
@@ -23,15 +15,11 @@ import { VERIFY_SETTLE_MAPPERS } from "../verify-settle.js";
 import type { HttpResourceServerHooks, ResourceServerHooks } from "./hooks.js";
 
 /**
- * Recover the payment payload from the `PAYMENT` request header — the only thing
- * `onProtectedRequest` is handed that identifies the payment, and so the only
- * way the request that carried one is grouped with the verify/settle events it
- * triggers.
- *
- * Every step is best-effort: `atob` is absent in some runtimes, the header is
- * absent on the first (unpaid) request, and a v1 or malformed header will not
- * parse. Any of those yields `undefined`, which costs grouping for one event and
- * nothing else.
+ * The `PAYMENT` request header is the only thing `onProtectedRequest` is handed
+ * that identifies the payment, so it is what groups the request with the
+ * verify/settle events it triggers. Every step is best-effort — `atob` is absent
+ * in some runtimes, the header is absent on the first request, and a v1 or
+ * malformed one will not parse — and failing costs grouping, nothing else.
  */
 function decodePaymentHeader(
   header: string | undefined,
@@ -47,8 +35,7 @@ function decodePaymentHeader(
 }
 
 // Annotated rather than inferred: the annotation is what rejects a mapper for a
-// hook this kind does not have, which an inferred object literal assigned to a
-// variable would let through.
+// hook this kind does not have.
 const RESOURCE_SERVER_MAPPERS: HookMappers<ResourceServerHooks> = {
   ...VERIFY_SETTLE_MAPPERS,
 
@@ -85,9 +72,8 @@ export const HTTP_RESOURCE_SERVER_SPEC = defineCapture<HttpResourceServerHooks>(
     mappers: {
       ...RESOURCE_SERVER_MAPPERS,
 
-      // The request gate. An unpaid request carries no payment header, so it
-      // yields no key and is recorded without a `context_id` — it belongs to no
-      // payment yet.
+      // An unpaid request carries no payment header, so it yields no key and is
+      // recorded without a `context_id` — it belongs to no payment yet.
       onProtectedRequest: ({ method, path, routePattern, paymentHeader }) => ({
         event_type: "x402.request.protected",
         payload: compact({

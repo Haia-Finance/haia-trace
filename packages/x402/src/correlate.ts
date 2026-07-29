@@ -1,30 +1,10 @@
 /**
- * Operation correlation — how every event of one request ends up carrying the
- * same `context_id`, which is what lets the assembler tell concurrent payments
- * apart instead of folding them into one receipt.
+ * Grouping one request's events under a single `context_id`, which is what lets
+ * the assembler tell concurrent payments apart.
  *
- * x402 hands each hook a context but no request id, and the adapter must work in
- * browser and edge runtimes where `AsyncLocalStorage` does not exist. So the
- * grouping is derived from the contexts themselves, through two keys that are
- * both identifying — neither is a guess:
- *
- * - A **unique** key is the payment payload's per-payment nonce. It identifies
- *   one payment attempt, and it travels with the payment, so a client and a
- *   server traced in the same process resolve the same payment to the same
- *   `context_id` — both sides of one operation assemble into one receipt.
- * - An **anchor** is the `PaymentRequired` object itself, for the hooks that fire
- *   before a payment payload exists. The x402 client threads one such object by
- *   reference from the 402 response through payment creation, so *identity*
- *   distinguishes two concurrent purchases of the same resource — which their
- *   content, being byte-identical, cannot.
- *
- * Anchors are held in a WeakMap: an anchor belongs to exactly one payment by
- * construction, so it never has to be retired, and it is collected with the
- * object it keys. Only the nonce map needs a bound.
- *
- * The one case that yields no id at all is a firing with neither key — an unpaid
- * protected request, say. Those are recorded without a `context_id` and the
- * assembler keeps them out of every receipt rather than guessing.
+ * x402 hands hooks no request id, and the adapter must work where
+ * `AsyncLocalStorage` does not exist, so grouping is derived from the contexts
+ * themselves through two keys that are both identifying — neither is a guess.
  */
 
 /** The keys one hook firing offers the correlator; either may be absent. */
@@ -32,8 +12,9 @@ export interface CorrelationKeys {
   /** Identifies one payment attempt exactly — the payload's nonce. */
   unique?: string;
   /**
-   * The object the SDK threads through the hooks that fire before a payload
-   * exists. Matched by identity, never by content.
+   * The object the SDK threads by reference through the hooks that fire before a
+   * payload exists. Matched by identity, never by content: two concurrent
+   * purchases of the same resource have byte-identical offers.
    */
   anchor?: object;
 }
@@ -43,16 +24,15 @@ export interface Correlator {
   resolve(keys: CorrelationKeys): string | undefined;
 }
 
-/** Just enough of a payment payload to read the value that identifies one attempt. */
 interface SignedPayment {
   readonly payload?: Readonly<Record<string, unknown>>;
 }
 
 /**
- * The unique key of one payment attempt, read from the scheme-specific signed
- * payload: the nonce in the standard schemes, falling back to the signature when
- * a scheme has no nonce. Grouping only — this value is never recorded, because
- * `normalize.ts` refuses to copy the object it comes from.
+ * The unique key of one payment attempt: the nonce in the standard schemes,
+ * falling back to the signature when a scheme has no nonce. Grouping only —
+ * `normalize.ts` refuses to copy the object it comes from, so it is never
+ * recorded.
  */
 export function paymentAttemptKey(
   payment: SignedPayment | undefined,
@@ -68,15 +48,14 @@ export function paymentAttemptKey(
 
 export interface CorrelatorOptions {
   /**
-   * Mints the id for a newly seen operation. The default is a per-correlator
-   * counter (`op-1`, `op-2`, …): unique within the run, which is the scope
-   * `context_id` is read back in, and reproducible so golden tests stay stable.
+   * Mints the id for a newly seen operation. Default: a per-correlator counter
+   * (`op-1`, `op-2`, …) — unique within the run, and reproducible so golden
+   * tests stay stable.
    */
   newContextId?: () => string;
   /**
    * Cap on live nonce keys. A payment has no "operation finished" hook, so the
-   * map is bounded and evicts least-recently-used. Reaching the cap only costs
-   * grouping for an operation that has been idle for `maxKeys` other operations.
+   * map is bounded and evicts least-recently-used.
    */
   maxKeys?: number;
 }
@@ -88,12 +67,13 @@ export function createCorrelator(options: CorrelatorOptions = {}): Correlator {
   let operations = 0;
   const newContextId = options.newContextId ?? (() => `op-${++operations}`);
 
-  // Insertion-ordered, so the first key is the least recently used one.
+  // Insertion-ordered, so the first key is the least recently used one. Anchors
+  // need no bound: one belongs to exactly one payment and is collected with it.
   const byNonce = new Map<string, string>();
   const byAnchor = new WeakMap<object, string>();
 
   const remember = (nonce: string, contextId: string): void => {
-    // Re-insert so a key that is still in use moves to the back of the eviction order.
+    // Re-insert so a key still in use moves to the back of the eviction order.
     byNonce.delete(nonce);
     byNonce.set(nonce, contextId);
     if (byNonce.size > maxKeys) {
@@ -104,6 +84,8 @@ export function createCorrelator(options: CorrelatorOptions = {}): Correlator {
 
   return {
     resolve({ unique, anchor }: CorrelationKeys): string | undefined {
+      // A firing with neither key — an unpaid protected request, say — is
+      // recorded without a `context_id` rather than guessed into an operation.
       if (unique === undefined && anchor === undefined) return undefined;
 
       const contextId =
@@ -112,9 +94,8 @@ export function createCorrelator(options: CorrelatorOptions = {}): Correlator {
         newContextId();
 
       if (unique !== undefined) remember(unique, contextId);
-      // Re-binding an anchor that already resolved is a no-op; binding one that
-      // did not is what carries the operation from the pre-payment hooks onto
-      // the nonce the rest of the payment is keyed by.
+      // Binding an anchor that did not resolve is what carries the operation
+      // from the pre-payment hooks onto the nonce the rest is keyed by.
       if (anchor !== undefined) byAnchor.set(anchor, contextId);
       return contextId;
     },

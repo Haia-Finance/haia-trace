@@ -1,18 +1,6 @@
 /**
- * What the payer records. One mapper per hook, one spec per client kind.
- *
- * | hook                       | event_type                     |
- * | -------------------------- | ------------------------------ |
- * | `onPaymentRequired`        | `x402.payment.required`        |
- * | `onBeforePaymentCreation`  | `x402.payment.creating`        |
- * | `onAfterPaymentCreation`   | `x402.payment.submitted`       |
- * | `onPaymentCreationFailure` | `x402.payment.creation_failed` |
- * | `onPaymentResponse`        | the outcome — see below        |
- * | `onBeforePayment` (MCP)    | `x402.payment.requested`       |
- * | `onAfterPayment` (MCP)     | the outcome — see below        |
- *
- * Every failure type produced here is listed in the `exceptions` of the shipped
- * buyer template, so a fault surfaces on the receipt instead of passing silently.
+ * What the payer records: one mapper per hook, one spec per client kind. Every
+ * failure type produced here is an exception in the shipped buyer template.
  */
 
 import type { EventType } from "@usehaia/trace-core";
@@ -32,15 +20,11 @@ import { defineCapture, type HookEvent, type HookMappers } from "../../spec.js";
 import type { ClientHooks, HttpClientHooks, McpClientHooks } from "./hooks.js";
 
 /**
- * What the client observed, read off the discriminant `@x402/core` documents on
- * its response context: a settlement, successful or not, or — with none in sight
- * — the `absent` outcome only the caller can name.
- *
- * Only a settlement that actually succeeded may report `x402.payment.responded`.
- * That event is the client-side witness a template reads as "the payment
- * settled", so reporting it for a failed payment would put a settlement no
- * receipt can back into that receipt. An over-reported fault is visible; an
- * over-reported settlement is a lie.
+ * The outcome the client observed, read off the discriminant `@x402/core`
+ * documents on its response context. Only a settlement that actually succeeded
+ * may report `x402.payment.responded` — that event is the client-side witness a
+ * template reads as "the payment settled", and an over-reported fault is
+ * visible where an over-reported settlement is a lie.
  */
 function paymentOutcome(
   settle: { readonly success: boolean } | undefined | null,
@@ -51,10 +35,9 @@ function paymentOutcome(
 }
 
 /**
- * A 402 offer as the payer received it — the shape shared by the hook that
- * observes the challenge and, on MCP, the one that announces the payment for a
- * named tool. The offer object is the anchor: the SDK threads it by reference
- * from the 402 response through payment creation, so its *identity* is what
+ * A 402 offer as the payer received it — shared by the challenge hook and, on
+ * MCP, the one naming a tool. The offer object is the anchor: the SDK threads it
+ * by reference from the 402 response through payment creation, so its identity
  * separates two concurrent purchases of the same resource.
  */
 const offerEvent = (
@@ -80,8 +63,8 @@ const CLIENT_MAPPERS: HookMappers<ClientHooks> = {
   onAfterPaymentCreation: ({ paymentRequired, paymentPayload }) => ({
     event_type: "x402.payment.submitted",
     payload: compact({
-      // Version and terms come from the payload just signed; the resource from
-      // the offer it answers, which is where the server declared it.
+      // Version and terms from the payload just signed; the resource from the
+      // offer it answers, which is where the server declared it.
       x402_version: paymentPayload.x402Version,
       resource: normalizeResource(paymentRequired.resource),
       requirements: normalizeRequirements(paymentPayload.accepted),
@@ -155,8 +138,8 @@ export const MCP_CLIENT_SPEC = defineCapture<McpClientHooks>({
     onBeforePayment: ({ paymentRequired, toolName }) =>
       offerEvent("x402.payment.requested", paymentRequired, toolName),
 
-    // The MCP client hands a `settleResponse` of `null` when the paid call came
-    // back without a settlement, which is a fault like any other missing one.
+    // A `settleResponse` of `null` is how the MCP client says the paid call came
+    // back unsettled — a fault like any other missing settlement.
     onAfterPayment: ({ toolName, paymentPayload, settleResponse }) => ({
       event_type: paymentOutcome(settleResponse, "x402.payment.failed"),
       payload: compact({

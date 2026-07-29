@@ -1,29 +1,14 @@
 /**
  * The verify/settle exchange, recorded once for the two roles that observe it.
+ * A resource server and a facilitator expose the same six hook names with their
+ * own context types — different types, identical shape — so the mappers are
+ * written against a structural view and type-checked into each role's spec. A
+ * role whose payload later diverges overrides the one key.
  *
- * | hook              | event_type                              |
- * | ----------------- | --------------------------------------- |
- * | `onBeforeVerify`  | `x402.verify.started`                   |
- * | `onAfterVerify`   | `x402.verify.ok` / `x402.verify.failed` |
- * | `onVerifyFailure` | `x402.verify.failed`                    |
- * | `onBeforeSettle`  | `x402.settle.started`                   |
- * | `onAfterSettle`   | `x402.settle.ok` / `x402.settle.failed` |
- * | `onSettleFailure` | `x402.settle.failed`                    |
- *
- * A resource server and a facilitator expose these same six hook names, and the
- * SDK hands each of them its own context types — different types, identical
- * shape. So the mappers are written against a structural view of that shape and
- * placed into each role's spec, where the compiler checks they really do fit
- * that role's contexts. A role whose payload later diverges overrides the one key.
- *
- * `role` is not decided here: it is fixed by the instance's kind, which is the
- * only thing that tells these two apart.
- *
- * The `onAfter*` hooks have no fixed event type. The SDK reserves
- * `onVerifyFailure` / `onSettleFailure` for a *thrown* fault, while a clean "not
- * valid" or "settlement rejected" arrives as a result — so the outcome is read
- * off the context rather than assumed, and a failed payment is never recorded
- * under a type a template reads as proof the payment went through.
+ * The `onAfter*` hooks have no fixed event type: the SDK reserves the failure
+ * hooks for a *thrown* fault, while a clean "not valid" or "settlement
+ * rejected" arrives as a result. Reading the outcome off the context is what
+ * keeps a failed payment out of a type templates read as proof it went through.
  */
 
 import type { EventType } from "@usehaia/trace-core";
@@ -48,7 +33,6 @@ interface Exchange {
   readonly requirements: RequirementsLike;
 }
 
-/** A hook that fires before the SDK acts — nothing to report but the payment itself. */
 const opening =
   (event_type: EventType) =>
   ({ paymentPayload, requirements }: Exchange): HookEvent => ({
@@ -57,7 +41,6 @@ const opening =
     unique: paymentAttemptKey(paymentPayload),
   });
 
-/** A hook that fires on a thrown fault, which the receipt has to be able to explain. */
 const fault =
   (event_type: EventType) =>
   ({

@@ -1,6 +1,6 @@
 /**
  * Placing an untyped instance into a kind — the duck-typing that decides which
- * hooks are registered and which role every event of that instance carries.
+ * hooks are registered and which role its events carry.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -15,10 +15,8 @@ import {
   REQUIREMENTS,
 } from "./testkit.js";
 
-// Read from the adapter's own map rather than spelled out here, so a suite can
-// never cover fewer hooks than a kind actually exposes. The resource server is
-// the set carrying `onVerifiedPaymentCanceled` — the method that distinguishes
-// it from a facilitator, which exposes the same six others.
+// From the adapter own map, so a suite can never cover fewer hooks than a kind
+// exposes. The server set carries onVerifiedPaymentCanceled — the discriminant.
 const SERVER_HOOKS = hooksOf("resourceServer");
 const FACILITATOR_HOOKS = hooksOf("facilitator");
 
@@ -141,9 +139,8 @@ describe("trace() kind inference", () => {
 
 describe("trace() explicit kind override", () => {
   it("honors an explicit kind over inference and registers that kind's group", () => {
-    // The instance looks like a server (has onVerifiedPaymentCanceled), but the
-    // caller declares it a facilitator: the facilitator group is registered, so
-    // the server-only onVerifiedPaymentCanceled is left alone.
+    // It looks like a server, but the caller declares it a facilitator: only the
+    // facilitator group registers, leaving onVerifiedPaymentCanceled alone.
     const { instance } = fakeInstance(SERVER_HOOKS);
     const { writer } = memoryWriter();
 
@@ -157,9 +154,8 @@ describe("trace() explicit kind override", () => {
 });
 
 describe("trace() with an out-of-contract kind override", () => {
-  // Model a plain-JS caller (or a dynamically-computed string) passing a `kind`
-  // that isn't one of the six canonical instance kinds — the type system can't
-  // stop it, so trace() must handle it without throwing.
+  // A plain-JS caller can pass any string; the type system cannot stop it, so
+  // trace() must handle it without throwing.
   const traceLoose = trace as (
     instance: unknown,
     options?: Record<string, unknown>,
@@ -212,15 +208,13 @@ describe("trace() with an unresolvable kind (graceful, never throws)", () => {
       kind: "unknown",
       role: "unknown",
     });
-    // With no group to register, none of the instance's methods are treated as
-    // registrars — the recorder leaves an unrecognized instance untouched.
+    // With no group to register, the recorder leaves the instance untouched.
     expect(instance.somethingElse).not.toHaveBeenCalled();
     expect(instance.anotherMethod).not.toHaveBeenCalled();
   });
 
   it("does not attach even to a lone verify/settle-adjacent name it doesn't recognize", () => {
-    // `onSomethingCustom` is not one of the 15 known hooks, so the instance
-    // resolves to `unknown` and nothing is registered.
+    // Not one of the known hooks, so the kind resolves to `unknown`.
     const { instance } = fakeInstance(["onSomethingCustom"]);
     const { writer } = memoryWriter();
 

@@ -1,8 +1,6 @@
 /**
- * The event vocabulary, pinned per hook.
- *
- * Written against the public `trace()` rather than the mapper table, so it
- * describes what a run contains — not how the adapter is wired internally.
+ * The event vocabulary, pinned per hook. Written against the public `trace()`
+ * rather than the mapper table, so it describes what a run contains.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -32,9 +30,8 @@ const KINDS: TraceInstanceKind[] = [
 ];
 
 /**
- * One canonical firing per hook — the context the SDK hands it, and the event it
- * must produce. Built fresh per call: the pre-payment hooks are grouped by the
- * *identity* of the offer object, so sharing one across tests would silently
+ * One canonical firing per hook. Built fresh per call: the pre-payment hooks
+ * group by the *identity* of the offer object, so a shared one would silently
  * join unrelated operations.
  */
 function firings(): Record<string, { context: unknown; event: string }> {
@@ -137,9 +134,8 @@ describe("the event vocabulary", () => {
   });
 
   it("never records the signed payload, whichever hook fired", () => {
-    // The redaction guarantee, swept across the whole surface rather than one
-    // hook: `payload` is the credential that moves the money, and `extra` /
-    // `iconUrl` are the open-ended fields the allowlist drops.
+    // The redaction guarantee swept across the whole surface: the signed payload
+    // is the credential that moves the money, `extra` / `iconUrl` the open bags.
     const recorded: unknown[] = [];
     for (const kind of KINDS) {
       const table = firings();
@@ -253,8 +249,7 @@ describe("what a client records", () => {
   });
 
   it("records an offer that arrives without its resource or accepts list", () => {
-    // A v1 server's 402 body has no `resource` at all — a normalizer must never
-    // be the reason a firing goes unrecorded.
+    // A v1 offer has no `resource` — a normalizer must never lose a firing.
     const event = recordOne("httpClient", "onPaymentRequired", {
       paymentRequired: { x402Version: 1, error: "insufficient_funds" },
     });
@@ -299,8 +294,8 @@ describe("what a server records", () => {
   });
 
   it("records a rolled-back payment with why it was canceled", () => {
-    // A payment that verified but was rolled back because the paid work did not
-    // complete — the receipt has to show it as a fault, not as a settlement.
+    // Verified, then rolled back because the paid work failed: a fault, not a
+    // settlement.
     const event = recordOne("resourceServer", "onVerifiedPaymentCanceled", {
       ...attempt(),
       reason: "handler_threw",
@@ -314,6 +309,38 @@ describe("what a server records", () => {
       response_status: 500,
       error: { name: "Error", message: "handler blew up" },
     });
+  });
+
+  it("still records a protected request whose payment header will not parse", () => {
+    // The request is a fact either way; only its grouping is lost.
+    const event = recordOne("httpResourceServer", "onProtectedRequest", {
+      method: "GET",
+      path: "/report",
+      paymentHeader: btoa("not json at all"),
+    });
+
+    expect(event.payload).toMatchObject({ paid: true });
+    expect(event.context_id).toBeUndefined();
+  });
+
+  it("still records a protected request in a runtime without atob", () => {
+    // `atob` is absent in some runtimes, so the header cannot be decoded there —
+    // which costs grouping for this one event and nothing else.
+    const { atob: decode } = globalThis;
+    // biome-ignore lint/performance/noDelete: modelling a runtime that has none
+    delete (globalThis as { atob?: unknown }).atob;
+    try {
+      const event = recordOne("httpResourceServer", "onProtectedRequest", {
+        method: "GET",
+        path: "/report",
+        paymentHeader: "irrelevant-without-a-decoder",
+      });
+
+      expect(event.payload).toMatchObject({ method: "GET", paid: true });
+      expect(event.context_id).toBeUndefined();
+    } finally {
+      globalThis.atob = decode;
+    }
   });
 
   it("records the settle facts, not just that settlement started", () => {
@@ -357,10 +384,9 @@ describe("what a server records", () => {
 
 describe("what a facilitator records", () => {
   it("reports a decline as a failure like the server, but explains it differently", () => {
-    // The SDK routes a facilitator's clean "not valid" to onVerifyFailure with a
-    // synthesized Error, while a server gets the same decline as an onAfterVerify
-    // result. Both must land on x402.verify.failed so a template reads them
-    // alike; only where the reason sits differs.
+    // A facilitator gets its clean "not valid" through onVerifyFailure, a server
+    // through onAfterVerify. Both must land on x402.verify.failed so a template
+    // reads them alike; only where the reason sits differs.
     const declined = {
       paymentPayload: paymentPayload("0x01"),
       requirements: REQUIREMENTS,
@@ -388,8 +414,7 @@ describe("what a facilitator records", () => {
   });
 
   it("tags the shared verify/settle hooks with its own role", () => {
-    // The server and the facilitator expose the same six hook names; only the
-    // role separates their events.
+    // Same six hook names as the server; only the role separates their events.
     const { fire, events } = capture("facilitator");
     fire("onAfterSettle", {
       paymentPayload: paymentPayload("0x01"),

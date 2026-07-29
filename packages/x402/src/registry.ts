@@ -1,11 +1,8 @@
 /**
- * The kind registry: every recognized x402 instance kind's capture spec, and how
- * an untyped instance is placed into one.
- *
- * Detection is pure duck-typing — no `@x402` value is imported at runtime — so
- * API-compatible forks are covered and an unrecognized shape degrades to
- * `"unknown"` rather than failing. Reading a kind's hook names off its spec is
- * what keeps the two in step: a hook is registered exactly when it has a mapper.
+ * Every recognized kind's capture spec, and how an untyped instance is placed
+ * into one. Detection is pure duck-typing — no `@x402` value is imported at
+ * runtime — so forks are covered and an unrecognized shape degrades to
+ * `"unknown"` rather than failing.
  */
 
 import {
@@ -20,7 +17,6 @@ import {
 } from "./roles/server/capture.js";
 import type { ErasedSpec, TraceInstanceKind, TraceKind } from "./spec.js";
 
-/** Every recognized kind's capture spec. */
 export const SPECS: Record<TraceInstanceKind, ErasedSpec> = {
   client: CLIENT_SPEC,
   httpClient: HTTP_CLIENT_SPEC,
@@ -34,18 +30,14 @@ export const SPECS: Record<TraceInstanceKind, ErasedSpec> = {
 export const hooksOf = (kind: TraceInstanceKind): string[] =>
   Object.keys(SPECS[kind].mappers);
 
-/**
- * The recognized kinds, as a Set — used to validate a caller-supplied `kind`
- * before it is trusted to index `SPECS`. A Set, not an `in` check, so a prototype
- * key such as `"constructor"` can't slip through.
- */
+// A Set, not an `in` check, so a prototype key such as "constructor" can't slip
+// through into `SPECS`.
 const KNOWN_KINDS = new Set<string>(Object.keys(SPECS));
 
 /**
  * The kind to capture an instance as. An explicit, recognized override wins over
- * inference; an unrecognized one — a plain-JS caller, or a prototype key such as
- * `"constructor"` — is ignored in favour of inference rather than indexing into
- * a spec that isn't there, because `trace()` must never break the caller it wraps.
+ * inference; an unrecognized one is ignored in favour of inference rather than
+ * indexing into a spec that isn't there — `trace()` must never break its caller.
  */
 export function resolveKind(
   target: Record<string, unknown>,
@@ -57,19 +49,11 @@ export function resolveKind(
 }
 
 /**
- * Infer an instance's kind from its method set, checked most-specific first.
- * The overlaps are deliberate: a resource server and a facilitator share the six
- * verify/settle hook names, so the server is identified by a method the
- * facilitator lacks (`onVerifiedPaymentCanceled`, or `onProtectedRequest` on the
- * HTTP server); an instance with verify/settle hooks but neither of those is the
- * facilitator. Purely structural — no `@x402` import, no reliance on class
- * identity — so forks and subclasses are placed the same way.
- *
- * The one inherent ambiguity: a resource server that does not expose
- * `onVerifiedPaymentCanceled` (a fork that renamed or dropped it) is
- * indistinguishable from a facilitator here and is read as one — its
- * verify/settle events would then be tagged `role: "facilitator"`. Pass an
- * explicit `kind` to correct such a case.
+ * Most-specific first, because the overlaps are real: a resource server and a
+ * facilitator share the six verify/settle hook names, so the server is
+ * identified by a method the facilitator lacks. A server that drops
+ * `onVerifiedPaymentCanceled` is therefore read as a facilitator — pass an
+ * explicit `kind` to correct that.
  */
 function inferKind(target: Record<string, unknown>): TraceKind {
   const has = (method: string): boolean => typeof target[method] === "function";

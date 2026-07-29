@@ -1,12 +1,9 @@
 /**
- * Shared test doubles and protocol fixtures for the adapter's suites.
+ * Shared test doubles and protocol fixtures: a fake x402 instance whose hooks
+ * can be fired on demand, a sink that reads back what was recorded, and one set
+ * of protocol objects so an expected payload is written once.
  *
- * Every suite here needs the same two things — a fake x402 instance whose hooks
- * can be fired on demand, and a sink that reads back exactly what was recorded —
- * plus one set of protocol fixtures, so an expected payload is written once.
- *
- * Not shipped: `tsconfig.build.json` excludes `src/tests`, so nothing under it
- * reaches `dist/`.
+ * Not shipped — `tsconfig.build.json` excludes `src/tests`.
  */
 
 import type { EventWriter, TraceEvent } from "@usehaia/trace-core";

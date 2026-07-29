@@ -4,10 +4,11 @@
  */
 
 import { createRecorder } from "@usehaia/trace-core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetTraceSession, trace } from "../index.js";
 import { hooksOf } from "../registry.js";
+import { consoleWriter } from "../session.js";
 import {
   fakeInstance,
   memoryWriter,
@@ -27,6 +28,42 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.HAIA_TRACE_DISABLE;
+  vi.restoreAllMocks();
+});
+
+describe("the default sink", () => {
+  it("writes one NDJSON line per event to stdout", () => {
+    // The same encoding the file sink uses, so a run can simply be piped into a
+    // file — which is only true if it really is one JSON object per line.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { instance, fire } = fakeInstance(SERVER_HOOKS);
+
+    trace(instance);
+    fire("onBeforeVerify", {
+      paymentPayload: paymentPayload("0x01"),
+      requirements: REQUIREMENTS,
+    });
+
+    const lines = log.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(lines.map((e) => e.event_type)).toEqual([
+      "trace.attached",
+      "x402.verify.started",
+    ]);
+    expect(lines[0]).toMatchObject({ adapter: "trace-x402", role: "server" });
+  });
+
+  it("does not close stdout when the writer is closed", () => {
+    // The default sink writes to a stream it does not own, so closing it has to
+    // be a no-op rather than tearing down the host process's stdout.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { instance } = fakeInstance(SERVER_HOOKS);
+    trace(instance);
+
+    consoleWriter().close();
+
+    console.log("still writable");
+    expect(log).toHaveBeenLastCalledWith("still writable");
+  });
 });
 
 describe("what a recorded run contains", () => {

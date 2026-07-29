@@ -2,11 +2,9 @@
  * Registering the recorder on an instance, and reporting honestly what that
  * connected to.
  *
- * Every handler registered here is wrapped in try/catch and ALWAYS returns
- * `undefined` — the passivity invariant. x402 lifecycle hooks can steer the
- * payment flow through their return value (`{ abort }`, `{ skip }`,
- * `{ recovered }`, …), so a recorder that returned anything else, or threw,
- * would be able to change a payment it is only meant to observe.
+ * Every handler registered here is wrapped in try/catch and always returns
+ * `undefined` — the passivity invariant. x402 hooks read a handler's return
+ * value as a command, so anything else would let the recorder steer a payment.
  */
 
 import type { EventRecorder, EventWriter } from "@usehaia/trace-core";
@@ -16,30 +14,20 @@ import { SPECS } from "./registry.js";
 import type { ErasedSpec, HookEvent, TraceKind, TraceRole } from "./spec.js";
 
 /**
- * What `trace()` connected to. Reporting this — rather than failing silently —
- * lets a caller tell "no payment events happened" apart from "the recorder never
- * wired up to this instance".
+ * What `trace()` connected to — so a caller can tell "no payment events
+ * happened" apart from "the recorder never wired up", and from "it wired up to
+ * only part of this instance".
  */
 export interface TraceAttestation {
-  /**
-   * Hook methods that actually registered, in registration order. A hook found
-   * on the instance the kind wraps is labelled by where it registered, e.g.
-   * `server.onBeforeVerify`.
-   */
+  /** Hooks that registered, in registration order. One found on a wrapped instance is labelled by where it registered, e.g. `server.onBeforeVerify`. */
   attached: string[];
-  /**
-   * Hooks the resolved kind should expose that registered nowhere — on the
-   * instance or on the one it wraps. A non-empty list means the run will be
-   * missing those firings, which is not something a caller can see from `ok`.
-   */
+  /** Hooks of this kind that registered nowhere — the firings this run will be missing. */
   missing: string[];
   /** `attached.length > 0` — false means capture did not connect at all. */
   ok: boolean;
-  /** `ok` and nothing is missing — every hook of the kind is being observed. */
+  /** `ok` and nothing missing — every hook of the kind is being observed. */
   complete: boolean;
-  /** The resolved (or overridden) instance kind. */
   kind: TraceKind;
-  /** The observing role implied by `kind`. */
   role: TraceRole;
 }
 
@@ -52,12 +40,8 @@ export interface CaptureIO {
   onError?: (err: unknown) => void;
 }
 
-/**
- * Instances already attached to, mapped to the attestation from that first
- * attach so a repeat `trace()` returns it unchanged. A WeakMap (not a property
- * marker) is used deliberately: it never mutates the target, so idempotency
- * holds even for a frozen or sealed instance.
- */
+// A WeakMap, not a property marker: it never mutates the target, so idempotency
+// holds even for a frozen or sealed instance.
 const traced = new WeakMap<object, TraceAttestation>();
 
 /** The attestation from an earlier `trace()` of this instance, if there was one. */
@@ -75,10 +59,9 @@ export const inertAttestation = (): TraceAttestation => ({
 });
 
 /**
- * The instance a wrapper keeps its remaining hooks on, found by reading each
- * candidate property and keeping the first that actually exposes one of those
- * hooks. A getter is read inside try/catch: it is foreign code, and finding an
- * instance must not be able to throw out of `trace()`.
+ * The first candidate property that actually exposes one of `hooks`. Each read
+ * is guarded: a getter is foreign code, and looking for the wrapped instance
+ * must not be able to throw out of `trace()`.
  */
 function findInner(
   target: Record<string, unknown>,
@@ -106,7 +89,6 @@ function findInner(
   return undefined;
 }
 
-/** The attestation event a run opens with, named by how much of the kind attached. */
 const attestationEvent = (ok: boolean, complete: boolean): string =>
   !ok
     ? "trace.attach_failed"
@@ -117,10 +99,8 @@ const attestationEvent = (ok: boolean, complete: boolean): string =>
 /**
  * Register the recorder on every hook of `kind` this instance exposes — and on
  * the instance it wraps, when the kind is a wrapper — then record and return the
- * attestation.
- *
- * A resolved `"unknown"` means no recognized hook is present, so there is
- * nothing to attach and the run reports `trace.attach_failed`.
+ * attestation. A resolved `"unknown"` has nothing to attach and reports
+ * `trace.attach_failed`.
  */
 export function attach(
   target: Record<string, unknown>,
@@ -130,8 +110,6 @@ export function attach(
   const spec = kind === "unknown" ? undefined : SPECS[kind];
   const role: TraceRole = spec?.role ?? "unknown";
 
-  // Surface a recorder error without ever letting it — or a throwing onError —
-  // reach the payment path.
   const reportError = (err: unknown): void => {
     try {
       io.onError?.(err);
@@ -168,10 +146,9 @@ export function attach(
     (hook: string, mapper: (context: never) => HookEvent) =>
     (context: unknown): undefined => {
       try {
-        // The SDK only ever calls this handler with the context its hook is
-        // declared to hand out, which is the one the mapper is typed against —
-        // so widening it back here is safe, and it is the only place the spec's
-        // erased hook types are re-opened.
+        // The SDK only ever calls this with the context its hook is declared to
+        // hand out — the one the mapper is typed against — so widening it back
+        // is safe. The only place the spec's erased hook types are re-opened.
         const mapped = (mapper as (context: unknown) => HookEvent)(context);
         record(
           mapped.event_type,
@@ -180,11 +157,10 @@ export function attach(
         );
       } catch (err) {
         reportError(err);
-        // A hook that fired but could not be mapped — an SDK context that no
-        // longer matches what the mapper reads — still gets a line, so the gap
-        // is visible in the run instead of the firing vanishing. It carries no
-        // `context_id`: the keys are read by the mapper that just failed, and
-        // guessing an operation is exactly the dishonesty this records.
+        // A firing that could not be mapped still leaves a line, so the gap is
+        // visible in the run. No `context_id`: the keys are read by the mapper
+        // that just failed, and guessing an operation is the dishonesty this
+        // event exists to record.
         record("trace.capture_failed", { hook });
       }
       return undefined;
@@ -199,8 +175,8 @@ export function attach(
       const register = host[name];
       if (typeof register !== "function") continue;
       try {
-        // x402 hooks are chainable and support multiple registrations, so
-        // adding our handler runs alongside — never displaces — the user's hooks.
+        // x402 hooks are chainable, so ours runs alongside — never displaces —
+        // the user's own.
         (
           register as (handler: (context: unknown) => undefined) => unknown
         ).call(host, makeHandler(name, mapper));
@@ -214,9 +190,8 @@ export function attach(
 
   if (spec !== undefined) attachGroup(target, spec, "");
 
-  // The HTTP kinds are wrappers around the instance that owns the rest of their
-  // hooks, so capture has to follow. Skipped when that instance was traced on its
-  // own, which would otherwise register a second handler and double its events.
+  // Skipped when the wrapped instance was traced on its own, which would
+  // otherwise register a second handler and double its events.
   let innerHost: Record<string, unknown> | undefined;
   if (spec?.inner !== undefined) {
     const innerSpec = SPECS[spec.inner.kind];
@@ -236,10 +211,9 @@ export function attach(
   const ok = attached.length > 0;
   const complete = ok && missing.length === 0;
 
-  // Record the attestation either way, so a failed — or partial — attach is never
-  // mistaken for a quiet run that simply saw no payment activity. It belongs to no
-  // operation, so it carries no `context_id` and the assembler keeps it out of
-  // every receipt.
+  // Recorded either way, so a failed or partial attach is never mistaken for a
+  // quiet run. It belongs to no operation, so it carries no `context_id` and the
+  // assembler keeps it out of every receipt.
   record(attestationEvent(ok, complete), {
     kind,
     attached,
@@ -255,8 +229,7 @@ export function attach(
     role,
   };
   traced.set(target, attestation);
-  // Mark the wrapped instance too, so a later `trace()` on it is the same no-op a
-  // repeat call on the wrapper is.
+  // Mark the wrapped instance too, so a later `trace()` on it is the same no-op.
   if (innerHost !== undefined) traced.set(innerHost, attestation);
   return attestation;
 }

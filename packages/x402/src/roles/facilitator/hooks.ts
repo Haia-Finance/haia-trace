@@ -1,11 +1,8 @@
 /**
- * The facilitator's hook surface — the same six verify/settle hook names a
- * resource server exposes, but its own context types, and (the discriminant)
- * without `onVerifiedPaymentCanceled`.
- *
- * Hooks reference: https://docs.x402.org/advanced-concepts/lifecycle-hooks
- *
- * `import type` is erased by the compiler, so no `@x402` value reaches `dist/`.
+ * The facilitator's hook surface: the same six verify/settle names a resource
+ * server exposes, with its own context types and — the discriminant — without
+ * `onVerifiedPaymentCanceled`. `import type` only, so no `@x402` value reaches
+ * `dist/`.
  */
 
 import type {

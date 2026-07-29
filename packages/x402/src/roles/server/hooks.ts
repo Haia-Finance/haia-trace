@@ -1,10 +1,6 @@
 /**
- * The payee's hook surface — the two resource-server kinds and the context each
- * of their hooks is handed.
- *
- * Hooks reference: https://docs.x402.org/advanced-concepts/lifecycle-hooks
- *
- * `import type` is erased by the compiler, so no `@x402` value reaches `dist/`.
+ * The payee's hook surface. `import type` only, so no `@x402` value reaches
+ * `dist/`.
  */
 
 import type { HTTPRequestContext } from "@x402/core/http";

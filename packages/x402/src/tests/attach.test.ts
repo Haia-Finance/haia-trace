@@ -1,9 +1,7 @@
 /**
- * What attaching does to an instance, and what it reports back.
- *
- * The wrapper cases run against the real x402 SDK classes: the shape they hold
- * their inner instance in is the thing capture has to follow, so a fake would
- * only prove the fake right.
+ * What attaching does to an instance, and what it reports back. The wrapper
+ * cases run against the real SDK classes: how they hold their inner instance is
+ * exactly what capture has to follow, so a fake would only prove the fake right.
  */
 
 import type { EventWriter } from "@usehaia/trace-core";
@@ -50,9 +48,8 @@ afterEach(() => {
 });
 
 describe("trace() on the real x402 SDK wrappers", () => {
-  // The HTTP types are wrappers: each exposes one hook and keeps the instance
-  // that owns the rest. Attaching to the wrapper alone captured a single hook —
-  // no `x402.payment.submitted`, no settlement — while reporting `ok: true`.
+  // Each HTTP type exposes one hook and keeps the instance owning the rest, so
+  // attaching to the wrapper alone captured one hook while reporting ok: true.
   it("covers every client hook through the wrapped x402Client", () => {
     const client = new x402Client();
     const http = new x402HTTPClient(client);
@@ -116,8 +113,7 @@ describe("trace() on the real x402 SDK wrappers", () => {
     trace(http, { writer });
     const second = trace(client, { writer });
 
-    // The inner client is already covered, so a direct trace() is the same no-op
-    // a repeat call on the wrapper is — a second handler would double its events.
+    // The inner client is already covered; a second handler would double its events.
     expect(second.attached).toEqual(
       expect.arrayContaining(["client.onPaymentResponse"]),
     );
@@ -125,8 +121,8 @@ describe("trace() on the real x402 SDK wrappers", () => {
   });
 
   it("leaves a wrapper whose inner instance is unreachable honestly incomplete", () => {
-    // A fork that renames the field matches no candidate: capture attaches what
-    // it can and reports the rest as missing rather than looking connected.
+    // A fork that renames the field matches no candidate: attach what you can,
+    // report the rest as missing rather than looking connected.
     const { instance } = fakeInstance(["onProtectedRequest"]);
     const { writer } = memoryWriter();
 
@@ -246,8 +242,7 @@ describe("the attestation it records", () => {
     };
 
     let attestation: ReturnType<typeof trace> | undefined;
-    // The unknown path still records a `trace.attach_failed` event; even if that
-    // sink throws, trace() must not propagate it to the caller.
+    // The unknown path still records an event; a throwing sink must not escape.
     expect(() => {
       attestation = trace(instance, { writer, onError });
     }).not.toThrow();
@@ -266,6 +261,63 @@ describe("the attestation it records", () => {
 });
 
 describe("attaching is passive", () => {
+  it("keeps attaching after one hook's registrar throws", () => {
+    // A registrar that rejects a handler must cost that one hook, not the rest —
+    // and be reported, not swallowed into an attestation claiming full coverage.
+    const { instance } = fakeInstance(FACILITATOR_HOOKS);
+    instance.onBeforeVerify = vi.fn(() => {
+      throw new Error("registry is closed");
+    });
+    const onError = vi.fn();
+    const { writer } = memoryWriter();
+
+    const attestation = trace(instance, { writer, onError });
+
+    expect(attestation.attached).not.toContain("onBeforeVerify");
+    expect(attestation.missing).toContain("onBeforeVerify");
+    expect(attestation.attached).toContain("onAfterVerify");
+    expect(attestation.complete).toBe(false);
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("survives a wrapper whose inner-instance property throws when read", () => {
+    // A getter is foreign code; probing for the wrapped instance must not throw.
+    const { instance } = fakeInstance(["onProtectedRequest"]);
+    Object.defineProperty(instance, "server", {
+      get() {
+        throw new Error("getter blew up");
+      },
+    });
+    const { writer } = memoryWriter();
+
+    let attestation: ReturnType<typeof trace> | undefined;
+    expect(() => {
+      attestation = trace(instance, { writer });
+    }).not.toThrow();
+
+    expect(attestation?.ok).toBe(true);
+    expect(attestation?.complete).toBe(false);
+  });
+
+  it("does not let a throwing onError reach the caller", () => {
+    const { instance } = fakeInstance(FACILITATOR_HOOKS);
+    const writer: EventWriter = {
+      write: () => {
+        throw new Error("sink is down");
+      },
+      close: () => {},
+    };
+
+    expect(() =>
+      trace(instance, {
+        writer,
+        onError: () => {
+          throw new Error("the logger is down too");
+        },
+      }),
+    ).not.toThrow();
+  });
+
   it("is strictly passive: a throwing writer never escapes and the handler returns undefined", () => {
     const { instance, handlers } = fakeInstance(["onBeforeSettle"]);
     const onError = vi.fn();
@@ -276,8 +328,7 @@ describe("attaching is passive", () => {
       close: () => {},
     };
     trace(instance, { writer, onError });
-    // trace() itself records a `trace.attached` event, which also throws; isolate
-    // the handler firing so the assertion measures only that.
+    // trace() records an attestation, which also throws — isolate the firing.
     onError.mockClear();
 
     const handler = handlers.get("onBeforeSettle")!;
@@ -302,13 +353,11 @@ describe("attaching is passive", () => {
 
     expect(() => handlers.get("onBeforeSettle")!({})).not.toThrow();
 
-    // The firing is not silently lost: it leaves a line naming the hook, so the
-    // gap is visible in the run even when no `onError` is supplied.
+    // Not silently lost: a line naming the hook keeps the gap visible in the run.
     expect(payments(events)).toHaveLength(0);
     expect(events.at(-1)).toMatchObject({
       event_type: "trace.capture_failed",
-      // A lone settle hook reads as a facilitator — it lacks the server-only
-      // `onVerifiedPaymentCanceled`.
+      // A lone settle hook reads as a facilitator: no onVerifiedPaymentCanceled.
       role: "facilitator",
       payload: { hook: "onBeforeSettle" },
     });

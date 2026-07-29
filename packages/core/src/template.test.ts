@@ -156,6 +156,17 @@ describe("assertOperationTemplate", () => {
     );
   });
 
+  it("rejects a match entry that is not a mapping at all", () => {
+    const bareString = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: ["an.event"] }],
+    };
+    expect(() => assertOperationTemplate(bareString)).toThrow(
+      /stage intent, match 0: `event` must be a non-empty string/,
+    );
+  });
+
   it("rejects an empty-string role on a witness", () => {
     // An empty role narrows the witness to nothing rather than widening it to
     // every role, so it could never close the stage either.

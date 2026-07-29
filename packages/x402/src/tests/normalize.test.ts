@@ -12,8 +12,7 @@ import {
 
 describe("compact", () => {
   it("drops absent fields but keeps every falsy value that is present", () => {
-    // `undefined` means "the SDK did not provide this"; `null`, `false`, `0` and
-    // `""` are facts about the payment and must survive into the record.
+    // Only `undefined` means "not provided"; the other falsy values are facts.
     expect(compact({ a: undefined, b: null, c: false, d: 0, e: "" })).toEqual({
       b: null,
       c: false,
@@ -75,6 +74,15 @@ describe("normalizeRequirements", () => {
   });
 });
 
+describe("an absent object", () => {
+  it("normalizes to nothing at all, never to an empty record", () => {
+    // An empty object would read like an observed fact.
+    expect(normalizeRequirements(undefined)).toBeUndefined();
+    expect(normalizeVerifyResponse(undefined)).toBeUndefined();
+    expect(normalizePaymentRequired(undefined)).toBeUndefined();
+  });
+});
+
 describe("normalizePaymentRequired", () => {
   it("normalizes the offer and every requirement it lists", () => {
     const offer = {
@@ -109,8 +117,7 @@ describe("normalizePaymentRequired", () => {
   });
 
   it("tolerates an offer with neither a resource nor an accepts list", () => {
-    // A v1 server's 402 body carries no `resource` at all — a normalizer must
-    // never be the reason a firing goes unrecorded.
+    // A v1 offer carries no `resource` — a normalizer must never lose a firing.
     expect(
       normalizePaymentRequired({ x402Version: 1, error: "insufficient_funds" }),
     ).toEqual({ x402_version: 1, error: "insufficient_funds", accepts: [] });
@@ -198,10 +205,8 @@ describe("normalizeError", () => {
 
 describe("the allowlist", () => {
   it("drops a field the x402 SDK adds in a later version", () => {
-    // The load-bearing property: every protocol object is rebuilt field by field,
-    // so an unknown field is dropped by default rather than silently recorded.
-    // A denylist would leak it. Each case passes one object carrying a field no
-    // normalizer knows about.
+    // The load-bearing property: rebuilding field by field drops an unknown field
+    // by default, where a denylist would leak it.
     const future = { futureField: "leaked" };
     const recorded = [
       normalizeResource({ url: "https://api.example.com", ...future }),
