@@ -114,8 +114,9 @@ to decide whether to continue a chain of spending.
 ### `haia-trace template list | new`
 
 A template is the declarative shape of an operation — the milestones that have to
-be witnessed for it to count as complete. Two ship with the CLI (`x402-buyer`,
-`x402-seller`); any other operation needs one you write.
+be witnessed for it to count as complete. Three ship with the CLI — `x402-buyer`,
+`x402-seller` and `x402-facilitator`, one per side of an x402 payment; any other
+operation needs one you write.
 
 ```sh
 haia-trace template list          # everything `build --template` will accept
@@ -128,11 +129,12 @@ file `build` would actually load:
 ```text
 📋 Operation templates
 
-  ✔ my-op        .trace/templates/my-op.yaml
-  ✔ x402-buyer   built-in
-  ✔ x402-seller  built-in
+  ✔ my-op             .trace/templates/my-op.yaml
+  ✔ x402-buyer        built-in
+  ✔ x402-facilitator  built-in
+  ✔ x402-seller       built-in
 
-3 templates available.
+4 templates available.
 ```
 
 `new` writes a commented starter template into `.trace/templates/` — the same
@@ -208,7 +210,8 @@ whose lines match the Event Contract works just as well (the bundled
 [`fixtures/x402-buyer.ndjson`](./fixtures/x402-buyer.ndjson) is a working example).
 
 Build a capture against the template for the side that recorded it: `x402-buyer`
-is the default, `--template x402-seller` for a resource server.
+is the default, `--template x402-seller` for a resource server, `--template
+x402-facilitator` for a facilitator.
 
 ## License
 

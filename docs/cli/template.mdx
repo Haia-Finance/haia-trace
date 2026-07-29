@@ -9,9 +9,9 @@ haia-trace template new <name>
 ```
 
 A template is the declarative description of an operation's expected shape, which
-[`build`](/cli/build) and [`sample`](/cli/sample) assemble against. Two ship with
-the CLI (`x402-buyer` and `x402-seller`, the two sides of an x402 payment); any
-other operation needs one you write.
+[`build`](/cli/build) and [`sample`](/cli/sample) assemble against. Three ship
+with the CLI — `x402-buyer`, `x402-seller` and `x402-facilitator`, one per side
+of an x402 payment; any other operation needs one you write.
 
 ## `template list`
 
@@ -25,11 +25,12 @@ haia-trace template list
 ```text
 📋 Operation templates
 
-  ✔ my-op        .trace/templates/my-op.yaml
-  ✔ x402-buyer   built-in
-  ✔ x402-seller  built-in
+  ✔ my-op             .trace/templates/my-op.yaml
+  ✔ x402-buyer        built-in
+  ✔ x402-facilitator  built-in
+  ✔ x402-seller       built-in
 
-3 templates available.
+4 templates available.
 ```
 
 ## `template new`
@@ -92,6 +93,19 @@ edited template is never lost to a repeated command.
 
 The command `new` prints when it's done carries whichever of the two flags you
 used, so the follow-up `build` resolves the file it just wrote.
+
+A witness may also name the `role` that has to have observed it:
+
+```yaml
+match:
+  - event: x402.verify.ok
+    role: server
+```
+
+It is optional — without it, any role closes the stage. Reach for it wherever two
+roles record the same event type for the same operation, as a resource server and
+a facilitator do: the shipped `x402-seller` and `x402-facilitator` templates
+constrain every witness for exactly that reason.
 
 <Tip>
   A local template shadows a built-in of the same name — writing

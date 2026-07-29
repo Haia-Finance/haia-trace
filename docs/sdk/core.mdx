@@ -25,7 +25,7 @@ npm install @usehaia/trace-core
   Written append-only as NDJSON.
 - **Template** — a declarative description of an operation as a sequence of
   milestone stages. Each stage's `match` is a match-set: any one of its events
-  closes the stage.
+  closes the stage, optionally only when a named `role` observed it.
 - **Receipt** — the verdict from `(events, template)`. See [Operation
   Receipt](/concepts/operation-receipt).
 

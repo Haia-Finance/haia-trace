@@ -13,6 +13,7 @@ A template describes an operation as an ordered sequence of milestone **stages**
 Templates are per-role — each side of a payment sees only its half of the flow.
 For the buyer (`x402-buyer`), the milestones are `challenge → payment →
 settlement`; for the seller (`x402-seller`), `request → verification →
+settlement`; for the facilitator (`x402-facilitator`), `verification →
 settlement`.
 
 Each stage's `match` is a **match-set**: any one of its events closes the stage.
@@ -25,14 +26,23 @@ leaving an HTTP client *or* by an MCP client initiating payment for a tool call:
   required: true
   match:
     - event: x402.payment.submitted  # a signed payment left the client
+      role: client
     - event: x402.payment.requested  # MCP: payment for a tool call initiated
+      role: client
   missing_explanation: "the challenge was observed, but no payment was initiated"
 - id: settlement
   required: true
   match:
     - event: x402.payment.responded  # only a settlement that succeeded
+      role: client
   missing_explanation: "the payment was submitted, but no settlement response was observed"
 ```
+
+A witness may also name the `role` that has to have observed it. It is optional —
+without it, any role closes the stage — and it matters wherever two roles share a
+vocabulary: a resource server and a facilitator both record `x402.verify.ok` for
+the same payment, so a seller's receipt would otherwise be closed by the
+facilitator's witness, claiming something the run does not support.
 
 Templates are **data, not code** — a new scenario is a new template file, never a
 change to the assembler.
