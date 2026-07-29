@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createCorrelator } from "./correlate.js";
+import { createCorrelator } from "../correlate.js";
 
 /** Stands in for the `PaymentRequired` object the SDK threads through the hooks. */
 const anchor = () => ({ resource: { url: "https://api.example.com/report" } });

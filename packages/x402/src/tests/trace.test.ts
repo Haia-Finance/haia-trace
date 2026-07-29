@@ -1,42 +1,19 @@
-import {
-  createRecorder,
-  type EventWriter,
-  type TraceEvent,
-} from "@usehaia/trace-core";
+import { createRecorder, type EventWriter } from "@usehaia/trace-core";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { x402HTTPResourceServer, x402ResourceServer } from "@x402/core/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resetTraceSession, trace } from "./index.js";
-
-/**
- * A fake x402 instance: each named hook method is a `vi.fn()` that captures the
- * handler `trace()` registers, so tests can fire it and inspect the return value.
- * Methods are chainable (return the instance), like the real registrar API.
- */
-function fakeInstance(hookNames: string[]) {
-  const handlers = new Map<string, (context: unknown) => unknown>();
-  const instance: Record<string, unknown> = {};
-  for (const name of hookNames) {
-    instance[name] = vi.fn((handler: (context: unknown) => unknown) => {
-      handlers.set(name, handler);
-      return instance;
-    });
-  }
-  return { instance, handlers };
-}
-
-/** An in-memory sink, so a test reads the events exactly as they were recorded. */
-function memoryWriter() {
-  const events: TraceEvent[] = [];
-  const writer: EventWriter = {
-    write: (event) => {
-      events.push(event);
-    },
-    close: () => {},
-  };
-  return { writer, events };
-}
+import { resetTraceSession, trace } from "../index.js";
+import {
+  fakeInstance,
+  hooksOf,
+  memoryWriter,
+  paymentPayload,
+  paymentRequired,
+  payments,
+  REQUIREMENTS,
+  RESOURCE,
+} from "./testkit.js";
 
 /** Read a real SDK instance's hook registry — the array it fires on each event. */
 const handlersOf = (
@@ -45,42 +22,14 @@ const handlersOf = (
 ): ((context: unknown) => unknown)[] =>
   (instance as Record<string, ((context: unknown) => unknown)[]>)[field] ?? [];
 
-/** The payment events of a run — the attestation line is not one of them. */
-const payments = (events: TraceEvent[]): TraceEvent[] =>
-  events.filter((event) => !event.event_type.startsWith("trace."));
+// Read from the adapter's own map rather than spelled out here, so a suite can
+// never cover fewer hooks than a kind actually exposes. The resource server is
+// the set carrying `onVerifiedPaymentCanceled` — the method that distinguishes
+// it from a facilitator, which exposes the same six others.
+const SERVER_HOOKS = hooksOf("resourceServer");
+const FACILITATOR_HOOKS = hooksOf("facilitator");
+const CLIENT_HOOKS = hooksOf("httpClient");
 
-// The resource-server hook set — note `onVerifiedPaymentCanceled`, the method
-// that distinguishes a server from a facilitator.
-const SERVER_HOOKS = [
-  "onBeforeVerify",
-  "onAfterVerify",
-  "onVerifyFailure",
-  "onBeforeSettle",
-  "onAfterSettle",
-  "onSettleFailure",
-  "onVerifiedPaymentCanceled",
-];
-// The facilitator shares the verify/settle names but has no onVerifiedPaymentCanceled.
-const FACILITATOR_HOOKS = SERVER_HOOKS.filter(
-  (h) => h !== "onVerifiedPaymentCanceled",
-);
-const CLIENT_HOOKS = [
-  "onPaymentRequired",
-  "onBeforePaymentCreation",
-  "onAfterPaymentCreation",
-  "onPaymentCreationFailure",
-  "onPaymentResponse",
-];
-
-const REQUIREMENTS = {
-  scheme: "exact",
-  network: "base-sepolia",
-  asset: "0xUSDC",
-  amount: "10000",
-  payTo: "0xseller",
-  maxTimeoutSeconds: 60,
-  extra: { name: "USD Coin", version: "2" },
-};
 const ROUTES = {
   "/report": {
     accepts: {
@@ -91,33 +40,6 @@ const ROUTES = {
     },
   },
 } as const;
-const RESOURCE = {
-  url: "https://api.example.com/report",
-  description: "Quarterly report",
-  mimeType: "application/json",
-  serviceName: "example",
-  iconUrl: "https://example.com/icon.png",
-};
-/**
- * One 402 offer. A factory, not a constant: the SDK decodes a fresh object per
- * 402 response and threads that one object through the pre-payment hooks, and
- * the adapter groups those hooks by its identity.
- */
-const paymentRequired = () => ({
-  x402Version: 2,
-  resource: RESOURCE,
-  accepts: [REQUIREMENTS],
-});
-/** A signed payload — `payload` holds exactly the material that must never be recorded. */
-const paymentPayload = (nonce: string) => ({
-  x402Version: 2,
-  resource: RESOURCE,
-  accepted: REQUIREMENTS,
-  payload: {
-    signature: "0xdeadbeefsignature",
-    authorization: { from: "0xbuyer", to: "0xseller", nonce },
-  },
-});
 
 beforeEach(() => {
   resetTraceSession();
