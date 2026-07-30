@@ -11,7 +11,8 @@ The core command. Read a run's events and produce **one Receipt per operation**.
 
 Events are grouped into operations by their `context_id`; each group is folded
 through the assembler independently. Every assembled receipt is written to
-`.trace/receipts/<run>~<context_id>.json`.
+`.trace/receipts/<run>~<context_id>.json`, and [`receipt`](/cli/receipt) reads them
+back afterwards.
 
 ## Usage
 

@@ -31,6 +31,9 @@ Both expose the `haia-trace` command. Requires **Node ≥ 20**.
   <Card title="build" icon="hammer" href="/cli/build">
     Assemble one receipt per operation from a run's events.
   </Card>
+  <Card title="receipt" icon="receipt" href="/cli/receipt">
+    List the receipts build has written, and show one verdict in full.
+  </Card>
   <Card title="template" icon="list" href="/cli/template">
     List the templates you can build against, and scaffold your own.
   </Card>
@@ -58,6 +61,9 @@ database, no network:
 A run file is newline-delimited JSON — one event per line, append-only. It's the
 source of truth; a Receipt is a derived, reproducible artifact, so re-building
 the same run always yields the same Receipt.
+
+`build` writes into `receipts/`, and [`receipt`](/cli/receipt) reads it back — so
+nothing outside the CLI needs to know how a receipt file is named.
 
 ### Moving the root with `--dir`
 

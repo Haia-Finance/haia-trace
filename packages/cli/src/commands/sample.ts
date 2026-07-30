@@ -3,8 +3,8 @@
  *
  * It replays a bundled set of fixture events through the *real* assembler
  * (`assembleReceipts`), the same `(events, template) → receipt` core that `build`
- * and `last` use — the only difference from a live run is where the events come
- * from (a bundled fixture, not a recorder). The fixture set covers several
+ * uses — the only difference from a live run is where the events come from (a
+ * bundled fixture, not a recorder). The fixture set covers several
  * operations (by `context_id`) so one run shows the product's spectrum: a full
  * receipt, a partial one with an explained gap, and one with an observed fault.
  *
@@ -23,7 +23,7 @@ import type { Command } from "commander";
 
 import { loadFixtureEvents } from "../fixtures.js";
 import { traceDirs } from "../paths.js";
-import { renderReceipt } from "../render/receipt.js";
+import { renderReceipts } from "../render/receipt.js";
 import { resolveTemplateSource } from "../templates.js";
 import { color } from "../ui.js";
 import { withTraceDir } from "./options.js";
@@ -61,11 +61,7 @@ export function runSample(
     console.log(`${color.dim(`  template: ${source.path}`)}\n`);
   }
 
-  receipts.forEach((receipt, index) => {
-    if (index > 0) console.log(color.dim("  ────────────────────────────"));
-    console.log(renderReceipt(receipt));
-    console.log("");
-  });
+  if (receipts.length > 0) console.log(renderReceipts(receipts));
 }
 
 export const sampleCommand: TraceCommand = {

@@ -3,9 +3,11 @@
  * "assemble on request" command: read a run's events and produce one Receipt per
  * operation.
  *
- * `sample` / `last` / `rerun` are special cases of this — same events + template
- * through the same core. Events are the source of truth; a receipt is derived and
- * reproducible: the same ndjson yields byte-identical receipts (BR-4).
+ * `sample` is a special case of this — same events + template through the same
+ * core, only with the events coming from a bundled fixture. Events are the source
+ * of truth; a receipt is derived and reproducible: the same ndjson yields
+ * byte-identical receipts (BR-4), which is also why re-running this command is all
+ * "rebuild" takes. What it writes is read back by `receipt list` / `receipt show`.
  *
  * It splits each run by `context_id` and folds every operation through the core:
  * with a terminal to draw on, through `assembleReceiptsProgressively`, so a large
@@ -40,7 +42,7 @@ import {
 import type { Command } from "commander";
 
 import { traceDirs } from "../paths.js";
-import { renderReceipt } from "../render/receipt.js";
+import { renderReceipts } from "../render/receipt.js";
 import { writeReceipt } from "../store.js";
 import { resolveTemplateSource, type TemplateSource } from "../templates.js";
 import { color, spinner } from "../ui.js";
@@ -287,14 +289,16 @@ export function runBuild(
   for (const built of runs) {
     // And which run produced it, for the same reason: two runs of one program
     // yield receipts with identical operation ids and different contents.
-    console.log(color.dim(`  run: ${built.path}\n`));
+    //
+    // The run *id* leads, with the file after it. `receipt show --run` takes the
+    // id, so the label that reads like an answer to "which run?" has to print the
+    // value that command accepts — a path pasted there resolves to nothing. The
+    // file still follows, since it is the evidence the verdicts came from.
+    console.log(color.dim(`  run: ${built.run}  ${built.path}\n`));
 
-    built.receipts.forEach((receipt, index) => {
-      if (index > 0) console.log(color.dim("  ────────────────────────────"));
-      console.log(renderReceipt(receipt));
-      console.log("");
-    });
-    if (built.receipts.length === 0) {
+    if (built.receipts.length > 0) {
+      console.log(renderReceipts(built.receipts));
+    } else {
       console.log(color.yellow("  no operations found in this run\n"));
     }
     if (built.unassigned.length > 0) {

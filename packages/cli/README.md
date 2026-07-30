@@ -111,6 +111,71 @@ attestations) belong to no single operation and are reported separately as
 objects — the machine-readable basis an agent reads (`completeness`, `missing`)
 to decide whether to continue a chain of spending.
 
+### `haia-trace receipt list | show`
+
+Reading the receipts `build` has written. `list` answers "what's in the store?" —
+one line per receipt — and `show` renders one verdict in full.
+
+```sh
+haia-trace receipt list                    # every receipt, grouped by run
+haia-trace receipt list --run 1721709600000
+haia-trace receipt list --status partial   # only the unresolved ones
+haia-trace receipt show                    # the whole of the most recent run
+haia-trace receipt show op-2               # one operation from that run
+haia-trace receipt show op-2 --run 1721709600000
+haia-trace receipt list --json             # the index, for an agent to read
+```
+
+`list` groups by run, oldest first:
+
+```text
+🧾 Receipts
+
+  run 1721709600000
+    ✔ op-1  FULL     x402-buyer
+    ✖ op-2  PARTIAL  x402-buyer
+
+  run 1721712000000
+    ✔ op-1  FULL     x402-buyer
+
+3 receipts across 2 runs.
+```
+
+| Argument / option | Applies to | Meaning                                                              |
+| ----------------- | ---------- | -------------------------------------------------------------------- |
+| `[operation]`     | `show`     | Operation to show. Default: every operation in the run.               |
+| `--run <id>`      | both       | Which run. Default: every run for `list`, the most recent for `show`. |
+| `--status <full\|partial>` | `list` | Show only receipts with this verdict.                          |
+| `--dir <path>`    | both       | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`. |
+| `--json`          | both       | Machine-readable output instead of a terminal rendering.              |
+
+The two are deliberately read-only: a receipt is *derived* from a run's events, so
+`build` is the only thing that creates one — there is no `receipt new`. To change a
+verdict, change the template or the events and build again.
+
+`show` with no operation renders the most recent run, which is the "how did the run
+I just built go?" question. Naming an operation needs no `--run` either; it looks in
+the most recent run unless you point it at an older one. Since an operation id is
+only unique *within* a run, the two together are what address a receipt — which is
+also why `show` is more than `cat`: an id that isn't a bare slug (a URL-ish
+`context_id`) is escaped into the file name, so the file isn't nameable by hand and
+this lookup is the only reliable way to it.
+
+`list --json` emits an **index** — `{ receipts: [{ run, operation, path,
+completeness, template }], unreadable }` — not whole receipts. It carries the
+`completeness` an agent decides on, so a spend policy can read the store through
+one command instead of globbing it. `show --json` emits the full Receipt objects as
+`{ run, receipts, unreadable }`, the same shape whether or not you named an
+operation.
+
+A file in `receipts/` that can't be parsed is reported rather than skipped, so a
+partly damaged store never presents as intact — on **stderr** in every case, so
+`--json` stays parseable, and in the `unreadable` array of both commands' JSON,
+which carries the run and operation its file name records. That holds even when a
+query is refused, and a run whose receipts are all unreadable is still treated as
+the most recent run rather than passed over for an older one whose verdicts would
+look clean. Files the CLI didn't write are passed over in silence.
+
 ### `haia-trace template list | new`
 
 A template is the declarative shape of an operation — the milestones that have to
@@ -165,6 +230,10 @@ database, no network:
 A run file is newline-delimited JSON — one event per line, append-only. It's the
 source of truth; a Receipt is a derived, reproducible artifact, so re-building
 the same run always yields the same Receipt.
+
+`build` writes into `receipts/`, and [`receipt list` / `receipt show`](#haia-trace-receipt-list--show)
+read it back — so nothing outside the CLI needs to know how a receipt file is
+named.
 
 `--dir` moves the root — `haia-trace build --dir .my-trace` — for a second project
 in one checkout, or a scratch run that shouldn't touch the committed tree. What's

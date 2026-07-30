@@ -32,6 +32,7 @@
               "cli/overview",
               "cli/sample",
               "cli/build",
+              "cli/receipt",
               "cli/template"
             ]
           }
