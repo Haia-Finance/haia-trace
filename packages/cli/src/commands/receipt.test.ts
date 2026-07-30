@@ -69,6 +69,17 @@ let eventsDir: string;
 let receiptsDir: string;
 
 /**
+ * SGR escapes, built from the escape character's code rather than written into a
+ * regex literal — a literal control character is a lint error, and a plausible typo.
+ */
+const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/** The text without colour, whatever the environment decided about colour. */
+function plain(text: string): string {
+  return text.replace(SGR, "");
+}
+
+/**
  * Run a command and capture each stream as the shell would see it, plus whatever it
  * returned.
  *
@@ -82,8 +93,11 @@ let receiptsDir: string;
  * `process.stdout.write`, so spying the stream alone would miss every `console.log`.
  * Hence four spies rather than two.)
  *
- * Colour is inert here — picocolors stands down when stdout is not a terminal — so
- * what comes back is the plain text a reader would see.
+ * Colour is stripped, because whether there is any is not ours to decide: picocolors
+ * stands down for a non-terminal stdout but turns *on* when `CI` is set, so the same
+ * assertion would pass locally and fail on a runner — `run 1721709600000` arrives as
+ * `\e[2mrun\e[22m \e[1m1721709600000\e[22m` there. Asserting on the text means
+ * asserting on the text.
  */
 function capture<T>(run: () => T): { out: string; err: string; result: T } {
   const out: string[] = [];
@@ -108,7 +122,7 @@ function capture<T>(run: () => T): { out: string; err: string; result: T } {
   });
 
   const result = run();
-  return { out: out.join(""), err: err.join(""), result };
+  return { out: plain(out.join("")), err: plain(err.join("")), result };
 }
 
 /** What the command wrote to stdout — the listing, the rendered receipts, the JSON. */

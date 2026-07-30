@@ -31,6 +31,22 @@ function stored(
   };
 }
 
+/**
+ * SGR escapes, built from the escape character's code rather than written into a
+ * regex literal — a literal control character is a lint error, and a plausible typo.
+ */
+const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/**
+ * The rendering without colour. Needed because whether there *is* colour is not the
+ * test's to decide: picocolors stands down for a non-terminal stdout but turns on
+ * when `CI` is set, so an assertion spanning two differently-coloured tokens — `run`
+ * dim, the id bold — passes locally and fails on a runner.
+ */
+function plain(text: string): string {
+  return text.replace(SGR, "");
+}
+
 describe("renderReceipt", () => {
   it("renders a full operation as completed", () => {
     const receipt: Receipt = {
@@ -126,7 +142,7 @@ describe("renderReceipts", () => {
   const two = stored("run", "op-2", "partial").receipt;
 
   it("rules consecutive receipts apart", () => {
-    const out = renderReceipts([one, two]);
+    const out = plain(renderReceipts([one, two]));
     expect(out).toContain("────");
     // The rule goes between them, never before the first or after the last.
     expect(out.indexOf("────")).toBeGreaterThan(out.indexOf("op-1"));
@@ -145,11 +161,13 @@ describe("renderReceipts", () => {
 
 describe("renderReceiptList", () => {
   it("groups by run and counts across them", () => {
-    const out = renderReceiptList([
-      stored("1721709600000", "op-1"),
-      stored("1721709600000", "op-2", "partial"),
-      stored("1721712000000", "op-1"),
-    ]);
+    const out = plain(
+      renderReceiptList([
+        stored("1721709600000", "op-1"),
+        stored("1721709600000", "op-2", "partial"),
+        stored("1721712000000", "op-1"),
+      ]),
+    );
 
     expect(out).toContain("run 1721709600000");
     expect(out).toContain("run 1721712000000");
@@ -162,10 +180,12 @@ describe("renderReceiptList", () => {
 
   it("aligns the verdict column across runs, not within each", () => {
     // A width taken per group would step in and out as the listing scrolls.
-    const out = renderReceiptList([
-      stored("run-a", "op-1"),
-      stored("run-b", "a-much-longer-operation-id", "partial"),
-    ]);
+    const out = plain(
+      renderReceiptList([
+        stored("run-a", "op-1"),
+        stored("run-b", "a-much-longer-operation-id", "partial"),
+      ]),
+    );
     const columns = out
       .split("\n")
       .filter((line) => line.includes("FULL") || line.includes("PARTIAL"))
@@ -176,15 +196,15 @@ describe("renderReceiptList", () => {
   });
 
   it("names a single receipt in the singular, without a run count", () => {
-    const out = renderReceiptList([stored("run", "op-1")]);
+    const out = plain(renderReceiptList([stored("run", "op-1")]));
     expect(out).toContain("1 receipt.");
     expect(out).not.toContain("across");
   });
 
   it("carries an operation's title when the receipt has one", () => {
-    const out = renderReceiptList([
-      stored("run", "op-1", "full", "buy the dataset"),
-    ]);
+    const out = plain(
+      renderReceiptList([stored("run", "op-1", "full", "buy the dataset")]),
+    );
     expect(out).toContain("buy the dataset");
   });
 });
