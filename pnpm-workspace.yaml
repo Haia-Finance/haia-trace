@@ -7,7 +7,7 @@ packages:
 # Single source of truth for shared dev-dependency versions.
 # Packages reference these with "typescript": "catalog:" etc.
 catalog:
-  typescript: ^5.9.2
+  typescript: ^7.0.2
   vitest: ^4.1.10
   "@types/node": ^22.20.1
   "@biomejs/biome": ^2.5.6

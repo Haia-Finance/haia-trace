@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // The adapter types its console writer and its `process.env` opt-out kill
+    // switch against the Node globals. `types` is not inferred from what is
+    // installed, so they are requested here explicitly. This stays a type-only
+    // dependency: the runtime code guards `process` with a `typeof` check so the
+    // adapter still loads in browser and edge runtimes.
+    "types": ["node"]
   },
   "include": ["src"]
 }
