@@ -19,7 +19,7 @@ import type { TraceInstanceKind } from "./spec.js";
 export interface TraceOptions {
   /**
    * Where recorded events go. Default: NDJSON on stdout. Pass
-   * `createRunWriter(".trace/events")` from `@usehaia/trace-core/node` to
+   * `createRunEventWriter(".trace/events")` from `@usehaia/trace-core/file` to
    * persist a run. The writer's lifetime is the caller's — `trace()` never
    * closes it.
    */

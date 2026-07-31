@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /**
  * The Node file-backed sink — the default persistence for TraceEvents, exposed at
- * the `@usehaia/trace-core/node` subpath.
+ * the `@usehaia/trace-core/file` subpath.
  *
  * This is the ONLY module in core that imports `node:*`. Keeping it behind a
  * subpath is what lets the root export stay runtime-agnostic: a browser/edge
@@ -25,18 +25,18 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 
-import type { TraceEvent } from "./event.js";
+import type { TraceEvent } from "../event.js";
 import {
   decodeEventLines,
   type EventReader,
   type EventWriter,
   encodeEventLine,
   type SinkErrorHandler,
-} from "./sink.js";
+} from "./contract.js";
 
 // Re-exported so the file sink's options read from one import; the type is
 // declared with the sink contract because every sink implementation uses it.
-export type { SinkErrorHandler } from "./sink.js";
+export type { SinkErrorHandler } from "./contract.js";
 
 /** Run files carry this extension; also how a directory listing tells them apart. */
 const RUN_EXT = ".ndjson";
@@ -48,7 +48,7 @@ const RUN_EXT = ".ndjson";
  * Fail-open: an append error is routed to `onError` and swallowed, never thrown —
  * a producer in a payment path must not break because the disk did.
  */
-export function createFileWriter(
+export function createFileEventWriter(
   path: string,
   onError?: SinkErrorHandler,
 ): EventWriter {
@@ -69,7 +69,7 @@ export function createFileWriter(
 }
 
 /** Options for a run writer, whose file name is stamped from the service's start time. */
-export interface RunWriterOptions {
+export interface RunEventWriterOptions {
   /**
    * Epoch-millisecond clock for the file name; injectable so tests are
    * deterministic. Defaults to `Date.now`. Epoch ms is filesystem-safe (unlike an
@@ -81,7 +81,7 @@ export interface RunWriterOptions {
 }
 
 /** A run writer, plus the resolved path of the file it created. */
-export interface RunWriter extends EventWriter {
+export interface RunEventWriter extends EventWriter {
   /** Absolute-or-relative path of this run's file, e.g. `<dir>/1721709600000.ndjson`. */
   readonly path: string;
 }
@@ -101,10 +101,10 @@ export interface RunWriter extends EventWriter {
  * capture was attached and simply saw nothing, which must never read as "capture
  * failed" (the honesty invariant).
  */
-export function createRunWriter(
+export function createRunEventWriter(
   dir: string,
-  options: RunWriterOptions = {},
-): RunWriter {
+  options: RunEventWriterOptions = {},
+): RunEventWriter {
   // A caller mistake, not a disk condition, so it is *not* covered by the
   // fail-open policy below: there is no run file to fail open to without a
   // directory, and silently picking one is the agreeing-on-a-convention this
@@ -113,7 +113,7 @@ export function createRunWriter(
   // for whom the alternative is `ERR_INVALID_ARG_TYPE` from inside `node:path`.
   if (typeof dir !== "string" || dir.trim() === "") {
     throw new TypeError(
-      'createRunWriter requires a run directory, e.g. createRunWriter(".trace/events")',
+      'createRunEventWriter requires a run directory, e.g. createRunEventWriter(".trace/events")',
     );
   }
 
@@ -128,7 +128,7 @@ export function createRunWriter(
     options.onError?.(err);
   }
 
-  const writer = createFileWriter(path, options.onError);
+  const writer = createFileEventWriter(path, options.onError);
   return {
     path,
     write: writer.write,
@@ -137,7 +137,7 @@ export function createRunWriter(
 }
 
 /** Open a reader over an explicit run (or fixture) file. Tolerant of a torn tail; see `decodeEventLines`. */
-export function createFileReader(path: string): EventReader {
+export function createFileEventReader(path: string): EventReader {
   return {
     read(): TraceEvent[] {
       return decodeEventLines(readFileSync(path, "utf8"));
@@ -187,5 +187,5 @@ export function readLatestRun(dir: string): EventReader | null {
   const runs = listRunFiles(dir);
   const latest = runs[runs.length - 1];
   if (latest === undefined) return null;
-  return createFileReader(latest);
+  return createFileEventReader(latest);
 }

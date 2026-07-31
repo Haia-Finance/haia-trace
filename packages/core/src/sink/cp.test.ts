@@ -1,14 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-
+import { createRecorder } from "../recorder.js";
 import {
+  type CpEventWriterOptions,
   type CpFetch,
   type CpResponse,
-  type CpWriterOptions,
-  createCpWriter,
+  createCpEventWriter,
   type IngestEvent,
   toIngestEvent,
 } from "./cp.js";
-import { createRecorder } from "./recorder.js";
 
 const rec = createRecorder({
   adapter: "trace-x402",
@@ -166,69 +165,91 @@ describe("toIngestEvent", () => {
   });
 });
 
-describe("createCpWriter configuration", () => {
+describe("createCpEventWriter configuration", () => {
   it("rejects a numeric option that would disable the bound it sets", () => {
     // NaN is what `Number(process.env.X)` yields for an unset variable, and it
     // would otherwise spin the drain loop forever.
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "k", agentId: "a", batchSize: NaN }),
+      createCpEventWriter({
+        url: URL,
+        apiKey: "k",
+        agentId: "a",
+        batchSize: NaN,
+      }),
     ).toThrow(/batchSize must be a finite number/);
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "k", agentId: "a", maxQueue: NaN }),
+      createCpEventWriter({
+        url: URL,
+        apiKey: "k",
+        agentId: "a",
+        maxQueue: NaN,
+      }),
     ).toThrow(/maxQueue must be a finite number/);
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "k", agentId: "a", batchSize: 0 }),
+      createCpEventWriter({
+        url: URL,
+        apiKey: "k",
+        agentId: "a",
+        batchSize: 0,
+      }),
     ).toThrow(/batchSize/);
   });
 
   it("rejects a missing api key, not only an empty one", () => {
     expect(() =>
-      createCpWriter({
+      createCpEventWriter({
         url: URL,
         apiKey: undefined as unknown as string,
         agentId: "a",
       }),
     ).toThrow(/apiKey is required/);
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "  ", agentId: "a" }),
+      createCpEventWriter({ url: URL, apiKey: "  ", agentId: "a" }),
     ).toThrow(/apiKey is required/);
   });
 
   it("rejects a configuration the ingest API would refuse", () => {
     expect(() =>
-      createCpWriter({ url: "ingest.example.com", apiKey: "k", agentId: "a" }),
+      createCpEventWriter({
+        url: "ingest.example.com",
+        apiKey: "k",
+        agentId: "a",
+      }),
     ).toThrow(/http\(s\) URL/);
     // A missing url must be named, not surface as a TypeError from the first
     // line that happens to read it.
     expect(() =>
-      createCpWriter({
+      createCpEventWriter({
         apiKey: "k",
         agentId: "a",
-      } as unknown as CpWriterOptions),
+      } as unknown as CpEventWriterOptions),
     ).toThrow(/http\(s\) URL/);
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "", agentId: "a" }),
+      createCpEventWriter({ url: URL, apiKey: "", agentId: "a" }),
     ).toThrow(/apiKey/);
     // The agent id is a required argument: nothing here could invent one that
     // means what it says.
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "k" } as unknown as CpWriterOptions),
+      createCpEventWriter({
+        url: URL,
+        apiKey: "k",
+      } as unknown as CpEventWriterOptions),
     ).toThrow(/agentId is required/);
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "k", agentId: "   " }),
+      createCpEventWriter({ url: URL, apiKey: "k", agentId: "   " }),
     ).toThrow(/agentId is required/);
     expect(() =>
-      createCpWriter({ url: URL, apiKey: "k", agentId: "a".repeat(257) }),
+      createCpEventWriter({ url: URL, apiKey: "k", agentId: "a".repeat(257) }),
     ).toThrow(/at most 256/);
   });
 });
 
-describe("createCpWriter delivery", () => {
+describe("createCpEventWriter delivery", () => {
   const event = (event_type: string) => rec.event({ event_type, payload: {} });
 
   it("posts a queued batch to the batch endpoint with the api key", async () => {
     const { fetch, calls } = stubFetch(response({ body: accepted(2) }));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: `${URL}/`,
       apiKey: "pit_test",
       agentId: "agent-1",
@@ -251,7 +272,7 @@ describe("createCpWriter delivery", () => {
 
   it("sends as soon as a batch fills, without waiting for a flush", async () => {
     const { fetch, calls } = stubFetch(response({}));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -269,7 +290,7 @@ describe("createCpWriter delivery", () => {
 
   it("splits a queue larger than the batch size into several requests", async () => {
     const { fetch, calls } = stubFetch(response({}));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -288,7 +309,7 @@ describe("createCpWriter delivery", () => {
 
   it("flushing an empty queue sends nothing", async () => {
     const { fetch, calls } = stubFetch(response({}));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -300,12 +321,12 @@ describe("createCpWriter delivery", () => {
   });
 });
 
-describe("createCpWriter failure handling", () => {
+describe("createCpEventWriter failure handling", () => {
   const event = () => rec.event({ event_type: "x402.settle.ok", payload: {} });
 
   it("never throws into the producer when delivery fails", async () => {
     const onError = vi.fn();
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -328,7 +349,7 @@ describe("createCpWriter failure handling", () => {
       response({ ok: false, status: 503, headers: { get: () => "0" } }),
     );
     const onError = vi.fn();
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -349,7 +370,7 @@ describe("createCpWriter failure handling", () => {
   it("does not retry a 4xx that a retry cannot fix", async () => {
     const { fetch, calls } = stubFetch(response({ ok: false, status: 401 }));
     const onError = vi.fn();
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "bad",
       agentId: "agent-1",
@@ -373,7 +394,7 @@ describe("createCpWriter failure handling", () => {
       }),
       response({}),
     );
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -403,7 +424,7 @@ describe("createCpWriter failure handling", () => {
         }),
       }),
     );
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -426,7 +447,7 @@ describe("createCpWriter failure handling", () => {
         body: JSON.stringify({ accepted: 0, duplicates: 1, rejections: [] }),
       }),
     );
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -443,7 +464,7 @@ describe("createCpWriter failure handling", () => {
   it("screens out an event that would fail the whole batch", async () => {
     const onError = vi.fn();
     const { fetch, calls } = stubFetch(response({}));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -464,7 +485,7 @@ describe("createCpWriter failure handling", () => {
   it("drops events past the queue ceiling and says so", async () => {
     const onError = vi.fn();
     const { fetch } = stubFetch(response({}));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -485,7 +506,7 @@ describe("createCpWriter failure handling", () => {
   it("refuses events after close instead of silently accepting them", async () => {
     const onError = vi.fn();
     const { fetch } = stubFetch(response({}));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -504,7 +525,7 @@ describe("createCpWriter failure handling", () => {
     const { fetch, calls } = stubFetch(
       response({ ok: false, status: 503, headers: { get: () => "0" } }),
     );
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -531,7 +552,7 @@ describe("createCpWriter failure handling", () => {
     const onError = vi.fn();
     // A delivery that never finishes: the events leave the queue but are not
     // delivered, which is exactly the state the ceiling has to notice.
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -558,7 +579,7 @@ describe("createCpWriter failure handling", () => {
         }),
       }),
     );
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -588,7 +609,7 @@ describe("createCpWriter failure handling", () => {
         }),
       }),
     );
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -607,7 +628,7 @@ describe("createCpWriter failure handling", () => {
 
   it("treats timeoutMs 0 as no deadline rather than an instant abort", async () => {
     const { fetch, calls } = stubFetch(response({}));
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",
@@ -626,7 +647,7 @@ describe("createCpWriter failure handling", () => {
 
   it("survives a runtime with no fetch", async () => {
     const onError = vi.fn();
-    const writer = createCpWriter({
+    const writer = createCpEventWriter({
       url: URL,
       apiKey: "k",
       agentId: "agent-1",

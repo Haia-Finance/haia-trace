@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { TraceEvent } from "./event.js";
-import { createRecorder } from "./recorder.js";
-import {
-  createMulticastWriter,
-  decodeEventLine,
-  decodeEventLines,
-  type EventWriter,
-  encodeEventLine,
-} from "./sink.js";
+import type { TraceEvent } from "../event.js";
+import { createRecorder } from "../recorder.js";
+import type { EventWriter } from "./contract.js";
+import { createMulticastEventWriter } from "./multicast.js";
 
 const rec = createRecorder({
   adapter: "trace-x402",
@@ -16,52 +11,7 @@ const rec = createRecorder({
   newId: () => "evt-fixed",
 });
 
-describe("event line codec", () => {
-  it("round-trips an event, preserving optional fields", () => {
-    const event = rec.event({
-      event_type: "x402.payment.required",
-      payload: { amount: "1000" },
-      role: "client",
-      context_id: "op-1",
-    });
-    const decoded = decodeEventLine(encodeEventLine(event));
-    expect(decoded).toEqual(event);
-  });
-
-  it("encodes deterministically and without a trailing newline", () => {
-    const event = rec.event({ event_type: "x402.settle.ok", payload: {} });
-    const line = encodeEventLine(event);
-    expect(encodeEventLine(event)).toBe(line);
-    expect(line.endsWith("\n")).toBe(false);
-  });
-});
-
-describe("decodeEventLines", () => {
-  const line = (type: string) =>
-    encodeEventLine(rec.event({ event_type: type, payload: {} }));
-
-  it("parses a clean document", () => {
-    const text = `${line("a")}\n${line("b")}\n`;
-    expect(decodeEventLines(text).map((e) => e.event_type)).toEqual(["a", "b"]);
-  });
-
-  it("drops a torn trailing line (no final newline)", () => {
-    const text = `${line("a")}\n${line("b")}\n{"event_type":"c","payl`;
-    expect(decodeEventLines(text).map((e) => e.event_type)).toEqual(["a", "b"]);
-  });
-
-  it("returns nothing for empty input", () => {
-    expect(decodeEventLines("")).toEqual([]);
-    expect(decodeEventLines("\n")).toEqual([]);
-  });
-
-  it("throws on corruption in a non-final line", () => {
-    const text = `${line("a")}\nnot json\n${line("c")}\n`;
-    expect(() => decodeEventLines(text)).toThrow(/line 2/);
-  });
-});
-
-describe("createMulticastWriter", () => {
+describe("createMulticastEventWriter", () => {
   /** A writer that records what it was given, optionally failing on write. */
   function spyWriter(options: { throws?: boolean } = {}) {
     const events: TraceEvent[] = [];
@@ -95,7 +45,7 @@ describe("createMulticastWriter", () => {
   it("offers every event to every writer", () => {
     const a = spyWriter();
     const b = spyWriter();
-    const writer = createMulticastWriter(a.writer, b.writer);
+    const writer = createMulticastEventWriter(a.writer, b.writer);
 
     writer.write(event());
 
@@ -106,7 +56,7 @@ describe("createMulticastWriter", () => {
   it("a throwing writer does not deny the event to the others", () => {
     const broken = spyWriter({ throws: true });
     const healthy = spyWriter();
-    const writer = createMulticastWriter(broken.writer, healthy.writer);
+    const writer = createMulticastEventWriter(broken.writer, healthy.writer);
 
     expect(() => {
       writer.write(event());
@@ -117,7 +67,7 @@ describe("createMulticastWriter", () => {
   it("flushes and closes every writer", async () => {
     const a = spyWriter();
     const b = spyWriter();
-    const writer = createMulticastWriter(a.writer, b.writer);
+    const writer = createMulticastEventWriter(a.writer, b.writer);
 
     await writer.flush?.();
     writer.close();
@@ -133,7 +83,7 @@ describe("createMulticastWriter", () => {
       flush: () => Promise.reject(new Error("upload failed")),
       close(): void {},
     };
-    const writer = createMulticastWriter(rejecting, healthy.writer);
+    const writer = createMulticastEventWriter(rejecting, healthy.writer);
 
     await expect(writer.flush?.()).resolves.toBeUndefined();
     expect(healthy.flushed).toBe(1);
@@ -148,7 +98,7 @@ describe("createMulticastWriter", () => {
       },
       close(): void {},
     };
-    const writer = createMulticastWriter(throwing, healthy.writer);
+    const writer = createMulticastEventWriter(throwing, healthy.writer);
 
     await expect(writer.flush?.()).resolves.toBeUndefined();
     expect(healthy.flushed).toBe(1);
@@ -157,7 +107,7 @@ describe("createMulticastWriter", () => {
   it("tolerates a writer with no flush of its own", async () => {
     const plain: EventWriter = { write(): void {}, close(): void {} };
     await expect(
-      createMulticastWriter(plain).flush?.(),
+      createMulticastEventWriter(plain).flush?.(),
     ).resolves.toBeUndefined();
   });
 });

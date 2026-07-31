@@ -76,7 +76,7 @@ touches these takes `--dir`, and `--templates-dir` still outranks it when you
 want templates alone somewhere else.
 
 The recorder is the one thing `--dir` can't reach: it names its own directory
-(`createRunWriter(".trace/events")`), so point it at `events/` under whatever
+(`createRunEventWriter(".trace/events")`), so point it at `events/` under whatever
 root you build with.
 
 <Warning>

@@ -9,7 +9,7 @@ adapter](/sdk/x402) instead — depend on `trace-core` directly when you're
 **building your own capture adapter** or **embedding the assembler**.
 
 Zero runtime dependencies. ESM only, Node ≥ 20 (the assembler is also
-runtime-agnostic; the file-backed store lives behind the `/node` subpath).
+runtime-agnostic; the file-backed store lives behind the `/file` subpath).
 
 ## Install
 
@@ -71,20 +71,20 @@ const event = recorder.event({
 });
 ```
 
-## Persist events (the `/node` subpath)
+## Persist events (the `/file` subpath)
 
 The event sink is a runtime-agnostic contract in the root export (`EventWriter` /
 `EventReader`, plus the NDJSON codec `encodeEventLine` / `decodeEventLines`). The
 concrete file-backed implementation — the only place `node:fs` is imported —
-lives behind the `/node` subpath:
+lives behind the `/file` subpath:
 
 ```ts
-import { createRunWriter, readLatestRun } from "@usehaia/trace-core/node";
+import { createRunEventWriter, readLatestRun } from "@usehaia/trace-core/file";
 
 const RUNS = ".trace/events";
 
 // Producing: one run file per session, named for its start time.
-const writer = createRunWriter(RUNS);   // .trace/events/<run>.ndjson
+const writer = createRunEventWriter(RUNS);   // .trace/events/<run>.ndjson
 writer.write(event);
 
 // Reading it back: the newest run in that directory.
@@ -103,19 +103,19 @@ its own project root wants; pass an absolute one when the cwd is not fixed.
 ## Mirror events to the Control Plane
 
 The run file is where a receipt is assembled from, and it stays the source of
-truth. `createCpWriter` — behind the `/cp` subpath — uploads the same events to a
+truth. `createCpEventWriter` — behind the `/cp` subpath — uploads the same events to a
 [Haia Control Plane](https://haia.finance) project, so a run can also be looked
 at in the dashboard. It reaches the network through `fetch` alone: no `node:*`,
 no dependency, so it runs wherever your recorder does.
 
 ```ts
-import { createMulticastWriter } from "@usehaia/trace-core";
-import { createCpWriter } from "@usehaia/trace-core/cp";
-import { createRunWriter, runIdFromPath } from "@usehaia/trace-core/node";
+import { createMulticastEventWriter } from "@usehaia/trace-core";
+import { createCpEventWriter } from "@usehaia/trace-core/cp";
+import { createRunEventWriter, runIdFromPath } from "@usehaia/trace-core/file";
 
-const runWriter = createRunWriter(".trace/events");
+const runWriter = createRunEventWriter(".trace/events");
 
-const cpWriter = createCpWriter({
+const cpWriter = createCpEventWriter({
   url: "https://<your-ingest-host>",
   apiKey: process.env.HAIA_INGEST_KEY!, // a key carrying `ingest:write`
   agentId: "checkout-agent",            // who the events belong to — required
@@ -125,7 +125,7 @@ const cpWriter = createCpWriter({
 
 // Record to both. The result is an ordinary EventWriter, so the producer that
 // receives it never learns there is more than one sink.
-const writer = createMulticastWriter(runWriter, cpWriter);
+const writer = createMulticastEventWriter(runWriter, cpWriter);
 ```
 
 Where an event lands:

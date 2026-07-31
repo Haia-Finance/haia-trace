@@ -36,13 +36,13 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./node": {
-      "types": "./dist/node.d.ts",
-      "default": "./dist/node.js"
+    "./file": {
+      "types": "./dist/sink/file.d.ts",
+      "default": "./dist/sink/file.js"
     },
     "./cp": {
-      "types": "./dist/cp.d.ts",
-      "default": "./dist/cp.js"
+      "types": "./dist/sink/cp.d.ts",
+      "default": "./dist/sink/cp.js"
     }
   },
   "files": [

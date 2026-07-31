@@ -63,7 +63,7 @@ decides whether the agent may spend now.
 One line, plus the sink it writes to:
 
 ```js
-const writer = createRunWriter(".trace/events");
+const writer = createRunEventWriter(".trace/events");
 
 trace(agent, { writer });
 ```
@@ -84,7 +84,7 @@ HAIA_INGEST_URL=https://<host> HAIA_INGEST_KEY=<key> pnpm demo
 Nothing about the recording changes — two sinks compose into one writer:
 
 ```js
-const writer = createMulticastWriter(runWriter, cpWriter);
+const writer = createMulticastEventWriter(runWriter, cpWriter);
 ```
 
 The local run file stays the source of truth the receipts are assembled from;

@@ -262,10 +262,10 @@ would commit it.
 writes one from a live x402 app — attach it to your client or resource server:
 
 ```ts
-import { createRunWriter } from "@usehaia/trace-core/node";
+import { createRunEventWriter } from "@usehaia/trace-core/file";
 import { trace } from "@usehaia/trace-x402";
 
-trace(client, { writer: createRunWriter(".trace/events") });
+trace(client, { writer: createRunEventWriter(".trace/events") });
 ```
 
 The recorder names its directory explicitly, so it's the one thing that has to

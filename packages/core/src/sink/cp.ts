@@ -5,7 +5,7 @@
  *
  * It is a *mirror*, not a replacement: the local run file stays the source of
  * truth the assembler reads, and a producer that wants both wraps the two
- * writers with `createMulticastWriter`. Nothing here reads back — a receipt is
+ * writers with `createMulticastEventWriter`. Nothing here reads back — a receipt is
  * assembled from local events, and the Control Plane dashboard is where the
  * uploaded copy is looked at.
  *
@@ -26,8 +26,8 @@
  * nor Node ambient types.
  */
 
-import type { TraceEvent } from "./event.js";
-import type { EventWriter, SinkErrorHandler } from "./sink.js";
+import type { TraceEvent } from "../event.js";
+import type { EventWriter, SinkErrorHandler } from "./contract.js";
 
 /** Path of the ingest batch endpoint, appended to the configured base URL. */
 const BATCH_PATH = "/v1/events:batch";
@@ -238,7 +238,7 @@ function unsendableReason(event: IngestEvent): string | null {
     return "event_type may only contain word characters, '$', '-', '.' and spaces";
   }
   if (event.anonymous_id === undefined && event.user_id === undefined) {
-    // Unreachable through `createCpWriter`, which requires an agent id; the
+    // Unreachable through `createCpEventWriter`, which requires an agent id; the
     // check stands for `toIngestEvent` used on its own.
     return "an event needs an identity: pass agentId";
   }
@@ -247,7 +247,7 @@ function unsendableReason(event: IngestEvent): string | null {
 
 // ── Writer ──────────────────────────────────────────────────────────────────
 
-export interface CpWriterOptions extends Omit<CpIdentity, "agentId"> {
+export interface CpEventWriterOptions extends Omit<CpIdentity, "agentId"> {
   /**
    * Base URL of the Control Plane ingest service, e.g.
    * `https://ingest.example.com`. The batch endpoint's path is appended, so a
@@ -290,7 +290,7 @@ export interface CpWriterOptions extends Omit<CpIdentity, "agentId"> {
 }
 
 /** A Control Plane writer; `flush` is always present here, unlike on the base contract. */
-export interface CpWriter extends EventWriter {
+export interface CpEventWriter extends EventWriter {
   flush(): Promise<void>;
 }
 
@@ -308,7 +308,9 @@ export interface CpWriter extends EventWriter {
  * construction is honest, where failing per-event would be noise. Everything
  * after construction is fail-open.
  */
-export function createCpWriter(options: CpWriterOptions): CpWriter {
+export function createCpEventWriter(
+  options: CpEventWriterOptions,
+): CpEventWriter {
   const identity: CpIdentity = {
     agentId: options.agentId,
     userId: options.userId,
@@ -533,7 +535,10 @@ export function createCpWriter(options: CpWriterOptions): CpWriter {
 }
 
 /** Reject a configuration the ingest API would refuse, at the point it is set. */
-function assertConfig(options: CpWriterOptions, identity: CpIdentity): void {
+function assertConfig(
+  options: CpEventWriterOptions,
+  identity: CpIdentity,
+): void {
   if (!/^https?:\/\//.test(options.url)) {
     throw new Error(
       `haia-cp: url must be an http(s) URL, got "${options.url}"`,

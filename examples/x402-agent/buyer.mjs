@@ -17,9 +17,9 @@
  * hooks the SDK would invoke. This example fakes the payment, never the trace.
  */
 
-import { createMulticastWriter } from "@usehaia/trace-core";
-import { createCpWriter } from "@usehaia/trace-core/cp";
-import { createRunWriter, runIdFromPath } from "@usehaia/trace-core/node";
+import { createMulticastEventWriter } from "@usehaia/trace-core";
+import { createCpEventWriter } from "@usehaia/trace-core/cp";
+import { createRunEventWriter, runIdFromPath } from "@usehaia/trace-core/file";
 import { trace } from "@usehaia/trace-x402";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 
@@ -30,7 +30,7 @@ const agent = new x402HTTPClient(client);
 
 // The run directory is the producer's to choose — `haia-trace build` reads
 // `.trace/events` unless its `--dir` says otherwise, so name the same one.
-const runWriter = createRunWriter(".trace/events");
+const runWriter = createRunEventWriter(".trace/events");
 
 // Mirroring to a Haia Control Plane project is optional, and off unless this
 // demo is given somewhere to send to: with nothing configured the run is
@@ -41,7 +41,7 @@ const runWriter = createRunWriter(".trace/events");
 // ambient state.
 const cpWriter =
   process.env.HAIA_INGEST_URL && process.env.HAIA_INGEST_KEY
-    ? createCpWriter({
+    ? createCpEventWriter({
         url: process.env.HAIA_INGEST_URL,
         apiKey: process.env.HAIA_INGEST_KEY,
         agentId: "x402-buyer-demo",
@@ -52,7 +52,7 @@ const cpWriter =
 
 // Two sinks compose into one writer; nothing downstream knows the difference.
 const writer = cpWriter
-  ? createMulticastWriter(runWriter, cpWriter)
+  ? createMulticastEventWriter(runWriter, cpWriter)
   : runWriter;
 
 const capture = trace(agent, { writer });

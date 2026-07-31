@@ -98,7 +98,7 @@ Contract](/sdk/core) — the CLI ships a working example fixture.
 <Note>
   For automatic capture from a live x402 app, point
   [`@usehaia/trace-x402`](/sdk/x402) at `.trace/events` with
-  `createRunWriter(".trace/events")` — `trace(...)` then feeds `build` directly.
+  `createRunEventWriter(".trace/events")` — `trace(...)` then feeds `build` directly.
   The recorder names its directory explicitly, so it's the one thing that has to
   agree with the CLI: point it at `events/` under whatever root you build with.
   Pick the template matching the side you traced: `x402-buyer` (the default) for a

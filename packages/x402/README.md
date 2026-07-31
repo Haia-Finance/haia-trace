@@ -20,13 +20,13 @@ facilitator, or MCP client:
 
 ```ts
 import { trace } from "@usehaia/trace-x402";
-import { createRunWriter } from "@usehaia/trace-core/node";
+import { createRunEventWriter } from "@usehaia/trace-core/file";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 
 const client = new x402HTTPClient(new x402Client());
 
 // Attach the recorder and write the run to disk. One line, idempotent per instance.
-trace(client, { writer: createRunWriter(".trace/events") });
+trace(client, { writer: createRunEventWriter(".trace/events") });
 ```
 
 `.trace/events` is where
@@ -165,7 +165,7 @@ guessing.
 trace(instance, {
   // Where events go. Default: NDJSON on stdout. The writer's lifetime is yours —
   // trace() never closes it.
-  writer: createRunWriter(".trace/events"),
+  writer: createRunEventWriter(".trace/events"),
 
   // Recorder that stamps event_id / occurred_at / seq. Defaults to a
   // process-wide one, so several traced instances share one ordered session.

@@ -8,7 +8,7 @@
  * string codec, no filesystem. It is part of the root `@usehaia/trace-core`
  * export, so every capture adapter (in any runtime, including the browser) can
  * depend on the sink contract. The concrete file-backed implementation lives
- * behind the `@usehaia/trace-core/node` subpath, which is the only place
+ * behind the `@usehaia/trace-core/file` subpath, which is the only place
  * `node:fs` is imported.
  *
  * On-disk format is NDJSON (newline-delimited JSON): one TraceEvent per line,
@@ -17,7 +17,7 @@
  * sample run flows through the identical path as a live one.
  */
 
-import type { TraceEvent } from "./event.js";
+import type { TraceEvent } from "../event.js";
 
 /**
  * Observe a sink failure (a full disk, a refused upload) without it ever
@@ -98,52 +98,6 @@ export interface EventWriter {
   flush?(): Promise<void>;
   /** Release any held resource. Safe to call more than once. */
   close(): void;
-}
-
-/**
- * Fan one event stream out to several writers — how a producer records to more
- * than one sink at a time (a local run file *and* a remote one, say) without
- * knowing that it does: the result is an ordinary `EventWriter`.
- *
- * Every writer is offered every event, whatever the others do. A writer that
- * throws out of `write` is breaking the sink contract, and swallowing that here
- * is deliberate: one misbehaving sink must not deny the events to the rest, and
- * a writer that honours the contract already routes its failures to its own
- * error handler, where the caller configured them.
- */
-export function createMulticastWriter(
-  ...writers: readonly EventWriter[]
-): EventWriter {
-  const each = (act: (writer: EventWriter) => void): void => {
-    for (const writer of writers) {
-      try {
-        act(writer);
-      } catch {
-        /* a writer's failure is its own to report; the others still get the call */
-      }
-    }
-  };
-
-  return {
-    write(event: TraceEvent): void {
-      each((writer) => {
-        writer.write(event);
-      });
-    },
-    async flush(): Promise<void> {
-      // `allSettled`, not `all`: a rejection from one writer must not skip the
-      // others' flushes, and this must resolve however they went. The call is
-      // wrapped as well, so a `flush` that throws *synchronously* — before it
-      // ever returns a promise — is a settled outcome here rather than an
-      // exception thrown out of the `map`, which would skip the writers after it.
-      await Promise.allSettled(writers.map(async (writer) => writer.flush?.()));
-    },
-    close(): void {
-      each((writer) => {
-        writer.close();
-      });
-    },
-  };
 }
 
 /** Where the assembler (or a renderer) reads a run's events from. */

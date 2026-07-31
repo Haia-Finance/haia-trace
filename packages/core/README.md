@@ -8,7 +8,7 @@ instead — depend on `trace-core` directly when you're **building your own capt
 adapter** or **embedding the assembler**.
 
 Zero runtime dependencies. ESM only, Node ≥ 20 (the assembler is also
-runtime-agnostic; the file-backed store lives behind the `/node` subpath).
+runtime-agnostic; the file-backed store lives behind the `/file` subpath).
 
 ## Install
 
@@ -74,26 +74,26 @@ const event = recorder.event({
 });
 ```
 
-## Persist events (the `/node` subpath)
+## Persist events (the `/file` subpath)
 
 The event sink is defined as a runtime-agnostic contract in the root export
 (`EventWriter` / `EventReader`, plus the NDJSON codec `encodeEventLine` /
 `decodeEventLines`). The concrete file-backed implementation — the only place
-`node:fs` is imported — lives behind the `/node` subpath:
+`node:fs` is imported — lives behind the `/file` subpath:
 
 ```ts
 import {
-  createFileReader,
-  createRunWriter,
+  createFileEventReader,
+  createRunEventWriter,
   listRunFiles,
   readLatestRun,
   runIdFromPath,
-} from "@usehaia/trace-core/node";
+} from "@usehaia/trace-core/file";
 
 const RUNS = ".trace/events";
 
 // Producing: one run file per session, named for its start time.
-const writer = createRunWriter(RUNS);   // .trace/events/<run>.ndjson
+const writer = createRunEventWriter(RUNS);   // .trace/events/<run>.ndjson
 writer.write(event);
 
 // Reading it back: the newest run in that directory.
@@ -101,7 +101,7 @@ const events = readLatestRun(RUNS)?.read() ?? [];
 
 // Or every run, oldest first — assembled one at a time, never concatenated:
 for (const path of listRunFiles(RUNS)) {
-  assembleReceipts(createFileReader(path).read(), template);  // per run
+  assembleReceipts(createFileEventReader(path).read(), template);  // per run
   runIdFromPath(path);                                        // e.g. "1721709600000"
 }
 ```

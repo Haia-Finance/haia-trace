@@ -35,10 +35,10 @@ import {
   type TraceEvent,
 } from "@usehaia/trace-core";
 import {
-  createFileReader,
+  createFileEventReader,
   listRunFiles,
   runIdFromPath,
-} from "@usehaia/trace-core/node";
+} from "@usehaia/trace-core/file";
 import type { Command } from "commander";
 
 import { traceDirs } from "../paths.js";
@@ -203,7 +203,7 @@ export function runBuild(
       // One run's events at a time: the assembler's progressive path costs
       // O(events × operations), which stays bounded per run but would not be if
       // a whole events directory were folded as one.
-      const events = createFileReader(path).read();
+      const events = createFileEventReader(path).read();
       // The run counter only means something when there is more than one to count.
       const prefix =
         paths.length > 1 ? `run ${index + 1}/${paths.length} · ` : "";
