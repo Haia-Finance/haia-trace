@@ -1,7 +1,7 @@
 /**
- * `haia-trace build [<file>...] [--all] [--template <id>] [--json]` — the core
- * "assemble on request" command: read a run's events and produce one Receipt per
- * operation.
+ * `haia-trace build [<file>...] [--all] [--template <id>] [--status <verdict>]
+ * [--json]` — the core "assemble on request" command: read a run's events and
+ * produce one Receipt per operation.
  *
  * `sample` is a special case of this — same events + template through the same
  * core, only with the events coming from a bundled fixture. Events are the source
@@ -46,7 +46,7 @@ import { renderReceipts } from "../render/receipt.js";
 import { writeReceipt } from "../store.js";
 import { resolveTemplateSource, type TemplateSource } from "../templates.js";
 import { color, spinner } from "../ui.js";
-import { withTraceDir } from "./options.js";
+import { checkStatus, STATUSES, type Status, withTraceDir } from "./options.js";
 import type { TraceCommand } from "./types.js";
 
 /** The template applied when `--template` is omitted. */
@@ -65,6 +65,14 @@ export interface BuildOptions {
   templatesDir?: string;
   /** Emit machine-readable JSON instead of a terminal summary. */
   json?: boolean;
+  /**
+   * Show only receipts with this verdict. A display filter only: every assembled
+   * receipt is still written to the store and the summary still counts them all,
+   * so `receipt list`/`show` see a complete store whichever verdict one build
+   * chose to look at. Narrows the terminal rendering and `--json`'s
+   * `runs[].receipts` alike.
+   */
+  status?: Status;
   /** Build every run in the events directory instead of only the latest. */
   all?: boolean;
   /** Run-events directory to resolve runs from when no file is given. Defaults to `<dir>/events`. */
@@ -79,6 +87,14 @@ export interface BuiltRun {
   run: string;
   /** The run file the receipts were assembled from. */
   path: string;
+  /**
+   * How many receipts the run assembled — what `receipts` was narrowed from
+   * when `--status` is active. Carried so an empty `receipts` stays readable:
+   * zero here means the run held no operations, while a positive count means
+   * the filter excluded every one — and a consumer gating on "no partial
+   * receipts" must not mistake a run that captured nothing for a clean one.
+   */
+  assembled: number;
   receipts: Receipt[];
   unassigned: TraceEvent[];
 }
@@ -171,6 +187,9 @@ export function runBuild(
 ): BuildResult {
   const templateName = options.template ?? DEFAULT_TEMPLATE;
   const json = options.json ?? false;
+  const status = options.status;
+  // Before anything is read or written, so a typo'd status costs nothing.
+  checkStatus(status);
   // `--dir` moves the root; a narrower directory, when given, outranks it.
   const dirs = traceDirs(options.dir);
   const templatesDir = options.templatesDir ?? dirs.templates;
@@ -244,10 +263,19 @@ export function runBuild(
 
       totalEvents += last.total;
       totalReceipts += last.receipts.length;
+
+      // `--status` narrows what is *reported* — terminal and `--json` alike —
+      // never what was written or counted above. Run-level `unassigned` events
+      // have no verdict to match, so the filter leaves them alone.
+      const receipts =
+        status === undefined
+          ? last.receipts
+          : last.receipts.filter((r) => r.completeness === status);
       runs.push({
         run,
         path,
-        receipts: last.receipts,
+        assembled: last.receipts.length,
+        receipts,
         unassigned: last.unassigned,
       });
     }
@@ -272,9 +300,19 @@ export function runBuild(
 
   const noun = totalReceipts === 1 ? "receipt" : "receipts";
   const across = runs.length > 1 ? ` across ${runs.length} runs` : "";
-  spin?.success({
-    text: `Assembled ${totalReceipts} ${noun} from ${totalEvents} events${across}`,
-  });
+  // The head of the line reports everything assembled and written, filter or
+  // not; the filtered view is a suffix, so a narrowed screen never understates
+  // what the run actually held.
+  const shown = runs.reduce((sum, built) => sum + built.receipts.length, 0);
+  const showing = status === undefined ? "" : ` — showing ${shown} ${status}`;
+  const summary = `Assembled ${totalReceipts} ${noun} from ${totalEvents} events${across}${showing}`;
+  if (spin !== null) {
+    spin.success({ text: summary });
+  } else if (!json) {
+    // Piped output gets the same line: the promise that a filtered view never
+    // understates the run has to hold in a log file, not just on a terminal.
+    console.log(summary);
+  }
 
   const result: BuildResult = { runs, template: source };
   if (json) {
@@ -298,8 +336,22 @@ export function runBuild(
 
     if (built.receipts.length > 0) {
       console.log(renderReceipts(built.receipts));
-    } else {
+    } else if (built.assembled === 0) {
       console.log(color.yellow("  no operations found in this run\n"));
+    } else {
+      // Reachable only under `--status`: the run assembled receipts and the
+      // filter excluded every one. That is a positive verdict on the run, not an
+      // empty screen — every receipt is the *other* status, and all of them are
+      // in the store — so say so, dim rather than yellow: an answer, not a
+      // warning.
+      const other = status === "full" ? "partial" : "full";
+      console.log(
+        color.dim(
+          built.assembled === 1
+            ? `  the only receipt in this run is ${other}\n`
+            : `  all ${built.assembled} receipts in this run are ${other}\n`,
+        ),
+      );
     }
     if (built.unassigned.length > 0) {
       const evNoun = built.unassigned.length === 1 ? "event" : "events";
@@ -344,6 +396,10 @@ export const buildCommand: TraceCommand = {
         "--json",
         "emit machine-readable JSON instead of a terminal summary",
       )
+      .option(
+        `--status <${STATUSES.join("|")}>`,
+        "show only receipts with this verdict (every receipt is still written)",
+      )
       .description("Assemble one receipt per operation from a run's events")
       .action(
         (
@@ -354,6 +410,7 @@ export const buildCommand: TraceCommand = {
             dir: string;
             templatesDir?: string;
             json?: boolean;
+            status?: Status;
           },
         ) => {
           runBuild(files, {
@@ -362,6 +419,7 @@ export const buildCommand: TraceCommand = {
             dir: opts.dir,
             templatesDir: opts.templatesDir,
             json: opts.json,
+            status: opts.status,
           });
         },
       );

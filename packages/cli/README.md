@@ -71,6 +71,7 @@ haia-trace build .trace/events/17217*.ndjson   # or a few of them
 haia-trace build --template x402-seller
 haia-trace build --template my-op      # your own, from .trace/templates/
 haia-trace build --dir .my-trace       # read and write a different root
+haia-trace build --status partial      # write everything, show only the gaps
 haia-trace build --json                # machine-readable output for agents
 ```
 
@@ -81,7 +82,8 @@ haia-trace build --json                # machine-readable output for agents
 | `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.      |
 | `--dir <path>`           | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`.    |
 | `--templates-dir <path>` | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
-| `--json`                 | Emit `{ runs: [{ run, path, receipts, unassigned }], template }` as JSON instead of a terminal summary. |
+| `--status <full\|partial>` | Show only receipts with this verdict. A display filter: every receipt is still written to the store. |
+| `--json`                 | Emit `{ runs: [{ run, path, assembled, receipts, unassigned }], template }` as JSON instead of a terminal summary. `--status` narrows `receipts` here too. |
 
 Several runs mean several builds, never one merged event set. An event carries no
 run id — the run *is* its file name — and `context_id` is only unique within a
@@ -106,6 +108,13 @@ never falls back to a built-in of the same name.
 Run-level events that carry no `context_id` (chain confirmations, capture
 attestations) belong to no single operation and are reported separately as
 `unassigned` rather than attributed or dropped.
+
+`--status` filters what is *shown*, never what is *written*: receipts are derived
+and reproducible, so the store stays complete for `receipt list` and
+`receipt show` whichever verdict a build chose to look at. The summary line still
+reports everything assembled, with the shown subset noted after it, and each
+run's JSON carries `assembled` — the unfiltered count — so an empty filtered
+`receipts` never reads as a run that assembled nothing.
 
 `--json` prints the full [Receipt](https://github.com/Haia-Finance/haia-trace/tree/main/packages/core)
 objects — the machine-readable basis an agent reads (`completeness`, `missing`)

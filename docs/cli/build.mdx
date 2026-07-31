@@ -24,6 +24,7 @@ haia-trace build .trace/events/17217*.ndjson  # or a few of them
 haia-trace build --template x402-seller   # apply a specific template
 haia-trace build --template my-op         # apply one of your own
 haia-trace build --dir .my-trace          # read and write a different root
+haia-trace build --status partial         # write everything, show only the gaps
 haia-trace build --json                   # machine-readable output for agents
 ```
 
@@ -36,7 +37,8 @@ haia-trace build --json                   # machine-readable output for agents
 | `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.    |
 | `--dir <path>`            | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`.  |
 | `--templates-dir <path>`  | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
-| `--json`                  | Emit `{ runs: [{ run, path, receipts, unassigned }], template }` as JSON instead of a terminal summary. |
+| `--status <full\|partial>` | Show only receipts with this verdict. A display filter: every receipt is still written to the store. |
+| `--json`                  | Emit `{ runs: [{ run, path, assembled, receipts, unassigned }], template }` as JSON instead of a terminal summary. `--status` narrows `receipts` here too. |
 
 ## One build per run
 
@@ -80,6 +82,12 @@ Run-level events that carry no `context_id` (chain confirmations, capture
 attestations) belong to no single operation, so they're reported separately as
 `unassigned` rather than attributed or dropped.
 
+`--status` filters what is *shown*, never what is *written*: receipts are derived
+and reproducible, so the store stays complete for
+[`receipt list` and `receipt show`](/cli/receipt) whichever verdict a build chose
+to look at. The summary line still reports everything assembled, with the shown
+subset noted after it.
+
 ## JSON output for agents
 
 `--json` prints the full [Receipt](/concepts/operation-receipt) objects — the
@@ -87,7 +95,11 @@ machine-readable basis an agent reads (`completeness`, `missing`) to decide
 whether to continue a chain of spending. They are nested per run
 (`runs[].receipts`) rather than in one flat list, because `operation_id` is only
 unique within its run: a flat list can hold two different payments both called
-`op-1`.
+`op-1`. `--status` applies here too — `runs[].receipts` holds only the matching
+receipts — while the store on disk keeps every one. Each run also carries
+`assembled`, the count before filtering: an agent gating on "no partial
+receipts" must tell a run whose every receipt is full (`assembled > 0`,
+`receipts` empty) apart from a run that captured nothing (`assembled: 0`).
 
 ## Producing a run file
 

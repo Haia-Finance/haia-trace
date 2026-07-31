@@ -37,11 +37,8 @@ import {
   type UnreadableReceipt,
 } from "../store.js";
 import { color, symbol } from "../ui.js";
-import { withTraceDir } from "./options.js";
+import { checkStatus, STATUSES, type Status, withTraceDir } from "./options.js";
 import type { TraceCommand } from "./types.js";
-
-/** The two verdicts `--status` can filter on. */
-const STATUSES = ["full", "partial"] as const;
 
 export interface ReceiptListOptions {
   /** Root Trace directory. Defaults to `.trace`. */
@@ -55,7 +52,7 @@ export interface ReceiptListOptions {
   /** Show only receipts from this run. Defaults to every run in the store. */
   run?: string;
   /** Show only receipts with this verdict. */
-  status?: (typeof STATUSES)[number];
+  status?: Status;
   /** Emit machine-readable JSON instead of a terminal listing. */
   json?: boolean;
 }
@@ -212,11 +209,7 @@ export function runReceiptList(
   options: ReceiptListOptions = {},
 ): ReceiptListResult {
   const dir = options.receiptsDir ?? traceDirs(options.dir).receipts;
-  if (options.status !== undefined && !STATUSES.includes(options.status)) {
-    throw new Error(
-      `invalid status: ${options.status} — expected ${STATUSES.join(" or ")}`,
-    );
-  }
+  checkStatus(options.status);
 
   const stored = listReceipts(dir);
   // Reported on every path out of here, including the ones that throw: a store
@@ -377,7 +370,7 @@ export const receiptCommand: TraceCommand = {
         (opts: {
           dir: string;
           run?: string;
-          status?: (typeof STATUSES)[number];
+          status?: Status;
           json?: boolean;
         }) => {
           runReceiptList({

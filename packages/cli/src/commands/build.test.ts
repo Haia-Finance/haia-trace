@@ -329,6 +329,144 @@ describe("haia-trace build", () => {
   });
 });
 
+describe("haia-trace build --status", () => {
+  // op-1's happy path alone — a run whose every receipt is full.
+  const ALL_FULL = `${events
+    .filter((e) => e.context_id === "op-1")
+    .map((e) => JSON.stringify(e))
+    .join("\n")}\n`;
+
+  it("shows only matching receipts, while writing every receipt to the store", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { runs } = runBuild([file], { receiptsDir, status: "partial" });
+
+    // The report holds only the partial operation...
+    expect(runs[0]?.receipts.map((r) => r.operation.operation_id)).toEqual([
+      "op-2",
+    ]);
+    // ...but the store holds both: the filter narrows what is shown, never
+    // what is written.
+    expect(readdirSync(receiptsDir).sort()).toEqual([
+      "run~op-1.json",
+      "run~op-2.json",
+    ]);
+  });
+
+  it("narrows --json's receipts too, leaving unassigned events untouched", () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    // A run-level event with no context_id — unassigned, so no verdict to match.
+    const runLevel = {
+      event_id: "9",
+      event_type: "x402.settle.confirmed",
+      occurred_at: "2026-07-23T12:02:00.000Z",
+      seq: 5,
+      adapter: "t",
+      role: "client",
+      payload: {},
+    };
+    writeFileSync(file, `${NDJSON}${JSON.stringify(runLevel)}\n`);
+
+    runBuild([file], { json: true, receiptsDir, status: "full" });
+
+    const parsed = JSON.parse(String(write.mock.calls[0]?.[0]));
+    expect(
+      parsed.runs[0].receipts.map(
+        (r: { completeness: string }) => r.completeness,
+      ),
+    ).toEqual(["full"]);
+    // The unfiltered count rides along, so a consumer can tell an empty
+    // filtered `receipts` apart from a run that assembled nothing.
+    expect(parsed.runs[0].assembled).toBe(2);
+    expect(parsed.runs[0].unassigned).toHaveLength(1);
+    expect(readdirSync(receiptsDir).sort()).toEqual([
+      "run~op-1.json",
+      "run~op-2.json",
+    ]);
+  });
+
+  it("answers positively when the filter matches nothing in a run", () => {
+    // Every receipt being the other status is a verdict on the run, not an
+    // empty result — and it must not read like a run with no operations.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    writeFileSync(file, ALL_FULL);
+
+    runBuild([file], { receiptsDir, status: "partial" });
+
+    const out = log.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(out).toContain("the only receipt in this run is full");
+    expect(out).not.toContain("no operations found");
+    expect(readdirSync(receiptsDir)).toEqual(["run~op-1.json"]);
+  });
+
+  it("keeps 'no operations found' for a run that assembled nothing", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    writeFileSync(file, "");
+
+    runBuild([file], { receiptsDir, status: "partial" });
+
+    const out = log.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(out).toContain("no operations found in this run");
+    expect(out).not.toContain("receipt in this run is");
+  });
+
+  it("rejects a status that is not a verdict, before anything is written", () => {
+    expect(() =>
+      runBuild([file], { receiptsDir, status: "done" as "full" }),
+    ).toThrow(/invalid status: done — expected full or partial/);
+    expect(existsSync(receiptsDir)).toBe(false);
+  });
+
+  it("prints the honest summary even with no terminal to spin on", () => {
+    // Piped output — no TTY, no spinner — must carry the same guarantee: a
+    // filtered log file still says what the run actually assembled.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    runBuild([file], { receiptsDir, status: "partial" });
+
+    const out = log.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(out).toContain(
+      "Assembled 2 receipts from 5 events — showing 1 partial",
+    );
+  });
+
+  it("keeps the summary line honest about what was assembled", () => {
+    // The spinner only runs on a TTY; fake one so the success line renders.
+    // nanospinner draws on stderr, so that is where the line lands.
+    const wasTTY = process.stdout.isTTY;
+    const write = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    process.stdout.isTTY = true;
+
+    try {
+      runBuild([file], { receiptsDir, status: "partial" });
+    } finally {
+      process.stdout.isTTY = wasTTY;
+    }
+
+    // The head reports everything assembled and written; the filtered view is
+    // only a suffix — a narrowed screen must not understate the run.
+    const out = write.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toMatch(
+      /Assembled 2 receipts from 5 events — showing 1 partial/,
+    );
+  });
+
+  it("registers --status with both verdicts and no default", () => {
+    const program = new Command();
+    buildCommand.register(program);
+    const build = program.commands.find((c) => c.name() === "build");
+    const option = build?.options.find((o) => o.long === "--status");
+
+    expect(option?.flags).toContain("full|partial");
+    expect(option?.defaultValue).toBeUndefined();
+  });
+});
+
 describe("haia-trace build --dir", () => {
   /** A Trace root with a run and a project template already in it. */
   function seedRoot(root: string): string {
