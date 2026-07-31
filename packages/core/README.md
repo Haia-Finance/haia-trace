@@ -7,7 +7,7 @@ the [x402 adapter](https://github.com/Haia-Finance/haia-trace/tree/main/packages
 instead — depend on `trace-core` directly when you're **building your own capture
 adapter** or **embedding the assembler**.
 
-Zero runtime dependencies. ESM only, Node ≥ 20 (the assembler is also
+Zero runtime dependencies. ESM only, Node ≥ 22 (the assembler is also
 runtime-agnostic; the file-backed store lives behind the `/file` subpath).
 
 ## Install

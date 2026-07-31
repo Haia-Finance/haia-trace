@@ -31,7 +31,7 @@ matching page under `docs/`. `docs/sdk/*` mirrors the package READMEs and
 
 ## Toolchain
 
-- **pnpm** workspaces, **Node ≥ 20**. Shared dev-dependency versions are pinned
+- **pnpm** workspaces, **Node ≥ 22**. Shared dev-dependency versions are pinned
   in the `catalog:` block of `pnpm-workspace.yaml`; reference them as
   `"typescript": "catalog:"`, never with a literal version in a package.
 - Build is plain **`tsc`** per package → `dist/` (no bundler). **Vitest** for tests.

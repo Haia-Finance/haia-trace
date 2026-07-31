@@ -109,7 +109,7 @@ Early and pre-1.0. What's wired today:
 
 ## Develop from source
 
-Requires **Node ≥ 20** and **pnpm**.
+Requires **Node ≥ 22** and **pnpm**.
 
 ```sh
 pnpm install

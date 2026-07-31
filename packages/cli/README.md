@@ -4,7 +4,7 @@ The `haia-trace` command-line tool. It assembles **Operation Receipts** — one
 verdict per payment operation — from recorded events, and renders them in the
 terminal or as JSON. Part of [Haia Trace](https://github.com/Haia-Finance/haia-trace).
 
-Requires **Node ≥ 20**.
+Requires **Node ≥ 22**.
 
 ## Install
 
