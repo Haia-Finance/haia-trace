@@ -1,78 +1,207 @@
 /**
- * `haia-trace build [<file>] [--template <id>] [--json]` — the core "assemble on
- * request" command: read a run's events and produce one Receipt per operation.
+ * `haia-trace build [<file>...] [--all] [--template <id>] [--status <verdict>]
+ * [--json]` — the core "assemble on request" command: read a run's events and
+ * produce one Receipt per operation.
  *
- * `sample` / `last` / `rerun` are special cases of this — same events + template
- * through the same core. Events are the source of truth; a receipt is derived and
- * reproducible: the same ndjson yields byte-identical receipts (BR-4).
+ * `sample` is a special case of this — same events + template through the same
+ * core, only with the events coming from a bundled fixture. Events are the source
+ * of truth; a receipt is derived and reproducible: the same ndjson yields
+ * byte-identical receipts (BR-4), which is also why re-running this command is all
+ * "rebuild" takes. What it writes is read back by `receipt list` / `receipt show`.
  *
- * It splits the run by `context_id` and folds each operation through the core with
- * `assembleReceiptsProgressively`, which streams progress so a large run never
- * looks hung. Run-level events with no `context_id` (attestations, chain
+ * It splits each run by `context_id` and folds every operation through the core:
+ * with a terminal to draw on, through `assembleReceiptsProgressively`, so a large
+ * run never looks hung; otherwise through the eager `assembleReceipts`, whose
+ * result the progressive one is defined to end at. Run-level events with no
+ * `context_id` (attestations, chain
  * confirmations) belong to no single operation, so they are surfaced separately
  * rather than attributed or dropped — the seed of the receipt's future `capture`
  * block, which the receipt model does not carry yet.
+ *
+ * More than one run is more than one *build*, never one merged event set: events
+ * carry no run id and `context_id` is only unique within a run, so concatenating
+ * two runs would fold two unrelated payments that both happen to be called `op-1`
+ * into a single receipt. Every run is therefore read, assembled and reported on
+ * its own, and its receipts are stored under its run id.
  */
 
+import { resolve } from "node:path";
+
 import {
+  assembleReceipts,
   assembleReceiptsProgressively,
   type Receipt,
   type RunProgress,
   type TraceEvent,
 } from "@usehaia/trace-core";
 import {
-  createFileReader,
-  DEFAULT_RUN_DIR,
-  readLatestRun,
-} from "@usehaia/trace-core/node";
+  createFileEventReader,
+  listRunFiles,
+  runIdFromPath,
+} from "@usehaia/trace-core/file";
 import type { Command } from "commander";
 
-import { renderReceipt } from "../render/receipt.js";
-import { RECEIPTS_DIR, writeReceipt } from "../store.js";
-import { loadTemplate } from "../templates.js";
+import { traceDirs } from "../paths.js";
+import { renderReceipts } from "../render/receipt.js";
+import { writeReceipt } from "../store.js";
+import { resolveTemplateSource, type TemplateSource } from "../templates.js";
 import { color, spinner } from "../ui.js";
+import { checkStatus, STATUSES, type Status, withTraceDir } from "./options.js";
 import type { TraceCommand } from "./types.js";
 
 /** The template applied when `--template` is omitted. */
 const DEFAULT_TEMPLATE = "x402-buyer";
 
 export interface BuildOptions {
-  /** Template id to apply to every operation in the run. Defaults to `x402-buyer`. */
+  /**
+   * Template to apply to every operation in the run — a name resolved against the
+   * project's templates and then the built-in set, or a path to a template file.
+   * Defaults to `x402-buyer`.
+   */
   template?: string;
+  /** Root directory the three below hang off. Defaults to `.trace`. */
+  dir?: string;
+  /** Directory of the project's own templates. Defaults to `<dir>/templates`. */
+  templatesDir?: string;
   /** Emit machine-readable JSON instead of a terminal summary. */
   json?: boolean;
-  /** Run-events directory to resolve the latest run from when no file is given. */
+  /**
+   * Show only receipts with this verdict. A display filter only: every assembled
+   * receipt is still written to the store and the summary still counts them all,
+   * so `receipt list`/`show` see a complete store whichever verdict one build
+   * chose to look at. Narrows the terminal rendering and `--json`'s
+   * `runs[].receipts` alike.
+   */
+  status?: Status;
+  /** Build every run in the events directory instead of only the latest. */
+  all?: boolean;
+  /** Run-events directory to resolve runs from when no file is given. Defaults to `<dir>/events`. */
   eventsDir?: string;
-  /** Directory receipts are written to. */
+  /** Directory receipts are written to. Defaults to `<dir>/receipts`. */
   receiptsDir?: string;
 }
 
-/** The build result — one receipt per operation, plus the run-level events attributed to none. */
-export interface BuildResult {
+/** What one run yielded — one receipt per operation, plus the events attributed to none. */
+export interface BuiltRun {
+  /** The run id: the run file's name without its extension. */
+  run: string;
+  /** The run file the receipts were assembled from. */
+  path: string;
+  /**
+   * How many receipts the run assembled — what `receipts` was narrowed from
+   * when `--status` is active. Carried so an empty `receipts` stays readable:
+   * zero here means the run held no operations, while a positive count means
+   * the filter excluded every one — and a consumer gating on "no partial
+   * receipts" must not mistake a run that captured nothing for a clean one.
+   */
+  assembled: number;
   receipts: Receipt[];
   unassigned: TraceEvent[];
 }
 
-/** Assemble the run's receipts, write them, and report. Separated from registration so it stays testable. */
-export function runBuild(
-  file: string | undefined,
-  options: BuildOptions = {},
-): BuildResult {
-  const templateName = options.template ?? DEFAULT_TEMPLATE;
-  const json = options.json ?? false;
-  const eventsDir = options.eventsDir ?? DEFAULT_RUN_DIR;
-  const receiptsDir = options.receiptsDir ?? RECEIPTS_DIR;
+/** The build result — what each run yielded, and the template they were judged against. */
+export interface BuildResult {
+  /**
+   * One entry per run built — explicitly named files in the order they were
+   * given, runs taken from the events directory oldest first. Receipts are
+   * nested per run rather than flattened because `operation_id` is only unique
+   * within its run: a flat list can hold two different payments both called
+   * `op-1`.
+   */
+  runs: BuiltRun[];
+  /**
+   * The template the verdicts were assembled against, and the file it came from. A
+   * receipt records the template's declared name but not which file declared it, so
+   * two runs of the same command can differ purely because one machine has a
+   * `.trace/templates/` override. Reporting the path makes that visible.
+   */
+  template: TemplateSource;
+}
 
-  // An explicit path wins; otherwise build the latest run in the events dir.
-  const reader =
-    file !== undefined ? createFileReader(file) : readLatestRun(eventsDir);
-  if (reader === null) {
+/**
+ * The run files to build. Explicit paths win and keep the order they were given
+ * in — a glob expands to them already sorted, and re-sorting would quietly
+ * override an order the caller chose. Otherwise the events directory supplies
+ * either every run or just the newest one, oldest first.
+ *
+ * The same file named twice — a glob plus one of its own members — is built
+ * once: it is one run, and building it twice would double-count its operations
+ * in the summary and in `--json`.
+ */
+function selectRuns(
+  files: string[],
+  all: boolean,
+  eventsDir: string,
+): string[] {
+  if (files.length > 0) {
+    if (all) {
+      throw new Error(
+        "--all selects runs from the events directory — drop it when passing run files",
+      );
+    }
+    const seen = new Set<string>();
+    // Compared as resolved paths, so `./run.ndjson` and `run.ndjson` count once.
+    return files.filter((file) => {
+      const key = resolve(file);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  const runs = listRunFiles(eventsDir);
+  if (runs.length === 0) {
     throw new Error(
       `no runs found in ${eventsDir} — run under the recorder or pass a run file`,
     );
   }
-  const events = reader.read();
-  const template = loadTemplate(templateName);
+  return all ? runs : runs.slice(-1);
+}
+
+/**
+ * The run id of every selected path, refusing a selection in which two files
+ * share one. A run id is a file *name*, so `a/run.ndjson` and `b/run.ndjson` are
+ * both `run`, and their receipts would land on the same files — the second
+ * silently overwriting the first while the report claimed both were built.
+ * Refusing costs the caller one command per directory; the alternative loses a
+ * receipt.
+ */
+function runIdsOf(paths: string[]): string[] {
+  const byId = new Map<string, string>();
+  return paths.map((path) => {
+    const id = runIdFromPath(path);
+    const first = byId.get(id);
+    if (first !== undefined) {
+      throw new Error(
+        `two run files are both named "${id}" (${first} and ${path}) — receipts are keyed by run name, so build them separately or rename one`,
+      );
+    }
+    byId.set(id, path);
+    return id;
+  });
+}
+
+/** Assemble each run's receipts, write them, and report. Separated from registration so it stays testable. */
+export function runBuild(
+  files: string[] = [],
+  options: BuildOptions = {},
+): BuildResult {
+  const templateName = options.template ?? DEFAULT_TEMPLATE;
+  const json = options.json ?? false;
+  const status = options.status;
+  // Before anything is read or written, so a typo'd status costs nothing.
+  checkStatus(status);
+  // `--dir` moves the root; a narrower directory, when given, outranks it.
+  const dirs = traceDirs(options.dir);
+  const templatesDir = options.templatesDir ?? dirs.templates;
+  const eventsDir = options.eventsDir ?? dirs.events;
+  const receiptsDir = options.receiptsDir ?? dirs.receipts;
+
+  const paths = selectRuns(files, options.all ?? false, eventsDir);
+  const ids = runIdsOf(paths);
+  const { template, ...source } = resolveTemplateSource(
+    templateName,
+    templatesDir,
+  );
 
   // Only spin on an interactive terminal: a spinner in piped or machine output is
   // noise, and JSON output must stay pure.
@@ -81,83 +210,217 @@ export function runBuild(
       ? spinner("Assembling receipts…").start()
       : null;
 
-  // Drive the assembler progressively for a live progress count; the final
-  // snapshot holds the finished receipts.
-  let last: RunProgress = {
-    processed: 0,
-    total: 0,
-    receipts: [],
-    unassigned: [],
-  };
-  for (const progress of assembleReceiptsProgressively(events, template)) {
-    last = progress;
-    spin?.update({
-      text: `Assembling receipts… ${progress.processed}/${progress.total} events`,
-    });
+  const runs: BuiltRun[] = [];
+  let totalEvents = 0;
+  let totalReceipts = 0;
+  // Named outside the loop so a failure can say which run it died on.
+  let current = "";
+
+  try {
+    for (const [index, path] of paths.entries()) {
+      current = path;
+      // One run's events at a time: the assembler's progressive path costs
+      // O(events × operations), which stays bounded per run but would not be if
+      // a whole events directory were folded as one.
+      const events = createFileEventReader(path).read();
+      // The run counter only means something when there is more than one to count.
+      const prefix =
+        paths.length > 1 ? `run ${index + 1}/${paths.length} · ` : "";
+
+      // The progressive assembler exists to feed a progress indicator, and it
+      // pays for that by finalizing every operation on every event. With no
+      // spinner to feed — piped, or `--json` — take the eager path, which is
+      // documented to produce exactly the progressive run's final snapshot.
+      let last: RunProgress;
+      if (spin === null) {
+        const { receipts, unassigned } = assembleReceipts(events, template);
+        last = {
+          processed: events.length,
+          total: events.length,
+          receipts,
+          unassigned,
+        };
+      } else {
+        last = { processed: 0, total: 0, receipts: [], unassigned: [] };
+        for (const progress of assembleReceiptsProgressively(
+          events,
+          template,
+        )) {
+          last = progress;
+          spin.update({
+            text: `Assembling receipts… ${prefix}${progress.processed}/${progress.total} events`,
+          });
+        }
+      }
+
+      // Aligned with `paths` by construction; the guard is for
+      // `noUncheckedIndexedAccess`.
+      const run = ids[index] ?? runIdFromPath(path);
+      // Persist every receipt regardless of output format — writing is the store
+      // layer's job, independent of what the terminal shows.
+      for (const receipt of last.receipts)
+        writeReceipt(receipt, run, receiptsDir);
+
+      totalEvents += last.total;
+      totalReceipts += last.receipts.length;
+
+      // `--status` narrows what is *reported* — terminal and `--json` alike —
+      // never what was written or counted above. Run-level `unassigned` events
+      // have no verdict to match, so the filter leaves them alone.
+      const receipts =
+        status === undefined
+          ? last.receipts
+          : last.receipts.filter((r) => r.completeness === status);
+      runs.push({
+        run,
+        path,
+        assembled: last.receipts.length,
+        receipts,
+        unassigned: last.unassigned,
+      });
+    }
+  } catch (cause) {
+    // A running spinner holds the event loop open, so leaving it up would turn
+    // any read failure into a CLI that prints an error and then hangs.
+    spin?.error({ text: `Failed on ${current}` });
+    // Each run is written as it is assembled, so an earlier run's receipts are
+    // already on disk. Say so: a store that was half updated must not look
+    // untouched to whoever reads the error.
+    const written =
+      runs.length > 0
+        ? ` — receipts for ${runs.length} earlier ${
+            runs.length === 1 ? "run" : "runs"
+          } were already written to ${receiptsDir}`
+        : "";
+    throw new Error(
+      `${cause instanceof Error ? cause.message : String(cause)} (while building ${current})${written}`,
+      { cause },
+    );
   }
-  const { receipts, unassigned } = last;
 
-  // Persist every receipt regardless of output format — writing is the store
-  // layer's job, independent of what the terminal shows.
-  for (const receipt of receipts) writeReceipt(receipt, receiptsDir);
+  const noun = totalReceipts === 1 ? "receipt" : "receipts";
+  const across = runs.length > 1 ? ` across ${runs.length} runs` : "";
+  // The head of the line reports everything assembled and written, filter or
+  // not; the filtered view is a suffix, so a narrowed screen never understates
+  // what the run actually held.
+  const shown = runs.reduce((sum, built) => sum + built.receipts.length, 0);
+  const showing = status === undefined ? "" : ` — showing ${shown} ${status}`;
+  const summary = `Assembled ${totalReceipts} ${noun} from ${totalEvents} events${across}${showing}`;
+  if (spin !== null) {
+    spin.success({ text: summary });
+  } else if (!json) {
+    // Piped output gets the same line: the promise that a filtered view never
+    // understates the run has to hold in a log file, not just on a terminal.
+    console.log(summary);
+  }
 
-  const noun = receipts.length === 1 ? "receipt" : "receipts";
-  spin?.success({
-    text: `Assembled ${receipts.length} ${noun} from ${last.total} events`,
-  });
-
+  const result: BuildResult = { runs, template: source };
   if (json) {
-    process.stdout.write(
-      `${JSON.stringify({ receipts, unassigned }, null, 2)}\n`,
-    );
-    return { receipts, unassigned };
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return result;
   }
 
-  console.log("");
-  receipts.forEach((receipt, index) => {
-    if (index > 0) console.log(color.dim("  ────────────────────────────"));
-    console.log(renderReceipt(receipt));
-    console.log("");
-  });
-  if (receipts.length === 0) {
-    console.log(color.yellow("  no operations found in this run"));
-  }
-  if (unassigned.length > 0) {
-    const evNoun = unassigned.length === 1 ? "event" : "events";
-    console.log(
-      color.dim(
-        `  ${unassigned.length} run-level ${evNoun} not attributed to any operation`,
-      ),
-    );
+  // Which file the template came from, always — a verdict read without knowing
+  // which shape produced it isn't reproducible by whoever reads it next.
+  console.log(color.dim(`\n  template: ${source.path}`));
+
+  for (const built of runs) {
+    // And which run produced it, for the same reason: two runs of one program
+    // yield receipts with identical operation ids and different contents.
+    //
+    // The run *id* leads, with the file after it. `receipt show --run` takes the
+    // id, so the label that reads like an answer to "which run?" has to print the
+    // value that command accepts — a path pasted there resolves to nothing. The
+    // file still follows, since it is the evidence the verdicts came from.
+    console.log(color.dim(`  run: ${built.run}  ${built.path}\n`));
+
+    if (built.receipts.length > 0) {
+      console.log(renderReceipts(built.receipts));
+    } else if (built.assembled === 0) {
+      console.log(color.yellow("  no operations found in this run\n"));
+    } else {
+      // Reachable only under `--status`: the run assembled receipts and the
+      // filter excluded every one. That is a positive verdict on the run, not an
+      // empty screen — every receipt is the *other* status, and all of them are
+      // in the store — so say so, dim rather than yellow: an answer, not a
+      // warning.
+      const other = status === "full" ? "partial" : "full";
+      console.log(
+        color.dim(
+          built.assembled === 1
+            ? `  the only receipt in this run is ${other}\n`
+            : `  all ${built.assembled} receipts in this run are ${other}\n`,
+        ),
+      );
+    }
+    if (built.unassigned.length > 0) {
+      const evNoun = built.unassigned.length === 1 ? "event" : "events";
+      console.log(
+        color.dim(
+          `  ${built.unassigned.length} run-level ${evNoun} not attributed to any operation\n`,
+        ),
+      );
+    }
   }
 
-  return { receipts, unassigned };
+  return result;
 }
 
 export const buildCommand: TraceCommand = {
   register(program: Command): void {
-    program
+    const build = program
       .command("build")
       .argument(
-        "[file]",
-        "ndjson run file to build from (default: the latest in .trace/events)",
+        "[file...]",
+        "ndjson run files to build from (default: the latest in the events directory)",
       )
       .option(
-        "--template <id>",
+        "--all",
+        "build every run in the events directory, not just the latest",
+      )
+      .option(
+        "--template <name|path>",
         "operation template to apply to every operation",
         DEFAULT_TEMPLATE,
+      );
+
+    // No commander default here: left undefined, "not given" stays
+    // distinguishable from "given", which is what lets `--dir` supply the
+    // templates directory and an explicit `--templates-dir` still outrank it.
+    withTraceDir(build)
+      .option(
+        "--templates-dir <path>",
+        "directory holding the project's own templates (overrides --dir)",
       )
       .option(
         "--json",
         "emit machine-readable JSON instead of a terminal summary",
       )
+      .option(
+        `--status <${STATUSES.join("|")}>`,
+        "show only receipts with this verdict (every receipt is still written)",
+      )
       .description("Assemble one receipt per operation from a run's events")
       .action(
         (
-          file: string | undefined,
-          opts: { template: string; json?: boolean },
+          files: string[],
+          opts: {
+            all?: boolean;
+            template: string;
+            dir: string;
+            templatesDir?: string;
+            json?: boolean;
+            status?: Status;
+          },
         ) => {
-          runBuild(file, { template: opts.template, json: opts.json });
+          runBuild(files, {
+            all: opts.all,
+            template: opts.template,
+            dir: opts.dir,
+            templatesDir: opts.templatesDir,
+            json: opts.json,
+            status: opts.status,
+          });
         },
       );
   },

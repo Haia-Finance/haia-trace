@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createRecorder } from "./recorder.js";
-import { decodeEventLine, decodeEventLines, encodeEventLine } from "./sink.js";
+import { createRecorder } from "../recorder.js";
+import {
+  decodeEventLine,
+  decodeEventLines,
+  encodeEventLine,
+} from "./contract.js";
 
 const rec = createRecorder({
   adapter: "trace-x402",

@@ -7,8 +7,8 @@ the [x402 adapter](https://github.com/Haia-Finance/haia-trace/tree/main/packages
 instead — depend on `trace-core` directly when you're **building your own capture
 adapter** or **embedding the assembler**.
 
-Zero runtime dependencies. ESM only, Node ≥ 20 (the assembler is also
-runtime-agnostic; the file-backed store lives behind the `/node` subpath).
+Zero runtime dependencies. ESM only, Node ≥ 22 (the assembler is also
+runtime-agnostic; the file-backed store lives behind the `/file` subpath).
 
 ## Install
 
@@ -25,7 +25,8 @@ npm install @usehaia/trace-core
 - **Template** — a declarative description of an operation as a sequence of
   milestone **stages**. Each stage's `match` is a match-set: any one of its
   events closes the stage, since different roles witness the same milestone
-  differently.
+  differently. A witness may name the `role` that has to have observed it, for
+  the case where two roles share a vocabulary.
 - **Receipt** — the verdict the assembler produces from `(events, template)`:
   each stage's state with the evidence behind it, the required stages still
   `missing` (each with an explanation), the `exceptions` observed, and the full
@@ -73,32 +74,51 @@ const event = recorder.event({
 });
 ```
 
-## Persist events (the `/node` subpath)
+## Persist events (the `/file` subpath)
 
 The event sink is defined as a runtime-agnostic contract in the root export
 (`EventWriter` / `EventReader`, plus the NDJSON codec `encodeEventLine` /
 `decodeEventLines`). The concrete file-backed implementation — the only place
-`node:fs` is imported — lives behind the `/node` subpath:
+`node:fs` is imported — lives behind the `/file` subpath:
 
 ```ts
 import {
-  createRunWriter,
-  DEFAULT_RUN_DIR,
+  createFileEventReader,
+  createRunEventWriter,
+  listRunFiles,
   readLatestRun,
-} from "@usehaia/trace-core/node";
+  runIdFromPath,
+} from "@usehaia/trace-core/file";
+
+const RUNS = ".trace/events";
 
 // Producing: one run file per session, named for its start time.
-const writer = createRunWriter();   // .trace/events/<run>.ndjson
+const writer = createRunEventWriter(RUNS);   // .trace/events/<run>.ndjson
 writer.write(event);
 
 // Reading it back: the newest run in that directory.
-const events = readLatestRun(DEFAULT_RUN_DIR)?.read() ?? [];
+const events = readLatestRun(RUNS)?.read() ?? [];
+
+// Or every run, oldest first — assembled one at a time, never concatenated:
+for (const path of listRunFiles(RUNS)) {
+  assembleReceipts(createFileEventReader(path).read(), template);  // per run
+  runIdFromPath(path);                                        // e.g. "1721709600000"
+}
 ```
 
-`createRunWriter()` and the CLI's `build` share one default directory, so a
-producer that configures nothing and the assembler meet without a path being
-agreed. That path is relative to the working directory, which is what an app
-started from its own project root wants; pass `dir` when the cwd is not fixed.
+`listRunFiles` is a list rather than a reader over every run at once on purpose.
+Events carry no run id, and `context_id` is only unique within a run — an adapter
+is free to number operations per session — so concatenating two runs and grouping
+by `context_id` would fold unrelated operations into a single receipt.
+
+Every path is an argument — this package holds no directory of its own. Core
+describes events and assembles receipts; where those live is the caller's
+decision, and a default here would be a filesystem convention two packages had to
+keep agreeing on. So the producer and whoever reads the runs back must be pointed
+at the same directory. `haia-trace` reads and writes `.trace/events` unless its
+`--dir` says otherwise, which is what the example above matches. A relative path
+resolves against the working directory — what an app started from its own project
+root wants; pass an absolute one when the cwd is not fixed.
 
 ## License
 

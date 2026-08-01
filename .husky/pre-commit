@@ -1,0 +1,7 @@
+# Mirrors .github/workflows/ci.yml. Lint first (no build needed), then build
+# once and reuse it — the root check-types/test scripts each build, so call the
+# per-package scripts directly to avoid rebuilding three times.
+pnpm lint
+pnpm build
+pnpm -r run check-types
+pnpm -r run test

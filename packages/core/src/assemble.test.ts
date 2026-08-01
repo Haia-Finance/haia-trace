@@ -553,3 +553,97 @@ describe("assembleReceiptsProgressively", () => {
     });
   });
 });
+
+describe("role-constrained witnesses", () => {
+  const sellerVerify: OperationTemplate = {
+    template: "seller-verify",
+    version: 1,
+    stages: [
+      {
+        id: "verification",
+        required: true,
+        match: [{ event: "x402.verify.ok", role: "server" }],
+      },
+    ],
+  };
+
+  /** Mint a run's events, each tagged with the role that observed it. */
+  function makeRoleEvents(entries: Array<[string, string]>): TraceEvent[] {
+    let n = 0;
+    const recorder = createRecorder({
+      adapter: "trace-x402",
+      now: () => "2026-01-01T00:00:00.000Z",
+      newId: () => `evt-${n++}`,
+    });
+    return entries.map(([role, event_type]) =>
+      recorder.event({ event_type, payload: {}, role }),
+    );
+  }
+
+  it("is not closed by another role's witness of the same event", () => {
+    const receipt = assembleReceipt(
+      makeRoleEvents([["facilitator", "x402.verify.ok"]]),
+      sellerVerify,
+    );
+
+    expect(stage(receipt, "verification")?.state).toBe("not_confirmed");
+    expect(receipt.completeness).toBe("partial");
+  });
+
+  it("is closed by the role it names", () => {
+    const receipt = assembleReceipt(
+      makeRoleEvents([
+        ["facilitator", "x402.verify.ok"],
+        ["server", "x402.verify.ok"],
+      ]),
+      sellerVerify,
+    );
+
+    // evt-1 is the server's event; the facilitator's evt-0 stays out of the stage.
+    expect(stage(receipt, "verification")?.events).toEqual(["evt-1"]);
+    expect(receipt.completeness).toBe("full");
+  });
+
+  it("records an event once on a stage it matches through several witnesses", () => {
+    const constrainedAndOpen: OperationTemplate = {
+      ...sellerVerify,
+      stages: [
+        {
+          id: "verification",
+          required: true,
+          match: [
+            { event: "x402.verify.ok", role: "server" },
+            { event: "x402.verify.ok" },
+          ],
+        },
+      ],
+    };
+
+    const receipt = assembleReceipt(
+      makeRoleEvents([["server", "x402.verify.ok"]]),
+      constrainedAndOpen,
+    );
+
+    expect(stage(receipt, "verification")?.events).toEqual(["evt-0"]);
+  });
+
+  it("leaves an unconstrained witness open to any role", () => {
+    const anyRole: OperationTemplate = {
+      ...sellerVerify,
+      stages: [
+        {
+          id: "verification",
+          required: true,
+          match: [{ event: "x402.verify.ok" }],
+        },
+      ],
+    };
+
+    const receipt = assembleReceipt(
+      makeRoleEvents([["facilitator", "x402.verify.ok"]]),
+      anyRole,
+    );
+
+    expect(stage(receipt, "verification")?.state).toBe("confirmed");
+  });
+});

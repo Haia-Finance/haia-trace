@@ -4,7 +4,7 @@
  *
  * Fixtures are real NDJSON run files (`<template>.ndjson`), one per template,
  * shipped with the CLI and carried into the tarball by the `files` list. They are
- * read through the same `createFileReader` a live capture is read with — so a
+ * read through the same `createFileEventReader` a live capture is read with — so a
  * sample runs the identical pipe, not a mock. Adding a template's sample is a data
  * change (a new fixture file), never a code change to the command.
  *
@@ -17,7 +17,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { TraceEvent } from "@usehaia/trace-core";
-import { createFileReader } from "@usehaia/trace-core/node";
+import { createFileEventReader } from "@usehaia/trace-core/file";
+
+import { isErrno } from "./fs.js";
 
 const FIXTURE_EXT = ".ndjson";
 
@@ -35,15 +37,6 @@ const FIXTURES_DIR = join(
   "fixtures",
 );
 
-/** Whether an error is a Node filesystem error carrying the given `code`. */
-function isErrno(err: unknown, code: string): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as NodeJS.ErrnoException).code === code
-  );
-}
-
 /**
  * Load the sample events for a template. Throws a clear error if the template has
  * no bundled fixtures — a template can ship without a sample, and that must read as
@@ -56,7 +49,7 @@ export function loadFixtureEvents(template: string): TraceEvent[] {
     throw new Error(`no sample fixtures for template: ${template}`);
   const path = join(FIXTURES_DIR, `${template}${FIXTURE_EXT}`);
   try {
-    return createFileReader(path).read();
+    return createFileEventReader(path).read();
   } catch (err) {
     if (isErrno(err, "ENOENT"))
       throw new Error(`no sample fixtures for template: ${template}`);

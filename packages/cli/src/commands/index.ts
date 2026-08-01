@@ -6,14 +6,17 @@
  */
 
 import { buildCommand } from "./build.js";
+import { receiptCommand } from "./receipt.js";
 import { sampleCommand } from "./sample.js";
-import { templatesCommand } from "./templates.js";
+import { templateCommand } from "./template.js";
 import type { TraceCommand } from "./types.js";
 
 export const commands: TraceCommand[] = [
   buildCommand,
+  // Beside `build`: it writes the receipts these two read.
+  receiptCommand,
   sampleCommand,
-  templatesCommand,
+  templateCommand,
 ];
 
 export type { TraceCommand } from "./types.js";

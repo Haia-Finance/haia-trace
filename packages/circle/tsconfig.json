@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // Only the tests need the ambient Node globals (Buffer, node:fs, the crypto
+    // global they sign fixtures with); `types` is not inferred from what is
+    // installed, so they are requested here explicitly. The runtime modules
+    // deliberately do not use them — they read Web APIs off `globalThis` with
+    // local types, keeping the shipped code runtime-agnostic.
+    "types": ["node"]
   },
   "include": ["src"]
 }

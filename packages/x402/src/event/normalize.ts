@@ -1,27 +1,15 @@
 /**
- * The redaction allowlist — the answer to "what of a hook's context gets
- * recorded". The Event Contract requires an event's `payload` to be normalized
- * and redacted, never the raw captured context, so nothing reaches an event
- * except by passing through a function here.
+ * The redaction allowlist — the only door from a hook context into an event
+ * payload. Each protocol object is rebuilt field by field, so a field the x402
+ * SDK adds later is dropped by default rather than silently recorded.
  *
- * It is an allowlist, not a denylist: each protocol object is rebuilt field by
- * field, so a field the x402 SDK adds in a later version is dropped by default
- * rather than silently recorded. Two things are deliberately never copied:
+ * Never copied: `PaymentPayload.payload`, the signed authorization that moves
+ * the money, and `extra` / `extensions`, open-ended bags whose contents are
+ * defined by schemes and third-party extensions.
  *
- * - `PaymentPayload.payload` — the scheme-specific signed authorization. This is
- *   the credential that moves the money; it must never be written to disk.
- * - `extra` / `extensions` — open-ended bags whose contents are defined by
- *   schemes and third-party extensions, so their safety cannot be reasoned about
- *   here.
- *
- * Output keys are snake_case, matching the rest of the contract, and absent
- * fields are omitted rather than written as `null`.
- *
- * The parameter types are local structural views of the x402 protocol objects,
- * not the SDK's own types. Server hooks hand out `DeepReadonly<…>` variants of
- * the same shapes, and a readonly view is structurally assignable to these — one
- * normalizer per object therefore covers the client, server, and facilitator
- * spellings alike.
+ * The parameter types are local structural views, not the SDK's own: server
+ * hooks hand out `DeepReadonly<…>` variants of the same shapes, which are
+ * assignable to these, so one normalizer covers all three roles' spellings.
  */
 
 interface ResourceLike {
@@ -31,7 +19,7 @@ interface ResourceLike {
   readonly serviceName?: string;
 }
 
-interface RequirementsLike {
+export interface RequirementsLike {
   readonly scheme: string;
   readonly network: string;
   readonly asset: string;
@@ -43,7 +31,7 @@ interface RequirementsLike {
 /**
  * `resource` and `accepts` are optional here even though the v2 protocol type
  * requires them: a v1 offer carries no `resource` at all, and an adapter reading
- * a foreign object must not assume a field is present just because a type says so.
+ * a foreign object must not assume a field is present because a type says so.
  */
 export interface PaymentRequiredLike {
   readonly x402Version: number;
@@ -59,14 +47,14 @@ export interface PaymentPayloadLike {
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
-interface VerifyResponseLike {
+export interface VerifyResponseLike {
   readonly isValid: boolean;
   readonly invalidReason?: string;
   readonly invalidMessage?: string;
   readonly payer?: string;
 }
 
-interface SettleResponseLike {
+export interface SettleResponseLike {
   readonly success: boolean;
   readonly errorReason?: string;
   readonly errorMessage?: string;
@@ -76,7 +64,7 @@ interface SettleResponseLike {
   readonly amount?: string;
 }
 
-/** Drop the keys whose value is absent, so an optional field is omitted rather than recorded as `undefined`. */
+/** Drop absent fields, so an optional one is omitted rather than recorded as `undefined`. */
 export function compact(
   fields: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -111,6 +99,22 @@ export function normalizeRequirements(
   });
 }
 
+/**
+ * The facts identifying a payment on almost every event. `payment` is the signed
+ * payload on the verify/settle hooks and the 402 offer on the ones that fire
+ * before a payload exists — both carry the same two fields.
+ */
+export function paymentFacts(
+  payment: { readonly x402Version: number; readonly resource?: ResourceLike },
+  requirements: RequirementsLike | undefined,
+): Record<string, unknown> {
+  return {
+    x402_version: payment.x402Version,
+    resource: normalizeResource(payment.resource),
+    requirements: normalizeRequirements(requirements),
+  };
+}
+
 /** The full 402 offer, as the server declared it. */
 export function normalizePaymentRequired(
   paymentRequired: PaymentRequiredLike | undefined,
@@ -120,8 +124,8 @@ export function normalizePaymentRequired(
     x402_version: paymentRequired.x402Version,
     error: paymentRequired.error,
     resource: normalizeResource(paymentRequired.resource),
-    // Tolerate an offer that arrives without its list: a normalizer must never
-    // be the reason a firing goes unrecorded.
+    // Tolerate an offer without its list: a normalizer must never be the reason
+    // a firing goes unrecorded.
     accepts: (paymentRequired.accepts ?? []).map(normalizeRequirements),
   });
 }
@@ -155,10 +159,8 @@ export function normalizeSettleResponse(
 
 /**
  * A fault, reduced to what a receipt needs to explain it. The stack is dropped —
- * it carries file paths and, in some SDKs, interpolated argument values.
- * `VerifiedPaymentCanceledContext.error` is typed `unknown`, so a non-Error
- * throw has to be handled too; `String()` on an arbitrary object yields
- * `[object Object]` rather than its contents, which is the safe direction here.
+ * it carries file paths and sometimes interpolated argument values. A non-Error
+ * throw is stringified, which yields `[object Object]` rather than its contents.
  */
 export function normalizeError(
   error: unknown,

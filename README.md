@@ -1,5 +1,11 @@
 # Haia Trace
 
+[![CI](https://img.shields.io/github/actions/workflow/status/Haia-Finance/haia-trace/ci.yml?branch=main&logo=github&label=CI)](https://github.com/Haia-Finance/haia-trace/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@usehaia/trace-cli?logo=npm&color=cb3837&label=trace-cli)](https://www.npmjs.com/package/@usehaia/trace-cli)
+[![node](https://img.shields.io/badge/node-%E2%89%A5%2020-5FA04E?logo=node.js&logoColor=white)](https://nodejs.org)
+[![types](https://img.shields.io/badge/types-included-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
 Local-first **Operation Receipts** for agentic payments. Trace passively records
 the lifecycle of a payment operation and assembles a single verdict — what
 completed, what's missing, and which faults were observed — entirely on your
@@ -15,8 +21,9 @@ trends across many).
 No install needed — run the bundled sample through the real assembler:
 
 ```sh
-npx @usehaia/trace-cli sample x402-buyer     # the paying agent's view
-npx @usehaia/trace-cli sample x402-seller    # the resource server's view
+npx @usehaia/trace-cli sample x402-buyer        # the paying agent's view
+npx @usehaia/trace-cli sample x402-seller       # the resource server's view
+npx @usehaia/trace-cli sample x402-facilitator  # the verify/settle service's view
 ```
 
 You'll see three operations from one fixture run: a **FULL** receipt, a
@@ -41,11 +48,11 @@ facilitator — and the README says exactly which parts are real.
 
 ## Packages
 
-| Package                                        | Role                                                            |
-| ---------------------------------------------- | --------------------------------------------------------------- |
-| [`@usehaia/trace-core`](./packages/core)       | Contracts (Event / Template / Receipt) and the receipt assembler. |
-| [`@usehaia/trace-x402`](./packages/x402)       | Capture adapter for the x402 payment SDK — records lifecycle events. |
-| [`@usehaia/trace-cli`](./packages/cli)         | The `haia-trace` command-line tool and renderers.               |
+| Package                                  | Version                                                                                                              | Role                                                                 |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [`@usehaia/trace-core`](./packages/core) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-core?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-core) | Contracts (Event / Template / Receipt) and the receipt assembler.    |
+| [`@usehaia/trace-x402`](./packages/x402) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-x402?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-x402) | Capture adapter for the x402 payment SDK — records lifecycle events. |
+| [`@usehaia/trace-cli`](./packages/cli)   | [![npm](https://img.shields.io/npm/v/@usehaia/trace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-cli)   | The `haia-trace` command-line tool and renderers.                    |
 
 `trace-x402` and `trace-cli` depend on `trace-core`. Each package has its own
 README with full usage.
@@ -89,17 +96,20 @@ Early and pre-1.0. What's wired today:
 
 - **`trace-core`** — the Event / Template / Receipt contracts and the
   deterministic assembler are complete.
-- **`trace-cli`** — `sample`, `build`, and `templates` all work. `build`
-  assembles receipts from a `.trace/events/*.ndjson` run file.
+- **`trace-cli`** — `sample`, `build`, and `template` all work. `build`
+  assembles receipts from a `.trace/events/*.ndjson` run file, against a built-in
+  template or one you scaffold with `haia-trace template new`. `--dir` moves the
+  whole `.trace/` root; the layout inside it stays fixed.
 - **`trace-x402`** — attaches to the x402 v2 lifecycle hooks and records each
   firing, strictly passively, as a normalized and redacted event. Point it at
   `.trace/events` and `trace(...)` → `haia-trace build` produces a receipt per
-  payment, assembled with the per-role `x402-buyer` / `x402-seller` templates —
-  a clean payment assembles as `full`. See its [README](./packages/x402).
+  payment, assembled with the per-role `x402-buyer` / `x402-seller` /
+  `x402-facilitator` templates — a clean payment assembles as `full`. See its
+  [README](./packages/x402).
 
 ## Develop from source
 
-Requires **Node ≥ 20** and **pnpm**.
+Requires **Node ≥ 22** and **pnpm**.
 
 ```sh
 pnpm install

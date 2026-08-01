@@ -29,14 +29,14 @@ surrounding server only relays it:
 
 ```ts
 import { createWebhookHandler, createVerifier } from "@usehaia/trace-circle";
-import { createFileWriter } from "@usehaia/trace-core/node";
+import { createFileEventWriter } from "@usehaia/trace-core/file";
 
 const handler = createWebhookHandler({
   verifier: createVerifier({ resolveKey }), // see below
   // MUST throw on failure so the handler answers 500 and Circle retries.
   // Core's file sink is fail-open by design; a throwing error handler turns it
   // into the fail-loud write a webhook needs:
-  write: createFileWriter(".trace/events/webhooks.ndjson", (err) => {
+  write: createFileEventWriter(".trace/events/webhooks.ndjson", (err) => {
     throw err;
   }).write,
 });

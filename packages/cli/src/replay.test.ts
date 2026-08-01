@@ -2,9 +2,9 @@
  * The replay path, end to end: the webhook fixtures shipped with
  * `@usehaia/trace-circle` are signed (with a test key), pushed through the real
  * webhook handler, round-tripped through the NDJSON sink codec, and assembled
- * with the shipped `escrow-arc` template. This is the whole HAD-scope pipe —
- * capture → normalize → sink → assemble — with no network and no stand, which
- * is exactly how the adapter is developed and regression-tested.
+ * with the shipped `escrow-arc` template. This is the whole webhook capture
+ * pipe — capture → normalize → sink → assemble — with no network and no live
+ * stand, which is exactly how the adapter is developed and regression-tested.
  *
  * The at-least-once/unordered delivery semantics are asserted at the RECEIPT
  * level here (a retry or a shuffled arrival order must not change the

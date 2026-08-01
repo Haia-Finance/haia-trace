@@ -1,6 +1,6 @@
 {
   "name": "@usehaia/trace-core",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Haia Trace core: contracts and the deterministic receipt assembler.",
   "keywords": [
     "x402",
@@ -25,6 +25,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,9 +36,13 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./node": {
-      "types": "./dist/node.d.ts",
-      "default": "./dist/node.js"
+    "./file": {
+      "types": "./dist/sink/file.d.ts",
+      "default": "./dist/sink/file.js"
+    },
+    "./cp": {
+      "types": "./dist/sink/cp.d.ts",
+      "default": "./dist/sink/cp.js"
     }
   },
   "files": [

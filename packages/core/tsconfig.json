@@ -5,7 +5,7 @@
     "rootDir": "src",
     // Keep core's root runtime-agnostic: no ambient type packages are pulled in
     // globally, so a stray `node:*` global cannot be used outside the one module
-    // that opts in. `node.ts` (the file sink) pulls Node types via an explicit
+    // that opts in. `sink/file.ts` (the file sink) pulls Node types via an explicit
     // `/// <reference types="node" />`; nothing else in core sees them.
     "types": []
   },

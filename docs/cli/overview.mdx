@@ -20,7 +20,7 @@ npx @usehaia/trace-cli <command>
 
 </CodeGroup>
 
-Both expose the `haia-trace` command. Requires **Node ≥ 20**.
+Both expose the `haia-trace` command. Requires **Node ≥ 22**.
 
 ## Commands
 
@@ -31,8 +31,11 @@ Both expose the `haia-trace` command. Requires **Node ≥ 20**.
   <Card title="build" icon="hammer" href="/cli/build">
     Assemble one receipt per operation from a run's events.
   </Card>
-  <Card title="templates" icon="list" href="/cli/templates">
-    List the operation templates shipped with the CLI.
+  <Card title="receipt" icon="receipt" href="/cli/receipt">
+    List the receipts build has written, and show one verdict in full.
+  </Card>
+  <Card title="template" icon="list" href="/cli/template">
+    List the templates you can build against, and scaffold your own.
   </Card>
 </CardGroup>
 
@@ -51,9 +54,42 @@ database, no network:
 ```text
 .trace/
   events/<run_id>.ndjson      # recorded events; one run = one file (the input)
-  receipts/<context_id>.json  # assembled receipts, one per operation (the output)
+  receipts/<run>~<context_id>.json  # assembled receipts, one per operation (the output)
+  templates/<name>.yaml       # your own operation templates (yours to edit)
 ```
 
 A run file is newline-delimited JSON — one event per line, append-only. It's the
 source of truth; a Receipt is a derived, reproducible artifact, so re-building
 the same run always yields the same Receipt.
+
+`build` writes into `receipts/`, and [`receipt`](/cli/receipt) reads it back — so
+nothing outside the CLI needs to know how a receipt file is named.
+
+### Moving the root with `--dir`
+
+`--dir` relocates the whole root — `haia-trace build --dir .my-trace` — for a
+second project in one checkout, or a scratch run that shouldn't touch the
+committed tree. What's *inside* the root never changes: `events/`, `receipts/`,
+`templates/`. That's what makes one flag enough, and what keeps a relocated
+directory readable by anyone who only knows the default one. Every command that
+touches these takes `--dir`, and `--templates-dir` still outranks it when you
+want templates alone somewhere else.
+
+The recorder is the one thing `--dir` can't reach: it names its own directory
+(`createRunEventWriter(".trace/events")`), so point it at `events/` under whatever
+root you build with.
+
+<Warning>
+  A relocated root needs its own `.gitignore` entries — the ones below cover
+  `.trace/` only. Derived output under `.my-trace/` is untracked but *not*
+  ignored, so the next `git add -A` would commit it.
+</Warning>
+
+`events/` and `receipts/` are recorded and derived, so they belong in
+`.gitignore`. `templates/` is source you author — ignore the two subdirectories
+rather than `.trace/` as a whole:
+
+```gitignore
+.trace/events/
+.trace/receipts/
+```

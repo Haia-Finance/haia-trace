@@ -17,8 +17,8 @@
  * sinks swallow errors. Here, swallowing a persistence error and answering 200
  * would stop Circle's retries and lose the event forever. The `write` option
  * must therefore THROW on failure — with core's file sink, that is
- * `createFileWriter(path, (err) => { throw err; })`, which turns its fail-open
- * error routing into the fail-loud behavior this pipeline needs.
+ * `createFileEventWriter(path, (err) => { throw err; })`, which turns its
+ * fail-open error routing into the fail-loud behavior this pipeline needs.
  *
  * Verification runs BEFORE parsing: nothing about an unauthenticated body is
  * trusted, not even that it is JSON. One handler serves any number of paths —

@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.30.3",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "pnpm -r run build",
@@ -13,10 +13,12 @@
     "check-types": "pnpm run build && pnpm -r run check-types",
     "clean": "pnpm -r run clean",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "husky": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

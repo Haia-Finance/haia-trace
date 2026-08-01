@@ -22,7 +22,7 @@
  * (`assembleProgressively`), and the two provably agree.
  */
 
-import type { EventType, TraceEvent } from "./event.js";
+import type { EventType, Role, TraceEvent } from "./event.js";
 import type { Receipt, ReceiptException, ReceiptStage } from "./receipt.js";
 import type { OperationTemplate } from "./template.js";
 
@@ -87,8 +87,8 @@ interface Draft {
   exceptions: ReceiptException[];
   /** Every event folded so far, already in `seq` order. */
   events: TraceEvent[];
-  /** `event_type` → the stage indices whose match-set contains it. */
-  typeToStages: Map<EventType, number[]>;
+  /** `event_type` → the stages whose match-set contains it, and the role each requires. */
+  typeToStages: Map<EventType, { stage: number; role?: Role }[]>;
   /** The template's exception event types, for O(1) fault detection. */
   exceptionTypes: Set<EventType>;
 }
@@ -98,17 +98,12 @@ function startDraft(
   template: OperationTemplate,
   options: AssembleOptions,
 ): Draft {
-  const typeToStages = new Map<EventType, number[]>();
+  const typeToStages = new Map<EventType, { stage: number; role?: Role }[]>();
   template.stages.forEach((stage, index) => {
-    for (const witness of stage.match) {
-      const stages = typeToStages.get(witness.event);
-      // Dedupe the stage index so a type listed twice in one match-set still
-      // records a matching event only once on that stage.
-      if (stages === undefined) {
-        typeToStages.set(witness.event, [index]);
-      } else if (!stages.includes(index)) {
-        stages.push(index);
-      }
+    for (const { event, role } of stage.match) {
+      const stages = typeToStages.get(event) ?? [];
+      stages.push({ stage: index, role });
+      typeToStages.set(event, stages);
     }
   });
 
@@ -129,10 +124,18 @@ function applyEvent(draft: Draft, event: TraceEvent): void {
 
   const stages = draft.typeToStages.get(event.event_type);
   if (stages !== undefined) {
-    for (const index of stages) {
+    // Dedupe per stage: an event matching several of a stage's witnesses (e.g.
+    // listed both with and without a role) still records once on that stage.
+    const closed = new Set<number>();
+    for (const { stage, role } of stages) {
+      // A witness with no role is closed by any observer; one with a role only
+      // by that side.
+      if (role !== undefined && role !== event.role) continue;
+      if (closed.has(stage)) continue;
+      closed.add(stage);
       // Aligned with `template.stages`, so the entry always exists; the guard is
       // for `noUncheckedIndexedAccess`.
-      draft.stageEvents[index]?.push(event.event_id);
+      draft.stageEvents[stage]?.push(event.event_id);
     }
   }
 

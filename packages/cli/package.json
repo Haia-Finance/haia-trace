@@ -1,6 +1,6 @@
 {
   "name": "@usehaia/trace-cli",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Haia Trace command-line interface and renderers.",
   "keywords": [
     "x402",
@@ -24,6 +24,9 @@
   "homepage": "https://developers.haia.finance/cli/overview",
   "publishConfig": {
     "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "type": "module",
   "main": "./dist/index.js",

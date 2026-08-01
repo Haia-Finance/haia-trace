@@ -20,21 +20,23 @@ facilitator, or MCP client:
 
 ```ts
 import { trace } from "@usehaia/trace-x402";
-import { createRunWriter } from "@usehaia/trace-core/node";
+import { createRunEventWriter } from "@usehaia/trace-core/file";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 
 const client = new x402HTTPClient(new x402Client());
 
 // Attach the recorder and write the run to disk. One line, idempotent per instance.
-trace(client, { writer: createRunWriter() });
+trace(client, { writer: createRunEventWriter(".trace/events") });
 ```
 
-The writer defaults to `.trace/events` — the directory
+`.trace/events` is where
 [`haia-trace build`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/cli)
-reads from, so neither side has to be told where the run lives. That path is
-relative to the working directory, which is what an app started from its own
-project root wants; a process whose cwd is not fixed should pass `dir`
-explicitly. Without a `writer`, events go to stdout as NDJSON — the same
+reads from unless its `--dir` says otherwise, so naming it here is what makes the
+two sides meet. The writer takes the directory explicitly rather than defaulting
+to one — a default would be a filesystem convention two packages had to keep
+agreeing on. That path is relative to the working directory, which is what an app
+started from its own project root wants; a process whose cwd is not fixed should
+pass an absolute path. Without a `writer`, events go to stdout as NDJSON — the same
 encoding, so it can simply be piped into a file.
 
 `trace()` inspects the instance's method set to resolve its **kind**, attaches to
@@ -163,7 +165,7 @@ guessing.
 trace(instance, {
   // Where events go. Default: NDJSON on stdout. The writer's lifetime is yours —
   // trace() never closes it.
-  writer: createRunWriter(),
+  writer: createRunEventWriter(".trace/events"),
 
   // Recorder that stamps event_id / occurred_at / seq. Defaults to a
   // process-wide one, so several traced instances share one ordered session.
@@ -227,12 +229,19 @@ file feeds [`haia-trace
 build`](https://github.com/Haia-Finance/haia-trace/tree/main/packages/cli), and
 concurrent payments come out as separate receipts.
 
-The shipped templates are per-role: assemble a client capture with `x402-buyer`
-and a server capture with `x402-seller`. Each matches only events that side's
-hooks record, and every buyer stage has a witness in each client kind's flow
-(HTTP, MCP, and the bare `x402Client`), so a clean payment assembles as `full`
-on either side. A facilitator capture shares the server's verify/settle
-vocabulary and assembles with `x402-seller` too.
+The shipped templates are per-role — assemble a capture with the one for the side
+that recorded it: `x402-buyer` for a client, `x402-seller` for a resource server,
+`x402-facilitator` for a facilitator. Each matches only events that side's hooks
+record *and* only when its own `role` observed them, so a run that traced two
+sides still yields one honest receipt per side. Every buyer stage has a witness
+in each client kind's flow (HTTP, MCP, and the bare `x402Client`), so a clean
+payment assembles as `full` whichever side you look from.
+
+The server and the facilitator share the verify/settle vocabulary exactly, which
+is why the role constraint matters — but they do not share how a decline reads.
+The SDK hands a facilitator its clean "not valid" through the failure hook, so
+the reason arrives in `error.message`; a resource server gets it as a result, so
+the reason arrives in `verify.invalid_reason`. Both are `x402.verify.failed`.
 
 ## License
 

@@ -50,18 +50,51 @@ non-zero:
     fault   x402.payment.failed
 ```
 
+Each `pnpm demo` is its own run, and receipts are keyed by run
+(`.trace/receipts/<run>~<operation>.json`), so a second demo adds two more
+receipts rather than replacing the first two — the agent numbers its operations
+per session, so both runs really do contain an `op-1`. The policy judges the
+latest run, the one the demo just built, and says how many earlier runs are still
+on disk: old evidence is kept, but a payment that failed an hour ago is not what
+decides whether the agent may spend now.
+
 ## The integration
 
 One line, plus the sink it writes to:
 
 ```js
-const writer = createRunWriter();
+const writer = createRunEventWriter(".trace/events");
 
 trace(agent, { writer });
 ```
 
-The writer defaults to the same run directory `haia-trace build` reads from, so
-recording and assembling meet without a path being configured on either side.
+The run directory is the producer's to choose; `.trace/events` is the one
+`haia-trace build` reads from unless its `--dir` says otherwise, so naming it here
+is what makes recording and assembling meet.
+
+### Mirroring to the Control Plane
+
+Give the demo an ingest key and the same events also go to a Haia Control Plane
+project, where the dashboard can show them:
+
+```sh
+HAIA_INGEST_URL=https://<host> HAIA_INGEST_KEY=<key> pnpm demo
+```
+
+Nothing about the recording changes — two sinks compose into one writer:
+
+```js
+const writer = createMulticastEventWriter(runWriter, cpWriter);
+```
+
+The local run file stays the source of truth the receipts are assembled from;
+the Control Plane is a mirror. Uploading is batched, so `buyer.mjs` awaits
+`writer.flush?.()` before it exits — the file sink writes inside `write` and has
+no `flush` to call, which is why the call is optional.
+
+The environment variables belong to this script, not to the library: the sink
+takes its configuration through its constructor and never reads ambient state.
+With no key set, the demo runs entirely offline.
 
 `trace()` returns an attestation (`kind`, `attached`, `missing`, `complete`), so
 a run that recorded nothing is distinguishable from a recorder that never

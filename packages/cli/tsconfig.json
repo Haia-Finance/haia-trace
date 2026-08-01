@@ -2,7 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // The CLI is a Node program: it reads the filesystem, resolves paths and
+    // writes to the console. `types` is not inferred from what is installed, so
+    // the ambient Node globals are requested here explicitly.
+    "types": ["node"]
   },
   "include": ["src"]
 }

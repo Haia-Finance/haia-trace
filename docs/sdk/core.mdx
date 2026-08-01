@@ -8,8 +8,8 @@ Most users reach for the [CLI](/cli/overview) or the [x402
 adapter](/sdk/x402) instead — depend on `trace-core` directly when you're
 **building your own capture adapter** or **embedding the assembler**.
 
-Zero runtime dependencies. ESM only, Node ≥ 20 (the assembler is also
-runtime-agnostic; the file-backed store lives behind the `/node` subpath).
+Zero runtime dependencies. ESM only, Node ≥ 22 (the assembler is also
+runtime-agnostic; the file-backed store lives behind the `/file` subpath).
 
 ## Install
 
@@ -25,7 +25,7 @@ npm install @usehaia/trace-core
   Written append-only as NDJSON.
 - **Template** — a declarative description of an operation as a sequence of
   milestone stages. Each stage's `match` is a match-set: any one of its events
-  closes the stage.
+  closes the stage, optionally only when a named `role` observed it.
 - **Receipt** — the verdict from `(events, template)`. See [Operation
   Receipt](/concepts/operation-receipt).
 
@@ -71,29 +71,100 @@ const event = recorder.event({
 });
 ```
 
-## Persist events (the `/node` subpath)
+## Persist events (the `/file` subpath)
 
 The event sink is a runtime-agnostic contract in the root export (`EventWriter` /
 `EventReader`, plus the NDJSON codec `encodeEventLine` / `decodeEventLines`). The
 concrete file-backed implementation — the only place `node:fs` is imported —
-lives behind the `/node` subpath:
+lives behind the `/file` subpath:
 
 ```ts
-import {
-  createRunWriter,
-  DEFAULT_RUN_DIR,
-  readLatestRun,
-} from "@usehaia/trace-core/node";
+import { createRunEventWriter, readLatestRun } from "@usehaia/trace-core/file";
+
+const RUNS = ".trace/events";
 
 // Producing: one run file per session, named for its start time.
-const writer = createRunWriter();   // .trace/events/<run>.ndjson
+const writer = createRunEventWriter(RUNS);   // .trace/events/<run>.ndjson
 writer.write(event);
 
 // Reading it back: the newest run in that directory.
-const events = readLatestRun(DEFAULT_RUN_DIR)?.read() ?? [];
+const events = readLatestRun(RUNS)?.read() ?? [];
 ```
 
-`createRunWriter()` and the CLI's `build` share one default directory, so a
-producer that configures nothing and the assembler meet without a path being
-agreed. That path is relative to the working directory, which is what an app
-started from its own project root wants; pass `dir` when the cwd is not fixed.
+Every path is an argument — this package holds no directory of its own. Core
+describes events and assembles receipts; where those live is the caller's
+decision, and a default here would be a filesystem convention two packages had to
+keep agreeing on. So the producer and whoever reads the runs back must be pointed
+at the same directory. `haia-trace` reads and writes `.trace/events` unless its
+[`--dir`](/cli/overview) says otherwise, which is what the example above matches.
+A relative path resolves against the working directory — what an app started from
+its own project root wants; pass an absolute one when the cwd is not fixed.
+
+## Mirror events to the Control Plane
+
+The run file is where a receipt is assembled from, and it stays the source of
+truth. `createCpEventWriter` — behind the `/cp` subpath — uploads the same events to a
+[Haia Control Plane](https://haia.finance) project, so a run can also be looked
+at in the dashboard. It reaches the network through `fetch` alone: no `node:*`,
+no dependency, so it runs wherever your recorder does.
+
+```ts
+import { createMulticastEventWriter } from "@usehaia/trace-core";
+import { createCpEventWriter } from "@usehaia/trace-core/cp";
+import { createRunEventWriter, runIdFromPath } from "@usehaia/trace-core/file";
+
+const runWriter = createRunEventWriter(".trace/events");
+
+const cpWriter = createCpEventWriter({
+  url: "https://<your-ingest-host>",
+  apiKey: process.env.HAIA_INGEST_KEY!, // a key carrying `ingest:write`
+  agentId: "checkout-agent",            // who the events belong to — required
+  runId: runIdFromPath(runWriter.path), // provenance, recorded in `meta`
+  onError: (err) => console.warn("[trace] cp:", err),
+});
+
+// Record to both. The result is an ordinary EventWriter, so the producer that
+// receives it never learns there is more than one sink.
+const writer = createMulticastEventWriter(runWriter, cpWriter);
+```
+
+Where an event lands:
+
+| Control Plane | Event Contract |
+| --- | --- |
+| `event_type`, `occurred_at` | as recorded |
+| `client_event_id` | `event_id` — the API deduplicates on it within a project, so a retried batch stores nothing twice |
+| `session_id` | `context_id` — one logical operation, the same unit a receipt covers |
+| `anonymous_id` | the `agentId` you passed |
+| `properties` | the event's `payload`, plus `seq`, `adapter`, `role`, `context_id` |
+| `meta` | `run_id`, plus `source: "haia-trace"` |
+
+Note what `session_id` is *not*: the run. One run is one start of your service
+and can hold many unrelated payments, so grouping by it would merge them.
+
+`agentId` is required rather than defaulted, for the same reason — a run id names
+a *capture*, not a payer, so events from one agent across restarts would land as
+different subjects, and nothing on the outside would show that the identity was
+invented.
+
+Delivery is batched, so settle it before the process ends:
+
+```ts
+await writer.flush?.();
+writer.close();
+```
+
+`write()` queues and returns; a batch goes out when it fills (100 events by
+default) or the flush interval elapses (2s). `flush()` settles what has been
+queued and never rejects.
+
+Like every sink, this one is fail-open: an upload that fails is reported to
+`onError`, never thrown into the payment path. What it will not do is stay quiet
+— a dropped batch and an event the Control Plane refused to store are both
+reported, so "the Control Plane has nothing" is never forged from a failure.
+
+<Tip>
+  Nothing here reads the environment: the writer is configured through its
+  constructor only. Read your own config and pass the values, so a run's
+  destination is decided in one visible place rather than by ambient state.
+</Tip>
