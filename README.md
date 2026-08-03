@@ -2,7 +2,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Haia-Finance/haia-trace/ci.yml?branch=main&logo=github&label=CI)](https://github.com/Haia-Finance/haia-trace/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@usehaia/trace-cli?logo=npm&color=cb3837&label=trace-cli)](https://www.npmjs.com/package/@usehaia/trace-cli)
-[![node](https://img.shields.io/badge/node-%E2%89%A5%2020-5FA04E?logo=node.js&logoColor=white)](https://nodejs.org)
+[![node](https://img.shields.io/node/v/@usehaia/trace-cli?logo=node.js&logoColor=white&color=5FA04E)](https://nodejs.org)
 [![types](https://img.shields.io/badge/types-included-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
