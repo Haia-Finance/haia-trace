@@ -11,7 +11,7 @@
  * verdict); the event-level behaviors live in the adapter's own tests.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -108,14 +108,22 @@ function makeReplayRig(): { handler: WebhookHandler; lines: string[] } {
   return { handler, lines };
 }
 
+/**
+ * The deliveries of ONE escrow arc, named rather than globbed: the fixture
+ * directory also holds captures from other contracts, and folding those in
+ * would assemble several operations where this suite is about one.
+ */
+const ARC_FIXTURES = [
+  "contracts-eventlog-payment-created.json",
+  "transactions-inbound-complete.json",
+  "transactions-outbound-failed.json",
+];
+
 function fixtureBodies(): { name: string; body: string }[] {
-  return readdirSync(WEBHOOK_FIXTURES_DIR)
-    .filter((name) => name.endsWith(".json"))
-    .sort()
-    .map((name) => ({
-      name,
-      body: readFileSync(join(WEBHOOK_FIXTURES_DIR, name), "utf8"),
-    }));
+  return [...ARC_FIXTURES].sort().map((name) => ({
+    name,
+    body: readFileSync(join(WEBHOOK_FIXTURES_DIR, name), "utf8"),
+  }));
 }
 
 /** Replay deliveries through a fresh rig and assemble the run. */

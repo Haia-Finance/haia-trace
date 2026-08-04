@@ -20,7 +20,7 @@ function fixture(name: string) {
   );
 }
 
-/** The escrow contract all three fixtures revolve around. */
+/** The escrow contract the synthetic arc fixtures revolve around. */
 const CONTRACT = "0x92b7e5c1d4f3a2b1c0d9e8f7a6b5c4d3e2f10987";
 
 describe("normalizeNotification — transactions", () => {
@@ -107,7 +107,7 @@ describe("normalizeNotification — contract events", () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.event_type).toBe("circle.contract.payment_created");
     expect(events[0]?.context_id).toBe(CONTRACT);
-    expect(events[0]?.payload.event_name).toBe(
+    expect(events[0]?.payload.event_signature).toBe(
       "PaymentCreated(uint256,address,uint256,uint256,address)",
     );
   });
@@ -121,7 +121,7 @@ describe("normalizeNotification — contract events", () => {
     for (const [signature, expected] of cases) {
       const variant = {
         ...envelope,
-        notification: { ...envelope.notification, eventName: signature },
+        notification: { ...envelope.notification, eventSignature: signature },
       };
       expect(normalizeNotification(variant)[0]?.event_type).toBe(expected);
     }
@@ -133,10 +133,51 @@ describe("normalizeNotification — contract events", () => {
       ...envelope,
       notification: {
         ...envelope.notification,
-        eventName: "RefundToUpdated(uint256,address,address)",
+        eventSignature: "RefundToUpdated(uint256,address,address)",
       },
     };
     expect(normalizeNotification(unknown)).toEqual([]);
+  });
+
+  // A contract event names its signature in `eventSignature`; a notification
+  // shaped with `eventName` is not something Circle sends, and mapping it would
+  // let a fixture invent a field the API does not have.
+  it("does not map a contract event that only carries eventName", () => {
+    const envelope = fixture("contracts-eventlog-payment-created.json");
+    const { eventSignature, ...rest } = envelope.notification;
+    const renamed = {
+      ...envelope,
+      notification: { ...rest, eventName: eventSignature },
+    };
+    expect(normalizeNotification(renamed)).toEqual([]);
+  });
+
+  it("takes occurred_at from a contract event's firstConfirmDate, not the envelope", () => {
+    const events = normalizeNotification(
+      fixture("live-contracts-eventlog-refund.json"),
+    );
+    // The envelope was sent at 13:34:08.63; the chain confirmed at 13:34:07.
+    expect(events[0]?.occurred_at).toBe("2026-08-04T13:34:07.000Z");
+  });
+
+  // The live captures are the guard against a fixture that agrees with a bug:
+  // both were recorded from real deliveries, so a field the API does not send
+  // cannot quietly become the shape the mapper is written against.
+  it.each([
+    [
+      "live-contracts-eventlog-payment-created.json",
+      "circle.contract.payment_created",
+      55277356,
+    ],
+    ["live-contracts-eventlog-refund.json", "circle.contract.refund", 55277390],
+  ])("maps the live capture %s", (file, expected, blockHeight) => {
+    const events = normalizeNotification(fixture(file as string));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.event_type).toBe(expected);
+    expect(events[0]?.context_id).toBe(
+      "0xba69b54b0ec696a5a32d107bec5cceff7c1af48e",
+    );
+    expect(events[0]?.payload.block_height).toBe(blockHeight);
   });
 });
 

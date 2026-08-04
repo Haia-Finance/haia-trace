@@ -40,9 +40,10 @@
  * an outbound); a transaction unrelated to any escrow simply groups under its
  * own counterparty and yields a separate receipt.
  *
- * `occurred_at` is the fact's own time, never the delivery time: payload
- * `updateDate`, falling back to the envelope `timestamp` (send time), falling
- * back to the recorder's clock (arrival time) — each step strictly weaker.
+ * `occurred_at` is the fact's own time, never the delivery time: a transaction
+ * notification's `updateDate` or a contract event's `firstConfirmDate`, falling
+ * back to the envelope `timestamp` (send time), falling back to the recorder's
+ * clock (arrival time) — each step strictly weaker.
  * Values are re-canonicalized to fixed-width ISO-8601 UTC because the
  * assembler orders events lexically and relies on that form.
  *
@@ -155,18 +156,20 @@ function normalizeTransaction(envelope: NotificationEnvelope): EventInput[] {
 
 function normalizeContractEvent(envelope: NotificationEnvelope): EventInput[] {
   const n = envelope.notification;
-  // `eventName` carries the full signature ("PaymentCreated(uint256,…)");
+  // `eventSignature` carries the full signature ("PaymentCreated(uint256,…)");
   // the name before the parenthesis selects the type.
-  const name = str(n.eventName)?.split("(")[0];
+  const name = str(n.eventSignature)?.split("(")[0];
   const event_type =
     name === undefined ? undefined : CONTRACT_EVENT_TYPES.get(name);
   if (event_type === undefined) return [];
 
   const contractAddress = str(n.contractAddress);
-  // Each fallback step is canonicalized on its own: an unparseable updateDate
-  // must fall through to the envelope timestamp, not skip past it.
+  // Each fallback step is canonicalized on its own: an unparseable timestamp
+  // must fall through to the next source, not skip past it. A contract event
+  // carries `firstConfirmDate` (when the chain confirmed it) rather than the
+  // `updateDate` a transaction notification has.
   const occurredAt =
-    canonicalTime(str(n.updateDate)) ?? canonicalTime(envelope.timestamp);
+    canonicalTime(str(n.firstConfirmDate)) ?? canonicalTime(envelope.timestamp);
 
   return [
     {
@@ -183,7 +186,8 @@ function normalizeContractEvent(envelope: NotificationEnvelope): EventInput[] {
           blockchain: "blockchain",
           txHash: "tx_hash",
           userOpHash: "user_op_hash",
-          eventName: "event_name",
+          eventSignature: "event_signature",
+          blockHeight: "block_height",
         }),
       },
     },

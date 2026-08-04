@@ -1,0 +1,25 @@
+{
+  "subscriptionId": "17d102fc-0e59-4eb8-b73f-fd8dbd699d1f",
+  "notificationId": "eda14128-e69f-431b-a589-2b22da4e99a7",
+  "notificationType": "contracts.eventLog",
+  "notification": {
+    "contractAddress": "0xba69b54b0ec696a5a32d107bec5cceff7c1af48e",
+    "blockchain": "ARC-TESTNET",
+    "idempotencyKey": "06735a00-c329-56d7-aaa9-9fc8ad3fb4d6",
+    "txHash": "0xed6b204518d1b892782d5fd5a8be78cd9f6d4198cb1e884f5d9f917ccb27a6d9",
+    "userOpHash": "0x8aca48726369771f88bd5cf304f5fdd35cf9fbad5a95d44ff6bbb5ac65fbe8ad",
+    "blockHash": "0xb1413e29b49f3632498567980e7a9d4ff6223d3044dbc1cb433c8eeb9fafc76f",
+    "blockHeight": 55277390,
+    "eventSignature": "Refund(uint256,address,uint256)",
+    "eventSignatureHash": "0x21e12a7cad0da5928167e1084ea4d5fdf8d9af66657a2543a9ac76a0ca081477",
+    "topics": [
+      "0x21e12a7cad0da5928167e1084ea4d5fdf8d9af66657a2543a9ac76a0ca081477",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x000000000000000000000000e602843842d4dcb0ef9c66da81d981d3abd1bc92"
+    ],
+    "data": "0x00000000000000000000000000000000000000000000000000000000002dc6c0",
+    "firstConfirmDate": "2026-08-04T13:34:07Z"
+  },
+  "timestamp": "2026-08-04T13:34:08.635131723Z",
+  "version": 2
+}
