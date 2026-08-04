@@ -1,6 +1,6 @@
 {
   "name": "@usehaia/trace-circle",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Haia Trace capture adapter for Circle webhook v2 notifications.",
   "keywords": [
     "circle",
