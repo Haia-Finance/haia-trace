@@ -18,9 +18,45 @@ import {
 describe("template loading", () => {
   it("lists the templates shipped with the CLI", () => {
     expect(listTemplates()).toEqual([
+      "escrow-arc",
       "x402-buyer",
       "x402-facilitator",
       "x402-seller",
+    ]);
+  });
+
+  it("loads and validates the escrow-arc template", () => {
+    const template = loadTemplate("escrow-arc");
+    expect(template.template).toBe("escrow-arc");
+    expect(template.stages.map((s) => s.id)).toEqual([
+      "agreement",
+      "terms_accepted",
+      "deposit",
+      "delivery",
+      "criteria",
+      "review",
+      "disposition",
+      "record",
+    ]);
+    // The optional stages: review is conditional, record is bookkeeping.
+    expect(template.stages.filter((s) => !s.required).map((s) => s.id)).toEqual(
+      ["review", "record"],
+    );
+    expect(template.exceptions).toEqual([
+      "circle.transaction.outbound.failed",
+      "circle.transaction.inbound.failed",
+      "escrow.criteria.evaluation_failed",
+    ]);
+  });
+
+  it("witnesses escrow money stages by contract events, not wallet transactions", () => {
+    // An outbound wallet transaction toward the contract is ambiguous (a
+    // deposit call and a release call look identical), so the deposit stage
+    // must be closed only by the contract's own PaymentCreated.
+    const template = loadTemplate("escrow-arc");
+    const deposit = template.stages.find((s) => s.id === "deposit");
+    expect(deposit?.match.map((m) => m.event)).toEqual([
+      "circle.contract.payment_created",
     ]);
   });
 
@@ -175,9 +211,10 @@ describe("template loading", () => {
   });
 
   it("matches only events the adapter can record — no invented witnesses", () => {
-    // The success/progress vocabulary of packages/x402/src/roles. A stage
-    // matching an event no adapter emits could never close.
-    const adapterEvents = new Set([
+    // A stage matching an event no adapter emits could never close, so every
+    // witness must come from a known emitter's vocabulary.
+    // The success/progress vocabulary of packages/x402/src/roles:
+    const x402Events = [
       "x402.payment.required",
       "x402.payment.requested",
       "x402.payment.creating",
@@ -188,6 +225,35 @@ describe("template loading", () => {
       "x402.verify.ok",
       "x402.settle.started",
       "x402.settle.ok",
+    ];
+    // The trace-circle adapter's vocabulary (packages/circle/src/normalize.ts):
+    const circleEvents = [
+      "circle.transaction.inbound.complete",
+      "circle.transaction.inbound.failed",
+      "circle.transaction.outbound.complete",
+      "circle.transaction.outbound.failed",
+      "circle.contract.payment_created",
+      "circle.contract.withdrawal",
+      "circle.contract.refund",
+    ];
+    // The escrow demo backend's obligation vocabulary — emitted by the demo
+    // service's own recorder, an adapter that lives outside this repo; the
+    // escrow-arc template is the contract that fixes these names.
+    const escrowBackendEvents = [
+      "escrow.agreement.created",
+      "escrow.terms.accepted",
+      "escrow.work.delivered",
+      "escrow.criteria.evaluated",
+      "escrow.criteria.assessed",
+      "escrow.criteria.evaluation_failed",
+      "escrow.review.approved",
+      "escrow.review.rejected",
+      "escrow.record.reconciled",
+    ];
+    const adapterEvents = new Set([
+      ...x402Events,
+      ...circleEvents,
+      ...escrowBackendEvents,
     ]);
     for (const name of listTemplates()) {
       for (const stage of loadTemplate(name).stages) {
@@ -318,10 +384,10 @@ stages:
   });
 
   it("names both places searched when nothing resolves", () => {
+    // A plain-string toThrow is a substring check, so a Windows path's
+    // backslashes cannot be misread as regex escapes.
     expect(() => resolveTemplate("does-not-exist", templatesDir)).toThrow(
-      new RegExp(
-        `template not found: does-not-exist \\(looked in ${templatesDir}, then the templates shipped with the CLI\\)`,
-      ),
+      `template not found: does-not-exist (looked in ${templatesDir}, then the templates shipped with the CLI)`,
     );
   });
 
@@ -343,12 +409,13 @@ stages:
 
     // A shadowed built-in appears once, as the local file that wins.
     expect(all.map((t) => [t.name, t.origin])).toEqual([
+      ["escrow-arc", "builtin"],
       ["my-op", "local"],
       ["x402-buyer", "local"],
       ["x402-facilitator", "builtin"],
       ["x402-seller", "builtin"],
     ]);
-    expect(all[1]?.path).toBe(join(templatesDir, "x402-buyer.yaml"));
+    expect(all[2]?.path).toBe(join(templatesDir, "x402-buyer.yaml"));
   });
 
   it("does not list a directory that happens to be named like a template", () => {
@@ -357,6 +424,7 @@ stages:
     mkdirSync(join(templatesDir, "archive.yaml"));
     expect(listLocalTemplates(templatesDir)).toEqual([]);
     expect(listAllTemplates(templatesDir).map((t) => t.name)).toEqual([
+      "escrow-arc",
       "x402-buyer",
       "x402-facilitator",
       "x402-seller",

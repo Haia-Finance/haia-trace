@@ -37,7 +37,8 @@ describe("haia-trace template list", () => {
     expect(text).toContain("x402-seller");
     expect(text).toContain("built-in");
     expect(text).toContain("x402-facilitator");
-    expect(text).toContain("3 templates available.");
+    expect(text).toContain("escrow-arc");
+    expect(text).toContain("4 templates available.");
   });
 
   it("lists a project template by the path build would load it from", () => {
@@ -49,7 +50,7 @@ describe("haia-trace template list", () => {
     const text = output(() => runTemplateList({ templatesDir: dir }));
     expect(text).toContain("my-op");
     expect(text).toContain(path);
-    expect(text).toContain("4 templates available.");
+    expect(text).toContain("5 templates available.");
   });
 });
 
@@ -147,7 +148,11 @@ describe("haia-trace template --dir", () => {
     const text = output(() => {
       runTemplateNew("my-op", { dir: root });
     });
-    expect(text).toContain(`haia-trace build --template my-op --dir "${root}"`);
+    // The suggestion quotes paths with JSON.stringify (which doubles Windows
+    // backslashes), so the expectation must encode the path the same way.
+    expect(text).toContain(
+      `haia-trace build --template my-op --dir ${JSON.stringify(root)}`,
+    );
     expect(text).not.toContain("--templates-dir");
   });
 
@@ -156,7 +161,7 @@ describe("haia-trace template --dir", () => {
       runTemplateNew("my-op", { templatesDir: dir });
     });
     expect(text).toContain(
-      `haia-trace build --template my-op --templates-dir "${dir}"`,
+      `haia-trace build --template my-op --templates-dir ${JSON.stringify(dir)}`,
     );
   });
 
@@ -190,7 +195,7 @@ describe("haia-trace template --dir", () => {
     // Echoing only the narrower one would send the next `build` at the default
     // root — silently building another project's runs if one is on disk.
     expect(text).toContain(
-      `haia-trace build --template my-op --dir "${root}" --templates-dir "${shared}"`,
+      `haia-trace build --template my-op --dir ${JSON.stringify(root)} --templates-dir ${JSON.stringify(shared)}`,
     );
   });
 });

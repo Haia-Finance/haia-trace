@@ -35,6 +35,18 @@ export interface EventInput {
   role?: Role;
   /** Operation-grouping id, when the adapter has one from its runtime context. */
   context_id?: string;
+  /**
+   * When the fact occurred (ISO-8601 UTC, millisecond precision — the Event
+   * Contract's canonical form, which lexical ordering relies on). For sources
+   * that learn about a fact after it happened — a webhook delivery, a chain
+   * query — capture time is NOT fact time: deliveries retry and arrive out of
+   * order, so stamping the clock would order the operation by delivery
+   * accidents. Such adapters pass the fact's own timestamp from their payload;
+   * where the fact's time comes from is the adapter's knowledge, not core's.
+   * In-process adapters (whose hooks fire at the moment of the fact) simply
+   * omit this and get the recorder's clock, as before.
+   */
+  occurred_at?: string;
 }
 
 export interface EventRecorder {
@@ -75,7 +87,9 @@ export function createRecorder(options: RecorderOptions): EventRecorder {
       return {
         event_id: newId(),
         event_type: input.event_type,
-        occurred_at: now(),
+        // The adapter's fact time when it has one (after-the-fact sources);
+        // the session clock otherwise. See `EventInput.occurred_at`.
+        occurred_at: input.occurred_at ?? now(),
         ...(input.context_id !== undefined
           ? { context_id: input.context_id }
           : {}),

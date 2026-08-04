@@ -49,6 +49,19 @@ describe("haia-trace sample", () => {
     expect(out).toContain("x402.verify.failed");
   });
 
+  it("assembles three escrow receipts — full, dangerous partial, failed deposit", () => {
+    const out = sampleOutput("escrow-arc");
+
+    // One fully resolved escrow...
+    expect(out).toContain("FULL");
+    // ...one where money moved while the obligation was never evaluated —
+    // the culmination case: disposition confirmed, criteria missing...
+    expect(out).toContain("PARTIAL");
+    expect(out).toContain("release authority cannot be established");
+    // ...and one whose funding attempt failed on chain.
+    expect(out).toContain("circle.transaction.outbound.failed");
+  });
+
   it("defaults to x402-buyer when no template is given", () => {
     expect(sampleOutput()).toContain("x402-buyer");
   });

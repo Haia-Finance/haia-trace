@@ -1,0 +1,68 @@
+# The escrow operation on Arc, observed by two independent witnesses: Circle
+# webhooks (the money half — the trace-circle adapter's `circle.*` events) and
+# the escrow service's own backend (the obligation half — `escrow.*` events).
+# Money stages are witnessed by CONTRACT events because they carry semantics a
+# wallet transaction cannot: a deposit call and a release call are both
+# outbound contract executions from the wallet's point of view. `chain.*`
+# names are reserved for a future chain-query adapter, which will join these
+# match-sets as the stronger on-chain witness.
+template: escrow-arc
+version: 1
+stages:
+  - id: agreement
+    required: true
+    match:
+      - event: escrow.agreement.created
+    missing_explanation: "no escrow agreement was observed — nothing binds the parties to a deliverable or amount"
+  - id: terms_accepted
+    required: true
+    match:
+      - event: escrow.terms.accepted
+    missing_explanation: "an agreement exists but acceptance by both parties was not observed — the obligation is not yet binding"
+  - id: deposit                                    # money IN — the lock
+    required: true
+    match:
+      # The contract's own PaymentCreated is the only unambiguous witness: an
+      # outbound wallet transaction toward the contract could equally be a
+      # deposit call or a release call (both are contract executions), so
+      # circle.transaction.outbound.* is kept as evidence, not as a witness.
+      - event: circle.contract.payment_created
+    missing_explanation: "terms were accepted but no funds were observed locked in the escrow contract"
+  - id: delivery
+    required: true
+    match:
+      - event: escrow.work.delivered
+    missing_explanation: "funds are locked in escrow but no deliverable submission was observed — money settled, obligation not started"
+  - id: criteria                                   # the evaluation that grants (or denies) release authority
+    required: true
+    match:
+      - event: escrow.criteria.evaluated           # deterministic rule engine; payload.result in {pass, fail}
+      - event: escrow.criteria.assessed            # non-deterministic / LLM judgment; closes the stage but carries no deterministic authority
+    missing_explanation: "a deliverable was submitted but never evaluated against the acceptance criteria — release authority cannot be established"
+  - id: review                                     # conditional — present only when criteria are uncertain or disputed
+    required: false
+    match:
+      - event: escrow.review.approved
+      - event: escrow.review.rejected
+    missing_explanation: "human review was requested but neither approval nor rejection was observed — the operation is waiting on a person"
+  - id: disposition                                # money OUT — release OR refund closes it
+    required: true
+    match:
+      - event: circle.contract.withdrawal          # released to the provider
+      - event: circle.contract.refund              # returned to the client
+      - event: circle.transaction.inbound.complete # the funds arriving from the contract at a wallet
+    missing_explanation: "criteria were evaluated but neither a release nor a refund was observed — funds are still locked and the obligation is unresolved"
+  - id: record                                     # business-ledger reconciliation
+    required: false
+    match:
+      - event: escrow.record.reconciled
+    missing_explanation: "funds were dispositioned but no accounting/ledger record was observed"
+# Faults that mark the operation attention-worthy instead of closing a stage.
+# On-chain reverts belong to the future chain-query adapter's vocabulary; a
+# dispute event has no observable source in the v1 stack and is deliberately
+# not listed — an exception no adapter can emit would be a dead line that
+# overpromises coverage.
+exceptions:
+  - circle.transaction.outbound.failed   # a funding attempt failed
+  - circle.transaction.inbound.failed    # a payout transaction failed
+  - escrow.criteria.evaluation_failed    # the evaluator errored (NOT a clean result=fail)

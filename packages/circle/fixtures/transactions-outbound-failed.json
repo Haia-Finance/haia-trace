@@ -1,0 +1,22 @@
+{
+  "subscriptionId": "8e29afe0-6d3d-4c47-a11d-8d1d24d8b1a3",
+  "notificationId": "0d5f2a8c-91e4-4f6b-b7a3-5c8d9e0f1a2b",
+  "notificationType": "transactions.outbound",
+  "notification": {
+    "id": "7be20a3f-14dd-5b81-bd52-8cfad2b0bb01",
+    "blockchain": "ARC-TESTNET",
+    "walletId": "fe4a0d57-4a89-4b39-9e46-2f8fbf0a0f7a",
+    "tokenId": "36b6931e-6a24-5b52-9d0f-e0f0b9e64b5a",
+    "sourceAddress": "0x6f4bc2a3d1a5c9b8e7f6a5d4c3b2a1908f7e6d5c",
+    "destinationAddress": "0x92b7e5c1d4f3a2b1c0d9e8f7a6b5c4d3e2f10987",
+    "amounts": ["500"],
+    "nftTokenIds": [],
+    "state": "FAILED",
+    "errorReason": "INSUFFICIENT_NATIVE_TOKEN_BALANCE",
+    "transactionType": "OUTBOUND",
+    "createDate": "2026-07-28T13:10:02.000Z",
+    "updateDate": "2026-07-28T13:10:05.190Z"
+  },
+  "timestamp": "2026-07-28T13:10:05.512Z",
+  "version": 2
+}
