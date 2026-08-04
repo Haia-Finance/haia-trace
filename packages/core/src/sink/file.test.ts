@@ -112,23 +112,31 @@ describe("createRunEventWriter", () => {
     expect(runIdFromPath(writer.path)).toBe("1");
   });
 
-  it("fails open the same way when only the run file cannot be created", () => {
-    // Here the directory is fine and it is the *file* that cannot be created,
-    // because a directory already occupies its name. This is the half of the
-    // creation step an existing-but-unwritable `.trace/events` reaches, and it
-    // has to behave exactly like the directory half.
-    mkdirSync(join(dir, "1.ndjson"));
-    const reported: unknown[] = [];
-    const writer = createRunEventWriter(dir, {
-      now: () => 1,
-      onError: (err) => reported.push(err),
-    });
-    expect(reported).toHaveLength(1);
-    expect(() =>
-      writer.write(rec.event({ event_type: "a", payload: {} })),
-    ).not.toThrow();
-    expect(reported).toHaveLength(1);
-  });
+  // POSIX only: Windows opens a directory for append without error, so the
+  // eager touch has nothing to fail on and the condition surfaces at the first
+  // write instead of at construction. The failure this test stands in for — a
+  // working directory the process may not write to — still raises at creation
+  // on both platforms, and is covered by the sibling cases above.
+  it.skipIf(process.platform === "win32")(
+    "fails open the same way when only the run file cannot be created",
+    () => {
+      // Here the directory is fine and it is the *file* that cannot be created,
+      // because a directory already occupies its name. This is the half of the
+      // creation step an existing-but-unwritable `.trace/events` reaches, and it
+      // has to behave exactly like the directory half.
+      mkdirSync(join(dir, "1.ndjson"));
+      const reported: unknown[] = [];
+      const writer = createRunEventWriter(dir, {
+        now: () => 1,
+        onError: (err) => reported.push(err),
+      });
+      expect(reported).toHaveLength(1);
+      expect(() =>
+        writer.write(rec.event({ event_type: "a", payload: {} })),
+      ).not.toThrow();
+      expect(reported).toHaveLength(1);
+    },
+  );
 
   it("keeps recording when the failure is one that may still clear", async () => {
     // The fd limit is the realistic case: a busy process crosses it for a moment
