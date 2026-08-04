@@ -52,9 +52,10 @@ facilitator — and the README says exactly which parts are real.
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | [`@usehaia/trace-core`](./packages/core) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-core?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-core) | Contracts (Event / Template / Receipt) and the receipt assembler.    |
 | [`@usehaia/trace-x402`](./packages/x402) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-x402?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-x402) | Capture adapter for the x402 payment SDK — records lifecycle events. |
+| [`@usehaia/trace-circle`](./packages/circle) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-circle?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-circle) | Capture adapter for Circle webhook v2 notifications.                 |
 | [`@usehaia/trace-cli`](./packages/cli)   | [![npm](https://img.shields.io/npm/v/@usehaia/trace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-cli)   | The `haia-trace` command-line tool and renderers.                    |
 
-`trace-x402` and `trace-cli` depend on `trace-core`. Each package has its own
+The adapters and the CLI all depend on `trace-core`. Each package has its own
 README with full usage.
 
 ## Install
@@ -63,8 +64,9 @@ README with full usage.
 # The CLI — installs the `haia-trace` command
 npm install -g @usehaia/trace-cli      # or run ad hoc with `npx @usehaia/trace-cli`
 
-# The x402 capture adapter — add to the app whose payments you want to record
-npm install @usehaia/trace-x402
+# A capture adapter — add to the app whose payments you want to record
+npm install @usehaia/trace-x402      # in-process, for the x402 payment SDK
+npm install @usehaia/trace-circle    # webhook receiver, for Circle notifications
 ```
 
 ## How it fits together

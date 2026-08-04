@@ -1,8 +1,11 @@
-# @usehaia/trace-circle
+---
+title: "@usehaia/trace-circle"
+description: "Capture adapter for Circle webhook v2 notifications."
+---
 
-The [Haia Trace](https://github.com/Haia-Finance/haia-trace) capture adapter for
-[Circle webhook v2 notifications](https://developers.circle.com/api-reference/webhooks)
-— Wallets transactions and Contracts event logs.
+The capture adapter for [Circle webhook v2
+notifications](https://developers.circle.com/api-reference/webhooks) — Wallets
+transactions and Contracts event logs.
 
 Unlike an in-process adapter, this source is **external**: Circle POSTs signed
 notifications to an HTTPS endpoint, at-least-once and unordered. The package
@@ -11,11 +14,13 @@ so the pieces embed into whatever server receives the POSTs.
 
 Zero runtime dependencies beyond `@usehaia/trace-core`.
 
-> **Status: early.** The full pipeline is implemented — verification, envelope
-> validation, deduplication, and a default `circle.*` event vocabulary — and
-> exercised end to end by replay tests. It has been run against live Arc testnet
-> traffic, and the shipped fixtures include captured deliveries alongside
-> synthetic ones; no capture of a *failed* transaction exists yet.
+<Note>
+  **Status: early.** The full pipeline is implemented — verification, envelope
+  validation, deduplication, and a default `circle.*` event vocabulary — and
+  exercised end to end by replay tests. It has been run against live Arc testnet
+  traffic, and the shipped fixtures include captured deliveries alongside
+  synthetic ones; no capture of a *failed* transaction exists yet.
+</Note>
 
 ## Install
 
@@ -47,24 +52,42 @@ const result = await handler.handle(rawBody, request.headers);
 return respond(result.status);
 ```
 
-The decision contract: **400** — not a valid Circle notification (bad
-signature, malformed envelope), retrying cannot fix it; **500** — our side
-failed (key resolution, persistence), Circle should retry; **200** — accepted,
-including retries of already-accepted deliveries. One handler serves any number
-of route paths: Circle requires a unique URL per subscription, but a delivery's
-source is identified by `notification_type`, not by the URL it arrived on.
+<Warning>
+  `createFileEventWriter` appends to the path it is given and does **not** create
+  directories — that is [`createRunEventWriter`](/sdk/core)'s job. Create the
+  parent directory yourself, or the first delivery fails with `ENOENT`, the
+  handler answers 500, and Circle refuses to even verify the endpoint when the
+  subscription is created.
+</Warning>
+
+The decision contract:
+
+| Status | Meaning |
+| --- | --- |
+| **400** | Not a valid Circle notification (bad signature, malformed envelope) — retrying cannot fix it |
+| **500** | Our side failed (key resolution, persistence) — Circle should retry |
+| **200** | Accepted, including retries of already-accepted deliveries |
+
+One handler serves any number of route paths: Circle requires a unique URL per
+subscription, but a delivery's source is identified by `notification_type`, not
+by the URL it arrived on.
+
+## The event vocabulary
 
 Events are recorded in the default `circle.*` vocabulary (see
-`normalizeNotification`): terminal wallet transactions become
-`circle.transaction.{inbound|outbound}.{complete|failed}` (with `CONFIRMED`
-and `COMPLETE` folded together — chains with instant finality can skip
-`CONFIRMED`), and monitored contract events become
-`circle.contract.{payment_created|withdrawal|refund}`. Payloads are strictly
-allowlisted, `occurred_at` is the fact's own time from the payload (never the
-delivery time), and `context_id` is the escrow contract's address. A first
-verified delivery also records one session-level `trace.attached` attestation,
-so "no events" can never be mistaken for "the receiver was never wired up".
-Pass your own `normalize` to use a different vocabulary.
+`normalizeNotification`). Terminal wallet transactions become
+`circle.transaction.{inbound|outbound}.{complete|failed}` — with `CONFIRMED` and
+`COMPLETE` folded together, since chains with instant finality can skip
+`CONFIRMED`. Monitored contract events become
+`circle.contract.{payment_created|withdrawal|refund}`.
+
+Payloads are strictly allowlisted, `occurred_at` is the fact's own time from the
+payload rather than the delivery time (a transaction's `updateDate`, a contract
+event's `firstConfirmDate`), and `context_id` is the escrow contract's address.
+
+A first verified delivery also records one session-level `trace.attached`
+attestation, so "no events" can never be mistaken for "the receiver was never
+wired up". Pass your own `normalize` to use a different vocabulary.
 
 The pieces below are what the handler composes — usable directly if you need a
 different pipeline.
@@ -122,6 +145,11 @@ if (!dedupe.firstSeen(envelope.notification_id)) {
 
 Circle delivers **at-least-once** (retries reuse the same `notificationId`) and
 **unordered** — so deduplicate before writing, and key any processing off the
-state inside the payload, never off arrival order. The in-memory store is
-bounded and process-local; a long-lived listener should back the one-method
-`DedupeStore` interface with durable storage.
+state inside the payload, never off arrival order.
+
+<Warning>
+  The in-memory store is bounded and **process-local**. Two instances behind a
+  load balancer, or one instance after a cold start, will each accept the same
+  redelivered notification. A deployment that is not a single long-lived process
+  should back the one-method `DedupeStore` interface with shared storage.
+</Warning>

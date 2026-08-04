@@ -43,7 +43,7 @@
         "groups": [
           {
             "group": "Packages",
-            "pages": ["sdk/x402", "sdk/core"]
+            "pages": ["sdk/x402", "sdk/circle", "sdk/core"]
           }
         ]
       }
