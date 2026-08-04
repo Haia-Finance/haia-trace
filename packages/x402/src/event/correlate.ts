@@ -46,11 +46,40 @@ export function paymentAttemptKey(
   return typeof attempt === "string" ? `payment:${attempt}` : undefined;
 }
 
+/**
+ * The Web Crypto `randomUUID`, a global in Node >= 20, browsers, and edge
+ * runtimes. Read off `globalThis` through a local type, so this package needs no
+ * ambient DOM types to reach it — the same way `recorder.ts` in core reads it for
+ * `event_id`.
+ *
+ * Read per call rather than captured at module load: a runtime that installs its
+ * Web Crypto polyfill after this module is imported — an ordinary accident, since
+ * such polyfills are usually imported for their side effect — would otherwise be
+ * stuck with whatever was there at import time.
+ *
+ * Unguarded, deliberately. Every event already needs `crypto.randomUUID` for its
+ * `event_id`, so a runtime without it records nothing whether this reads the
+ * global or not; a fallback here would buy no capture back, and the id it
+ * invented would quietly be the run-scoped kind this module exists to stop
+ * minting.
+ */
+function randomUUID(): string {
+  return (
+    globalThis as unknown as { crypto: { randomUUID: () => string } }
+  ).crypto.randomUUID();
+}
+
 export interface CorrelatorOptions {
   /**
-   * Mints the id for a newly seen operation. Default: a per-correlator counter
-   * (`op-1`, `op-2`, …) — unique within the run, and reproducible so golden
-   * tests stay stable.
+   * Mints the id for a newly seen operation. Default: `crypto.randomUUID()`.
+   *
+   * The id has to be unique beyond the run, not merely within it. A run file is
+   * assembled on its own, so a per-run counter would do there — but the same
+   * events can also be mirrored to a Control Plane project, which holds many runs
+   * side by side and groups them by `context_id`. Two runs that both started
+   * counting at one would fold unrelated payments into a single operation.
+   *
+   * Injectable so a test can pin the value it asserts on.
    */
   newContextId?: () => string;
   /**
@@ -64,8 +93,7 @@ const DEFAULT_MAX_KEYS = 1024;
 
 export function createCorrelator(options: CorrelatorOptions = {}): Correlator {
   const maxKeys = options.maxKeys ?? DEFAULT_MAX_KEYS;
-  let operations = 0;
-  const newContextId = options.newContextId ?? (() => `op-${++operations}`);
+  const newContextId = options.newContextId ?? randomUUID;
 
   // Insertion-ordered, so the first key is the least recently used one. Anchors
   // need no bound: one belongs to exactly one payment and is collected with it.

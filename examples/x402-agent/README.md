@@ -19,23 +19,24 @@ is the short version; the details below are the source for it.
 The first call settles. The second is signed, sent, and never comes back with a
 settlement. `pnpm demo` records the run to `.trace/events/<run>.ndjson` and
 assembles one receipt per operation, against the `x402-buyer` template — the
-payment as the buyer's own client witnessed it:
+payment as the buyer's own client witnessed it — side by side here, and with the
+operation ids cut short to fit; the real ones are full uuids:
 
 ```text
-🧾 x402-buyer · op-1 · FULL      🧾 x402-buyer · op-2 · PARTIAL
+🧾 x402-buyer · ed2b9682… · FULL      🧾 x402-buyer · fe5bc1b6… · PARTIAL
 
-  ✔ challenge   confirmed          ✔ challenge   confirmed
-  ✔ payment     confirmed          ✔ payment     confirmed
-  ✔ settlement  confirmed          ✖ settlement  not confirmed  required
+  ✔ challenge   confirmed               ✔ challenge   confirmed
+  ✔ payment     confirmed               ✔ payment     confirmed
+  ✔ settlement  confirmed               ✖ settlement  not confirmed  required
 
-  operation completed              exceptions
-                                     ⚠ x402.payment.failed
+  operation completed                   exceptions
+                                          ⚠ x402.payment.failed
 
-                                   missing
-                                     settlement — the payment was submitted, but
-                                     no settlement response was observed
+                                        missing
+                                          settlement — the payment was submitted,
+                                          but no settlement response was observed
 
-                                   operation not complete
+                                        operation not complete
 ```
 
 The second operation is the point. A signed authorization left the agent, and
@@ -48,19 +49,22 @@ stayed open.
 non-zero:
 
 ```text
-✔ op-1  complete — safe to continue spending
-✖ op-2  partial — stopping the spend chain
+run 1785858302473
+
+✔ ed2b9682-c811-47b1-b8e7-4c8de4430e24  complete — safe to continue spending
+✖ fe5bc1b6-04dc-4f0f-be42-70d94e7b2d37  partial — stopping the spend chain
     missing settlement — the payment was submitted, but no settlement response was observed
     fault   x402.payment.failed
 ```
 
 Each `pnpm demo` is its own run, and receipts are keyed by run
 (`.trace/receipts/<run>~<operation>.json`), so a second demo adds two more
-receipts rather than replacing the first two — the agent numbers its operations
-per session, so both runs really do contain an `op-1`. The policy judges the
-latest run, the one the demo just built, and says how many earlier runs are still
-on disk: old evidence is kept, but a payment that failed an hour ago is not what
-decides whether the agent may spend now.
+receipts rather than replacing the first two. The run in the name is what keeps
+them apart on disk no matter what an adapter's operation ids look like. The
+policy judges the latest run, the one the demo just built, and — from the second
+demo on — says how many earlier runs are still on disk: old evidence is kept, but
+a payment that failed
+an hour ago is not what decides whether the agent may spend now.
 
 ## The integration
 

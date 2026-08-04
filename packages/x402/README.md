@@ -153,6 +153,13 @@ Because the key comes from the payment itself, a client and a server traced in
 the same process resolve the same payment to the same `context_id` — both sides
 of one operation assemble into one receipt.
 
+The value itself is a `crypto.randomUUID()` uuid, so it is unique beyond the run
+it was minted in. A run file is assembled on its own, where a per-run counter
+would do — but if you also mirror the events to a Control Plane project (the
+`@usehaia/trace-core/cp` sink), that project holds many runs side by side and
+groups them by `context_id`, and there ids that restarted with each run would fold
+unrelated payments into one operation.
+
 Some events deliberately carry no `context_id`: the `trace.attached` /
 `trace.attach_partial` / `trace.attach_failed` attestation, a protected request
 that arrived without a payment header, and `trace.capture_failed`. None belongs

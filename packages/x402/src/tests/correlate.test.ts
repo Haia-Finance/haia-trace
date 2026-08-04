@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createCorrelator, paymentAttemptKey } from "../event/correlate.js";
 
@@ -34,6 +34,10 @@ describe("paymentAttemptKey", () => {
 /** Stands in for the `PaymentRequired` object the SDK threads through the hooks. */
 const anchor = () => ({ resource: { url: "https://api.example.com/report" } });
 
+/** uuidv4, the shape `crypto.randomUUID` returns. */
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 describe("createCorrelator", () => {
   it("returns no id when a firing offers no key", () => {
     const correlator = createCorrelator();
@@ -47,15 +51,30 @@ describe("createCorrelator", () => {
     const first = correlator.resolve({ unique: "payment:1" });
     const second = correlator.resolve({ unique: "payment:1" });
 
-    expect(first).toBe("op-1");
+    expect(first).toBeDefined();
     expect(second).toBe(first);
   });
 
   it("keeps unrelated payments apart", () => {
     const correlator = createCorrelator();
 
-    expect(correlator.resolve({ unique: "payment:1" })).toBe("op-1");
-    expect(correlator.resolve({ unique: "payment:2" })).toBe("op-2");
+    expect(correlator.resolve({ unique: "payment:1" })).not.toBe(
+      correlator.resolve({ unique: "payment:2" }),
+    );
+  });
+
+  it("mints a uuid, so an id is unique beyond the run it was minted in", () => {
+    // Two correlators stand in for two runs of the same program. Their ids have
+    // to differ even for the identical key: a Control Plane project stores every
+    // run's events together and groups them by `context_id`, so a value that
+    // restarted per run would merge payments that have nothing to do with each
+    // other.
+    const first = createCorrelator().resolve({ unique: "payment:1" });
+    const second = createCorrelator().resolve({ unique: "payment:1" });
+
+    expect(first).toMatch(UUID_V4);
+    expect(second).toMatch(UUID_V4);
+    expect(first).not.toBe(second);
   });
 
   it("carries the operation from the anchor onto the payment's nonce", () => {
@@ -101,11 +120,14 @@ describe("createCorrelator", () => {
 
     const first = correlator.resolve({ unique: "payment:1" });
     correlator.resolve({ unique: "payment:2" });
-    correlator.resolve({ unique: "payment:3" });
+    const third = correlator.resolve({ unique: "payment:3" });
 
     // payment:1 was pushed out, so it opens a new operation rather than rejoining.
     expect(correlator.resolve({ unique: "payment:1" })).not.toBe(first);
-    expect(correlator.resolve({ unique: "payment:3" })).toBe("op-3");
+    // payment:3 survived the cap with an id of its own — still there, and never
+    // handed the id of a key it evicted.
+    expect(correlator.resolve({ unique: "payment:3" })).toBe(third);
+    expect(third).not.toBe(first);
   });
 
   it("uses an injected id source", () => {
@@ -116,5 +138,26 @@ describe("createCorrelator", () => {
 
     expect(correlator.resolve({ unique: "payment:1" })).toBe("a");
     expect(correlator.resolve({ unique: "payment:2" })).toBe("b");
+  });
+
+  it("reads the uuid source per call, not once at import", async () => {
+    // A runtime whose Web Crypto arrives as a polyfill — imported for its side
+    // effect, so its order against this module's import is luck — must still mint
+    // uuids. Imported with the global absent, exactly as that race leaves it, and
+    // the polyfill lands before the first payment does.
+    const { crypto } = globalThis;
+    delete (globalThis as { crypto?: unknown }).crypto;
+    try {
+      vi.resetModules();
+      const { createCorrelator: imported } = await import(
+        "../event/correlate.js"
+      );
+      globalThis.crypto = crypto;
+
+      expect(imported().resolve({ unique: "payment:1" })).toMatch(UUID_V4);
+    } finally {
+      globalThis.crypto = crypto;
+      vi.resetModules();
+    }
   });
 });

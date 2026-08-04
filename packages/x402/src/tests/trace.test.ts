@@ -92,7 +92,9 @@ describe("what a recorded run contains", () => {
       seq: 1,
       adapter: "trace-x402",
       role: "server",
-      context_id: "op-1",
+      // The value is a uuid the correlator minted, so only its presence is
+      // asserted here; `correlate.test.ts` covers what it is made of.
+      context_id: expect.any(String),
     });
     expect(event!.payload).toEqual({
       x402_version: 2,
@@ -171,9 +173,11 @@ describe("trace() operation grouping", () => {
       "x402.payment.submitted",
       "x402.payment.responded",
     ]);
-    expect(new Set(payments(events).map((event) => event.context_id))).toEqual(
-      new Set(["op-1"]),
+    const operations = new Set(
+      payments(events).map((event) => event.context_id),
     );
+    expect(operations.size).toBe(1);
+    expect([...operations][0]).toBeDefined();
   });
 
   it("keeps two INTERLEAVED payments for the same resource fully apart", () => {
@@ -218,10 +222,9 @@ describe("trace() operation grouping", () => {
         (byOperation.get(event.context_id) ?? 0) + 1,
       );
     }
-    expect([...byOperation.entries()].sort()).toEqual([
-      ["op-1", 3],
-      ["op-2", 3],
-    ]);
+    expect(byOperation.size).toBe(2);
+    expect([...byOperation.keys()].every((id) => id !== undefined)).toBe(true);
+    expect([...byOperation.values()]).toEqual([3, 3]);
   });
 
   it("joins a client and a server traced in the same process on one operation", () => {
