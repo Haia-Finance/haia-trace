@@ -120,6 +120,20 @@ at the same directory. `haia-trace` reads and writes `.trace/events` unless its
 resolves against the working directory — what an app started from its own project
 root wants; pass an absolute one when the cwd is not fixed.
 
+`createRunEventWriter` is fail-open about the run file: if the directory or the
+file cannot be created for a reason no later write can clear — a container whose
+working directory the process may not write to is the usual cause — the error
+goes to `onError` and the writer it returns accepts events and drops them. You
+get one report of the real cause rather than one per captured event, and a
+handler that throws is absorbed rather than surfacing in your code. A failure
+that may pass, such as the open-file limit, is reported and then recorded through
+once it clears. Passing no directory at all is a caller mistake rather than a
+disk condition, and still throws.
+
+Wire `onError` on any producer whose run file matters. Recording nothing is the
+correct outcome when the disk refuses, but without a handler that refusal has
+nowhere to go, and the run is simply absent.
+
 ## License
 
 [MIT](https://github.com/Haia-Finance/haia-trace/blob/main/LICENSE)
