@@ -2,25 +2,32 @@
 name: trace-release
 argument-hint: "[patch|minor|major|X.Y.Z]"
 arguments: version
-description: Bump the shared version of the three published npm packages (@usehaia/trace-core, trace-x402, trace-cli), commit the bump with this repo's `chore` release subject, and cut the matching vX.Y.Z tag. Use this skill whenever the user wants to release/publish/ship the packages, cut or tag a version, bump the package version, or asks what the next release number should be — even if they only say something short like "release a patch" or "bump to 0.1.0" and never mention the word "skill". Also use it when they ask how a release works here or why a version tag matters, since the tag is what triggers the npm publish. Not for bumping a dependency or devDependency version (including anything in the `catalog:` block), Node or `engines` version questions, the `version:` field inside operation templates, or deploying the docs site — none of those touch a release.
+description: Bump the shared version of the four published npm packages (@usehaia/trace-core, trace-x402, trace-cli, trace-circle), commit the bump with this repo's `chore` release subject, and cut the matching vX.Y.Z tag. Use this skill whenever the user wants to release/publish/ship the packages, cut or tag a version, bump the package version, or asks what the next release number should be — even if they only say something short like "release a patch" or "bump to 0.1.0" and never mention the word "skill". Also use it when they ask how a release works here or why a version tag matters, since the tag is what triggers the npm publish. Not for bumping a dependency or devDependency version (including anything in the `catalog:` block), Node or `engines` version questions, the `version:` field inside operation templates, or deploying the docs site — none of those touch a release.
 ---
 
 # Releasing haia-trace
 
-A release here is three lines of JSON, one commit, and one tag. The tag is the
+A release here is four lines of JSON, one commit, and one tag. The tag is the
 part that matters: pushing `vX.Y.Z` triggers `.github/workflows/release.yml`,
-which publishes all three packages to npm's `latest`. **A published npm version
+which publishes every package to npm's `latest`. **A published npm version
 is permanent — it can never be replaced.** So the work is cheap and the mistake
 is expensive, which is why this skill front-loads verification and stops before
 the push.
 
 ## What carries the version
 
-Exactly three files, all bumped in lockstep to the same number:
+Exactly four files, all bumped in lockstep to the same number:
 
 - `packages/core/package.json`
 - `packages/x402/package.json`
 - `packages/cli/package.json`
+- `packages/circle/package.json`
+
+The workflow publishes with `pnpm -r publish`, which takes whatever the
+workspace exposes rather than a list it keeps in step by hand. A new publishable
+package therefore ships the moment it exists — so adding one means adding it to
+`scripts/bump.mjs` too, or it would be published at whatever stale version its
+manifest still carried.
 
 Nothing else. Deliberately *not* bumped:
 
@@ -34,7 +41,7 @@ Nothing else. Deliberately *not* bumped:
   manifest at runtime, precisely so there is one source of truth
 
 That list is the reason step 4 below greps for the old version: if it turns up
-anywhere outside those three manifests, someone has hardcoded a version since
+anywhere outside those four manifests, someone has hardcoded a version since
 this skill was written, and it needs bumping too (and probably de-hardcoding).
 
 ## Steps
@@ -90,7 +97,7 @@ node .claude/skills/trace-release/scripts/bump.mjs <patch|minor|major|X.Y.Z>
 ```
 
 Pass whatever step 2 settled on — don't substitute a default here. It refuses to run if the
-three manifests disagree about the current version, since that means a previous
+manifests disagree about the current version, since that means a previous
 release was half-applied and the right fix is to look, not to overwrite.
 
 ### 4. Verify the diff is boring
@@ -101,7 +108,7 @@ git diff
 git grep -nF "<old-version>" -- ':!.claude'
 ```
 
-Expect exactly three files, one changed line each. `git grep` searches tracked
+Expect exactly four files, one changed line each. `git grep` searches tracked
 files only, which is the scope that matters — no `node_modules`, no `dist`, and no
 hand-maintained list of extensions to keep in step with the repo. The `:!.claude`
 excludes this skill, which cites real version numbers as examples and would
@@ -109,16 +116,17 @@ otherwise report itself as a stray hardcoding on every release.
 
 The grep should come back empty. If it doesn't, see "What carries the version"
 above: something has hardcoded a version that shouldn't. Fix it, but commit that
-fix separately — step 5 keeps the release commit to the three manifests.
+fix separately — step 5 keeps the release commit to the four manifests.
 
 ### 5. Commit
 
-Stage the three manifests by name rather than with `git commit -a`, so the
+Stage the four manifests by name rather than with `git commit -a`, so the
 release commit stays a pure version bump even if something else is sitting in the
 working tree:
 
 ```sh
-git add packages/core/package.json packages/x402/package.json packages/cli/package.json
+git add packages/core/package.json packages/x402/package.json \
+        packages/cli/package.json packages/circle/package.json
 git commit -m "chore: release vX.Y.Z"
 ```
 
@@ -158,6 +166,22 @@ Tell them plainly that the second command is what publishes, and that they can
 watch it at the repo's Actions tab. Pushing the branch without the tag is safe
 and publishes nothing.
 
+## Releasing a package for the first time
+
+A package that has never been published is the one case this flow does not carry
+end to end. Releases authenticate by trusted publishing, which npm configures
+**per package**, from that package's settings page — and a package with no
+versions has no settings page. So the first publish of a new name can fail in
+the workflow with an authentication error while every already-published package
+in the same run succeeds.
+
+Check before cutting the tag, rather than after: look up whether the name exists
+(`npm view <name> version`), and if it does not, confirm with whoever owns the
+npm org how the first version should go out and whether a trusted publisher can
+be registered ahead of it. The rest of the release is unaffected — versions are
+still bumped in lockstep, and a failed first publish leaves the other packages
+published and the new one simply absent.
+
 ## If something goes wrong
 
 - **Checks fail at commit time** — the bump is still in the working tree. Fix the
@@ -167,7 +191,7 @@ and publishes nothing.
 - **Wrong version tagged, not yet pushed** — `git tag -d vX.Y.Z`, amend or reset
   the commit, redo. Nothing has escaped.
 - **The bump script reports that the packages disagree** — either a write failed
-  partway through its three files, or a previous release was half-applied. Nothing
+  partway through its files, or a previous release was half-applied. Nothing
   is committed at that point, so `git checkout -- packages` returns you to a clean
   state; then look at why before re-running.
 - **Tag already pushed** — the publish has likely already run. Deleting the tag

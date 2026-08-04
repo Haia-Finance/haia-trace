@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Set the version of the three published packages, in lockstep.
+// Set the version of the published packages, in lockstep.
 //
 // Usage: node bump.mjs <patch|minor|major|X.Y.Z>
 //
-// The three manifests are the only place the version lives (see SKILL.md), so
-// this rewrites just the top-level "version" field in each and leaves the rest
-// of the file byte-for-byte alone — a JSON.parse/stringify round-trip would
+// These manifests are the only place the version lives (see SKILL.md), so this
+// rewrites just the top-level "version" field in each and leaves the rest of
+// the file byte-for-byte alone — a JSON.parse/stringify round-trip would
 // reformat manifests that are otherwise hand-maintained.
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,7 +18,11 @@ const repoRoot = resolve(
   "../../../..",
 );
 
-const MANIFESTS = ["core", "x402", "cli"].map((pkg) =>
+// Every publishable package. The release workflow publishes with `pnpm -r
+// publish`, which takes whatever the workspace exposes — so a package missing
+// from this list would still be published, at whatever stale version its
+// manifest happens to carry.
+const MANIFESTS = ["core", "x402", "cli", "circle"].map((pkg) =>
   join(repoRoot, "packages", pkg, "package.json"),
 );
 
@@ -54,7 +58,7 @@ const files = MANIFESTS.map((path) => {
   return { path, text, current: match[2] };
 });
 
-// All three must already agree. Disagreement means a previous release was only
+// They must already agree. Disagreement means a previous release was only
 // half-applied, and overwriting would hide that rather than fix it.
 const currents = new Set(files.map((f) => f.current));
 if (currents.size !== 1) {
