@@ -42,24 +42,77 @@ export type { SinkErrorHandler } from "./contract.js";
 const RUN_EXT = ".ndjson";
 
 /**
+ * Errno codes that put a path out of reach rather than report a machine
+ * momentarily short of a resource: repeating the same write cannot clear them.
+ *
+ * Everything else is treated as transient and left to the next append —
+ * `EMFILE`/`ENFILE` (the fd limit, which a busy process crosses and comes back
+ * from), `ENOSPC` (a disk that may be freed), `EBUSY`, `EIO`. Erring toward
+ * transient is the safe direction: mistaking a permanent failure for a passing
+ * one costs a repeated error report, while the opposite costs the events.
+ */
+const UNRECOVERABLE_CODES = new Set([
+  "EACCES",
+  "EPERM",
+  "ENOENT",
+  "ENOTDIR",
+  "EISDIR",
+  "EROFS",
+  "ENAMETOOLONG",
+  "ELOOP",
+]);
+
+/** Whether a filesystem error leaves the path permanently unwritable (see above). */
+function isUnrecoverable(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" && UNRECOVERABLE_CODES.has(code);
+}
+
+/**
+ * Hand a fault to the caller's handler, absorbing a handler that throws.
+ *
+ * `onError` is foreign code on the one path whose whole purpose is to *contain*
+ * failure. A handler that rethrows — or a logger that throws on a non-`Error`
+ * argument, and what it is given is `unknown` — must not turn a sink fault back
+ * into an exception in the producer's payment path.
+ */
+function report(onError: SinkErrorHandler | undefined, err: unknown): void {
+  try {
+    onError?.(err);
+  } catch {
+    /* a handler's own failure has nowhere left to go */
+  }
+}
+
+/**
  * Open a writer over an explicit file path. Used for a run file whose path is
  * already known, and for reading/writing fixtures in tests.
  *
  * Fail-open: an append error is routed to `onError` and swallowed, never thrown —
  * a producer in a payment path must not break because the disk did.
+ *
+ * Reported once when it is the *path* that failed. An error no later append can
+ * clear — a deleted directory, a permission the process does not have — stops
+ * the writer for good, because repeating it per event would bury the first
+ * report, the only one that explains the run, under identical copies of itself.
+ * A transient error is reported and the writer keeps going, since the next
+ * append may be the one that works.
  */
 export function createFileEventWriter(
   path: string,
   onError?: SinkErrorHandler,
 ): EventWriter {
+  let stopped = false;
   return {
     write(event: TraceEvent): void {
+      if (stopped) return;
       try {
         // `appendFileSync` opens with `O_APPEND` and closes per call, so writes
         // stay atomic per line and safe across processes sharing the run file.
         appendFileSync(path, `${encodeEventLine(event)}\n`);
       } catch (err) {
-        onError?.(err);
+        stopped = isUnrecoverable(err);
+        report(onError, err);
       }
     },
     close(): void {
@@ -100,6 +153,13 @@ export interface RunEventWriter extends EventWriter {
  * The file is created eagerly, at construction: an empty run file records that
  * capture was attached and simply saw nothing, which must never read as "capture
  * failed" (the honesty invariant).
+ *
+ * Fail-open, and reported once: if the directory or the run file cannot be
+ * created for a reason no later write can clear — a container whose working
+ * directory the process may not write to is the usual cause — the error goes to
+ * `onError` and the returned writer accepts events and drops them. An unusable
+ * `dir` argument is the one exception, being a caller mistake rather than a disk
+ * condition: it throws, as below.
  */
 export function createRunEventWriter(
   dir: string,
@@ -125,7 +185,28 @@ export function createRunEventWriter(
     // Touch the file so an event-less run is still visible on disk.
     closeSync(openSync(path, "a"));
   } catch (err) {
-    options.onError?.(err);
+    report(options.onError, err);
+    // A run file that could not be created for a reason no later write can clear
+    // makes every append a certainty to fail, with an `ENOENT` that says nothing
+    // this first report did not. Hand back a writer that drops what it is given,
+    // so one root cause stays one report rather than one per captured event —
+    // noise that buries the error actually explaining the run.
+    //
+    // Only for that class of failure. A touch that lost a race for a file
+    // descriptor, or met a disk that is later freed, falls through to the
+    // ordinary writer instead: `appendFileSync` creates the file itself, so such
+    // a run still records everything from the moment the condition clears.
+    if (isUnrecoverable(err)) {
+      return {
+        path,
+        write(): void {
+          /* nowhere to append; the reason went to `onError` at construction */
+        },
+        close(): void {
+          /* nothing was opened */
+        },
+      };
+    }
   }
 
   const writer = createFileEventWriter(path, options.onError);
