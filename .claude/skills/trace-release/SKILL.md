@@ -171,16 +171,24 @@ and publishes nothing.
 A package that has never been published is the one case this flow does not carry
 end to end. Releases authenticate by trusted publishing, which npm configures
 **per package**, from that package's settings page — and a package with no
-versions has no settings page. So the first publish of a new name can fail in
-the workflow with an authentication error while every already-published package
-in the same run succeeds.
+versions has no settings page. `v0.0.6` proved it: the new name failed with
+`404 Not Found - PUT …/@usehaia%2ftrace-circle`, npm's way of saying the
+credential is not valid for a package that does not exist.
 
-Check before cutting the tag, rather than after: look up whether the name exists
-(`npm view <name> version`), and if it does not, confirm with whoever owns the
-npm org how the first version should go out and whether a trusted publisher can
-be registered ahead of it. The rest of the release is unaffected — versions are
-still bumped in lockstep, and a failed first publish leaves the other packages
-published and the new one simply absent.
+**And the run does not carry on past it.** `pnpm -r publish` works in dependency
+order and stops at the first failure, so a new package in the middle of the
+graph strands everything downstream: `v0.0.6` published `trace-core`, failed on
+`trace-circle`, and never reached `trace-x402` or `trace-cli` — a half-applied
+release whose published half is permanent.
+
+So check *before* cutting the tag, never after: `npm view <name> version` on
+every publishable package. If any name is missing, get it created on npm and its
+trusted publisher registered first — a release is not the place to find out.
+
+Recovering from a half-applied release is not a re-tag: `pnpm -r publish`
+publishes only versions the registry does not have, so once the missing name
+exists, re-running the same failed workflow finishes the release and skips what
+already went out.
 
 ## If something goes wrong
 
