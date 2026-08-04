@@ -10,6 +10,10 @@ pnpm demo     # run the agent, then assemble the receipts
 pnpm policy   # the agent reads the verdict and decides whether to keep spending
 ```
 
+The docs site shows this run as a recording at
+[developers.haia.finance/demo](https://developers.haia.finance/demo). That page
+is the short version; the details below are the source for it.
+
 ## What you get
 
 The first call settles. The second is signed, sent, and never comes back with a

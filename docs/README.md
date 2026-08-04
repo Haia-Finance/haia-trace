@@ -17,7 +17,12 @@ links before pushing.
 ## Structure
 
 - `docs.json` — site config: name, theme, colors, and the navigation tree.
-- `index.mdx`, `quickstart.mdx` — the landing and getting-started pages.
+- `index.mdx`, `quickstart.mdx`, `demo.mdx` — the landing and getting-started
+  pages. `demo.mdx` is deliberately short: recordings of a real run plus the apps
+  running it, and no implementation detail a `sdk/`, `cli/` or `concepts/` page
+  already carries. It is the page the "run the demo" links point at.
+- `assets/` — the terminal recordings on `demo.mdx`: each `.gif` is rendered from
+  the `.cast` beside it with [`agg`](https://docs.asciinema.org/manual/agg/).
 - `concepts/` — the product model (what a Receipt is).
 - `cli/` — the `haia-trace` command reference.
 - `sdk/` — the `@usehaia/trace-x402` and `@usehaia/trace-core` package docs.

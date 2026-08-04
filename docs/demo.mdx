@@ -1,0 +1,116 @@
+---
+title: Demo
+description: "A real run, end to end — and the same recorder in a live application."
+---
+
+The [Quickstart](/quickstart) replays a bundled fixture. This is a real run: an
+agent pays two APIs, `haia-trace` assembles the receipts, and the agent reads its
+own verdict and stops spending.
+
+## Run it
+
+```sh
+git clone https://github.com/Haia-Finance/haia-trace.git
+cd haia-trace && pnpm install && pnpm build
+cd examples/x402-agent
+```
+
+Three steps — record, assemble, act:
+
+```sh
+node buyer.mjs        # the agent pays two APIs, recording as it goes
+haia-trace build      # assemble one Receipt per operation from that run
+node policy.mjs       # the agent reads the verdicts and stops on the open one
+```
+
+The middle step is Trace. The other two are the agent — which is the whole point:
+recording and assembling are separate from the payment, and nothing in the
+payment path waits on them.
+
+## 1. The agent pays
+
+Two paid calls. The first settles. The second is signed, sent, and never comes
+back with a settlement — the agent is left holding a payment it cannot account
+for. It records as it goes, to a run file it owns.
+
+<Frame>
+  <img src="/assets/buyer.gif" alt="Terminal recording of node buyer.mjs: the traced agent pays two APIs, the second returning no settlement, and writes the run to .trace/events." />
+</Frame>
+
+## 2. `haia-trace build` assembles the receipts
+
+The agent has already exited. This step reads the evidence it left behind — one
+Receipt per operation — and could just as well run on another machine.
+
+<Frame>
+  <img src="/assets/build.gif" alt="Terminal recording of haia-trace build: two receipts assembled from nine events, op-1 FULL and op-2 PARTIAL with an observed fault and a missing settlement." />
+</Frame>
+
+`op-2` is the point. A signed authorization left the agent and nothing came back
+to say what became of it. The agent cannot tell a payment that never settled from
+one that settled silently — so instead of guessing either way, the receipt names
+the milestone that stayed open and records the fault it saw.
+
+## 3. The agent acts on the verdict
+
+`completeness` and `missing` are read by a machine, with no human in the loop.
+The process exits non-zero, so the same file works unchanged as a CI gate.
+
+<Frame>
+  <img src="/assets/policy.gif" alt="Terminal recording of node policy.mjs: op-1 is complete and safe to continue, op-2 is partial and stops the spend chain, exit status 1." />
+</Frame>
+
+<Note>
+  The money and the sellers are simulated — there is no chain, no facilitator and
+  no wallet. Everything between the hook firing and the verdict is the shipped
+  code path: the `@x402/core` client, its hooks, the recorder, the events on
+  disk, and the assembler. This example fakes the payment, never the trace.
+</Note>
+
+## The same recorder in a full application
+
+[arc-nanopayments](https://github.com/Haia-Finance/arc-nanopayments) is a
+complete app — gasless USDC nanopayments on Arc, with an autonomous buyer agent,
+a Next.js seller and a dashboard. It traces **both sides** of the payment, and
+attaches to Circle's `@circle-fin/x402-batching` rather than `@x402/core`: the
+same one-line attach against another SDK's hooks.
+
+<CardGroup cols={2}>
+  <Card title="The buyer" icon="robot" href="https://github.com/Haia-Finance/arc-nanopayments/blob/master/agent.mts">
+    `agent.mts` — the agent attaches to its `GatewayClient` and records as
+    `arc-nanopayments-buyer`.
+  </Card>
+  <Card title="The seller" icon="server" href="https://github.com/Haia-Finance/arc-nanopayments/blob/master/lib/x402.ts">
+    `lib/x402.ts` — the paywalled routes attach to the gateway middleware and
+    record as `arc-nanopayments-seller`.
+  </Card>
+</CardGroup>
+
+Its dashboard reads the run files straight back off disk and renders a payment
+timeline — the recorded **events**, not assembled Receipts. The app never has to
+ask anyone for its own evidence.
+
+Live at
+[arc-nanopayments.gdev.haust.app](https://arc-nanopayments.gdev.haust.app/) —
+it opens on a sign-in screen, and the account is in the repository's
+[Demo Credentials](https://github.com/Haia-Finance/arc-nanopayments#demo-credentials).
+
+A second app, [arc-escrow](https://github.com/Haia-Finance/arc-escrow) — an
+end-to-end escrow workflow on Arc — is still being built and is not traced yet.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connect x402" icon="plug" href="/sdk/x402">
+    The one-line attach, what gets recorded, and what never does.
+  </Card>
+  <Card title="What a Receipt is" icon="receipt" href="/concepts/operation-receipt">
+    Stages, evidence, missing, exceptions — the model behind the verdict.
+  </Card>
+  <Card title="See all three roles" icon="terminal" href="/cli/sample">
+    The buyer's, the seller's and the facilitator's view of one payment.
+  </Card>
+  <Card title="CLI reference" icon="book" href="/cli/overview">
+    Every command, flag, and the `.trace/` layout.
+  </Card>
+</CardGroup>
