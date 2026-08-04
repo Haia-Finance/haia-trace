@@ -35,6 +35,25 @@ const receipt = (operationId: string): Receipt => ({
   events: [],
 });
 
+/** A receipt whose first event fixes where the operation sorts within its run. */
+const startedAt = (
+  operationId: string,
+  occurredAt: string,
+  seq: number,
+): Receipt => ({
+  ...receipt(operationId),
+  events: [
+    {
+      event_id: `e-${operationId}`,
+      event_type: "x402.payment.required",
+      occurred_at: occurredAt,
+      seq,
+      adapter: "trace-x402",
+      payload: {},
+    },
+  ],
+});
+
 let dir: string;
 
 beforeEach(() => {
@@ -130,6 +149,36 @@ describe("listReceipts", () => {
 
     expect(receipts[0]?.run).toBe("runs/2026");
     expect(receipts[0]?.operation).toBe("https://api.example.com/data");
+  });
+
+  it("sorts a run's operations by when they started, not by id", () => {
+    // uuid operation ids carry no order, so sorting on them would list a run's
+    // payments arbitrarily — and disagree with `build`, which reports them in
+    // first-appearance order. Here the id order is deliberately the reverse of
+    // the time order.
+    writeReceipt(startedAt("aaa", "2026-01-01T00:00:02.000Z", 2), "run", dir);
+    writeReceipt(startedAt("zzz", "2026-01-01T00:00:01.000Z", 1), "run", dir);
+
+    expect(listReceipts(dir).receipts.map((e) => e.operation)).toEqual([
+      "zzz",
+      "aaa",
+    ]);
+  });
+
+  it("falls back to the operation id when a receipt records no events", () => {
+    // `isReceiptShape` does not validate `events`, so a hand-edited or older
+    // file can arrive without them; the listing still has to come back.
+    writeReceipt(receipt("op-2"), "run", dir);
+    writeReceipt(
+      { ...receipt("op-1"), events: undefined } as never,
+      "run",
+      dir,
+    );
+
+    expect(listReceipts(dir).receipts.map((e) => e.operation)).toEqual([
+      "op-1",
+      "op-2",
+    ]);
   });
 
   it("sorts by run then operation, oldest run first", () => {
@@ -246,13 +295,15 @@ describe("findReceipt", () => {
     const id = "https://api.example.com/data";
     writeReceipt(receipt(id), "runs/2026", dir);
 
-    const found = findReceipt(listReceipts(dir), "runs/2026", id);
+    const found = findReceipt(listReceipts(dir), "runs/2026", id).entry;
     expect(found?.receipt.operation.operation_id).toBe(id);
     expect(found?.run).toBe("runs/2026");
   });
 
   it("returns null for a receipt that is not there", () => {
-    expect(findReceipt(listReceipts(dir), "run", "op-1")).toBeNull();
+    const lookup = findReceipt(listReceipts(dir), "run", "op-1");
+    expect(lookup.entry).toBeNull();
+    expect(lookup.ambiguous).toEqual([]);
   });
 
   it("does not match an operation from a different run", () => {
@@ -260,8 +311,43 @@ describe("findReceipt", () => {
     // or `show --run` would answer with another run's verdict.
     writeReceipt(receipt("op-1"), "run-a", dir);
     const stored = listReceipts(dir);
-    expect(findReceipt(stored, "run-b", "op-1")).toBeNull();
-    expect(findReceipt(stored, "run-a", "op-1")).not.toBeNull();
+    expect(findReceipt(stored, "run-b", "op-1").entry).toBeNull();
+    expect(findReceipt(stored, "run-a", "op-1").entry).not.toBeNull();
+  });
+
+  it("finds a receipt by an unambiguous prefix of its operation", () => {
+    // A uuid operation id is not typed from memory, so a prefix is how the
+    // command is actually used.
+    writeReceipt(receipt("9b5e7013-2b5e-4f1e-89b3-4287bb321412"), "run", dir);
+    writeReceipt(receipt("88cdd424-e18f-47a9-88ce-4897d4be6828"), "run", dir);
+
+    const found = findReceipt(listReceipts(dir), "run", "9b5e").entry;
+    expect(found?.operation).toBe("9b5e7013-2b5e-4f1e-89b3-4287bb321412");
+  });
+
+  it("resolves a prefix matching several operations to nothing, and names them", () => {
+    // Showing whichever sorted first would answer a question the caller did not
+    // ask — about a payment they did not name.
+    writeReceipt(receipt("ab-one"), "run", dir);
+    writeReceipt(receipt("ab-two"), "run", dir);
+
+    const lookup = findReceipt(listReceipts(dir), "run", "ab-");
+    expect(lookup.entry).toBeNull();
+    expect(lookup.ambiguous.map((entry) => entry.operation)).toEqual([
+      "ab-one",
+      "ab-two",
+    ]);
+  });
+
+  it("prefers an exact match over a longer id it prefixes", () => {
+    // `op` is a whole operation here and a prefix of another; the id that exists
+    // wins, or naming a receipt exactly could still be ambiguous.
+    writeReceipt(receipt("op"), "run", dir);
+    writeReceipt(receipt("op-1"), "run", dir);
+
+    expect(findReceipt(listReceipts(dir), "run", "op").entry?.operation).toBe(
+      "op",
+    );
   });
 });
 

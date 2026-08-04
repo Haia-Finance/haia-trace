@@ -32,6 +32,7 @@ import {
   findReceipt,
   latestRun,
   listReceipts,
+  type ReceiptLookup,
   type StoredReceipt,
   type StoredReceipts,
   type UnreadableReceipt,
@@ -302,8 +303,13 @@ export function runReceiptShow(
     operation === undefined
       ? inRun
       : [
-          findReceipt(stored, run, operation) ??
-            notFound(dir, run, operation, inRun),
+          resolve(
+            dir,
+            run,
+            operation,
+            inRun,
+            findReceipt(stored, run, operation),
+          ),
         ];
 
   return report(
@@ -314,6 +320,33 @@ export function runReceiptShow(
     },
     options,
   );
+}
+
+/**
+ * The one receipt a lookup named, or the error explaining why there isn't one.
+ *
+ * The two failures are kept apart because they call for opposite fixes: an id
+ * that matched nothing is a typo or the wrong run, while a prefix that matched
+ * several needs *more* characters, not different ones. Telling a caller who typed
+ * a valid short prefix that no such receipt exists would send them looking for
+ * the wrong problem.
+ */
+function resolve(
+  dir: string,
+  run: string,
+  operation: string,
+  inRun: StoredReceipt[],
+  lookup: ReceiptLookup,
+): StoredReceipt {
+  if (lookup.entry !== null) return lookup.entry;
+  if (lookup.ambiguous.length > 0) {
+    throw new Error(
+      `"${operation}" matches ${lookup.ambiguous.length} operations in run "${run}" (${dir}) — use more of the id: ${lookup.ambiguous
+        .map((entry) => entry.operation)
+        .join(", ")}`,
+    );
+  }
+  throw notFound(dir, run, operation, inRun);
 }
 
 /**

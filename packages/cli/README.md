@@ -86,12 +86,12 @@ haia-trace build --json                # machine-readable output for agents
 | `--json`                 | Emit `{ runs: [{ run, path, assembled, receipts, unassigned }], template }` as JSON instead of a terminal summary. `--status` narrows `receipts` here too. |
 
 Several runs mean several builds, never one merged event set. An event carries no
-run id — the run *is* its file name — and `context_id` is only unique within a
-run, since an adapter may number operations per session (the x402 one does:
-`op-1`, `op-2`, …). Folding two runs together would therefore merge two unrelated
-payments that happen to share an id. So each run is read, assembled and reported
-on its own, and its receipts are stored under its run id — which is also why the
-receipt file name carries both.
+run id — the run *is* its file name — and `context_id` is only guaranteed unique
+within a run, since an adapter may number operations per session. Folding two
+runs together would therefore merge two unrelated payments that happen to share
+an id. So each run is read, assembled and reported on its own, and its receipts
+are stored under its run id — which is also why the receipt file name carries
+both.
 
 For the same reason, two run files with the *same name* in different directories
 are refused rather than built: their receipts would collide on disk, and the
@@ -130,12 +130,17 @@ haia-trace receipt list                    # every receipt, grouped by run
 haia-trace receipt list --run 1721709600000
 haia-trace receipt list --status partial   # only the unresolved ones
 haia-trace receipt show                    # the whole of the most recent run
-haia-trace receipt show op-2               # one operation from that run
-haia-trace receipt show op-2 --run 1721709600000
+haia-trace receipt show 9b5e7013           # one operation, named by an id prefix
+haia-trace receipt show 9b5e7013 --run 1721709600000
 haia-trace receipt list --json             # the index, for an agent to read
 ```
 
-`list` groups by run, oldest first:
+An operation is named in full or by any prefix that matches just one of the run's
+operations — the x402 adapter mints a uuid per payment, so the short form is what
+you reach for. The ids below are shortened for the same reason.
+
+`list` groups by run, oldest first, and a run's operations in the order they
+started:
 
 ```text
 🧾 Receipts

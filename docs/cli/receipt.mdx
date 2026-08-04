@@ -44,7 +44,14 @@ haia-trace receipt list
 Each line carries the operation, its verdict, and the template the verdict was
 assembled against — two receipts in one run can be judged against different shapes,
 and a verdict means nothing without knowing which. The stages behind the verdict are
-what `show` is for.
+what `show` is for. A run's operations are listed in the order they started, the
+same order `build` reports them in.
+
+<Note>
+  Operation ids come from the adapter that recorded the events, so what you see
+  depends on it: the x402 adapter mints a uuid per payment, while the ids in these
+  examples are shortened to keep the samples readable.
+</Note>
 
 Narrow it with either filter:
 
@@ -85,13 +92,17 @@ haia-trace receipt show
 Name an operation for one receipt, and add `--run` to reach an older one:
 
 ```sh
-haia-trace receipt show op-2
-haia-trace receipt show op-2 --run 1721709600000
+haia-trace receipt show 9b5e7013-2b5e-4f1e-89b3-4287bb321412
+haia-trace receipt show 9b5e7013 --run 1721709600000   # a prefix is enough
 ```
 
+Any leading part of the id works, as long as it names one operation in the run —
+handy when the adapter mints uuids. A prefix that matches several is refused, and
+says which, rather than picking one for you.
+
 The run is printed either way, because it is implicit unless you gave `--run` — and
-two runs of one program yield receipts with identical operation ids and different
-verdicts.
+two runs of one program can yield receipts with identical operation ids and
+different verdicts.
 
 Unlike `list`, having nothing to show is a **failure**: the caller asked for a
 verdict and there is none, so an empty store or an unknown operation exits non-zero
@@ -109,7 +120,7 @@ rather than printing nothing. An unknown operation names what the run does hold.
 
 | Argument / option          | Applies to     | Meaning                                                              |
 | -------------------------- | -------------- | -------------------------------------------------------------------- |
-| `[operation]`              | `show`         | Operation to show. Default: every operation in the run.               |
+| `[operation]`              | `show`         | Operation to show, in full or by any prefix naming just one. Default: every operation in the run. |
 | `--run <id>`               | `list`, `show` | Which run. Default: every run for `list`, the most recent for `show`. |
 | `--status <full\|partial>` | `list`         | Show only receipts with this verdict.                                 |
 | `--dir <path>`             | `list`, `show` | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`. |

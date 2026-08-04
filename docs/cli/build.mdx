@@ -43,11 +43,11 @@ haia-trace build --json                   # machine-readable output for agents
 ## One build per run
 
 Several runs mean several builds, never one merged event set. An event carries no
-run id — the run *is* its file name — and `context_id` is only unique within a
-run, since an adapter may number operations per session (the x402 one does:
-`op-1`, `op-2`, …). Folding two runs together would merge two unrelated payments
-that happen to share an id, so each run is read, assembled and reported on its
-own, and its receipts are stored under its run id.
+run id — the run *is* its file name — and `context_id` is only guaranteed unique
+within a run, since an adapter may number operations per session. Folding two
+runs together would merge two unrelated payments that happen to share an id, so
+each run is read, assembled and reported on its own, and its receipts are stored
+under its run id.
 
 <Warning>
   Two run files with the same *name* in different directories are refused rather
@@ -94,8 +94,8 @@ subset noted after it.
 machine-readable basis an agent reads (`completeness`, `missing`) to decide
 whether to continue a chain of spending. They are nested per run
 (`runs[].receipts`) rather than in one flat list, because `operation_id` is only
-unique within its run: a flat list can hold two different payments both called
-`op-1`. `--status` applies here too — `runs[].receipts` holds only the matching
+guaranteed unique within its run: a flat list can hold two different payments
+under one id. `--status` applies here too — `runs[].receipts` holds only the matching
 receipts — while the store on disk keeps every one. Each run also carries
 `assembled`, the count before filtering: an agent gating on "no partial
 receipts" must tell a run whose every receipt is full (`assembled > 0`,

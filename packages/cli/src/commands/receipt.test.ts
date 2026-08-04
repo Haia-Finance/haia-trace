@@ -458,6 +458,52 @@ describe("haia-trace receipt show", () => {
     );
   });
 
+  it("shows an operation named by an unambiguous prefix", () => {
+    // The ids adapters mint are not typed from memory — x402's are uuids — so a
+    // prefix is how the command is reached for in practice.
+    const id = "9b5e7013-2b5e-4f1e-89b3-4287bb321412";
+    writeReceipt(
+      {
+        operation: { template: "x402-buyer", version: 1, operation_id: id },
+        completeness: "full",
+        stages: [],
+        missing: [],
+        exceptions: [],
+        events: [],
+      },
+      "runs/2026",
+      receiptsDir,
+    );
+
+    const result = quiet(() =>
+      runReceiptShow("9b5e", { receiptsDir, run: "runs/2026", json: true }),
+    );
+    expect(result.receipts[0]?.operation.operation_id).toBe(id);
+  });
+
+  it("refuses a prefix that matches several operations, asking for more of it", () => {
+    // Distinct from "no such receipt": the caller needs more characters, not
+    // different ones, and showing whichever sorted first would answer about a
+    // payment they never named.
+    build("1721709600000");
+    writeReceipt(
+      {
+        operation: { template: "x402-buyer", version: 1, operation_id: "op-3" },
+        completeness: "partial",
+        stages: [],
+        missing: [],
+        exceptions: [],
+        events: [],
+      },
+      "1721709600000",
+      receiptsDir,
+    );
+
+    expect(() => runReceiptShow("op-", { receiptsDir })).toThrow(
+      /"op-" matches 3 operations in run "1721709600000".*use more of the id: op-1, op-2, op-3/s,
+    );
+  });
+
   it("names the run's operations even when --run was given", () => {
     // The docs promise this unconditionally, so the lookup must not have a path
     // that skips the scan and can only offer a command to run instead.

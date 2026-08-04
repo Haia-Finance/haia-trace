@@ -8,11 +8,11 @@
  *
  * A receipt is identified by the run it came from *and* its operation, so both
  * name the file, joined by a character neither half can contain. `context_id`
- * alone is not enough: an adapter is free to number
- * operations per session (the x402 one does — `op-1`, `op-2`, …), so two runs of
- * the same program produce the same operation ids for entirely different
- * payments, and a store keyed by operation alone would silently overwrite one
- * with the other.
+ * alone is not enough: an adapter is free to number operations per session — the
+ * x402 one mints a uuid, but nothing in the contract says every adapter must —
+ * so two runs of the same program can produce the same operation ids for
+ * entirely different payments, and a store keyed by operation alone would
+ * silently overwrite one with the other.
  *
  * The directory stays flat rather than nesting a folder per run: readers glob it
  * for `*.json` — the example agent's spend policy does — and a reader that finds
@@ -189,6 +189,39 @@ function compareIds(a: string, b: string): number {
 }
 
 /**
+ * Order two receipts of one run the way `build` prints them: by when each
+ * operation started.
+ *
+ * Not by operation id. An id is an adapter's own string with no ordering in it —
+ * x402 mints uuids — so sorting on it would list a run's payments in an order
+ * with no meaning, and `build`, which reports operations in first-appearance
+ * order, would disagree with `receipt list` about which payment came first.
+ *
+ * A receipt's `events` are already in the assembler's total order
+ * (`occurred_at`, then `seq`, then `event_id`), so the first of them is the
+ * operation's first appearance and comparing on the same triple reproduces that
+ * ordering exactly. The id breaks a tie, keeping the sort total for two
+ * operations whose first events somehow compare equal.
+ *
+ * The array is read defensively: `isReceiptShape` does not validate `events`,
+ * because no renderer needs it, and this module reads files it did not
+ * necessarily write. A receipt without a readable first event sorts by id alone
+ * rather than taking the listing down with it.
+ */
+function compareOperations(a: StoredReceipt, b: StoredReceipt): number {
+  const first = a.receipt.events?.[0];
+  const other = b.receipt.events?.[0];
+  if (first !== undefined && other !== undefined) {
+    const order =
+      compareIds(first.occurred_at, other.occurred_at) ||
+      (first.seq === other.seq ? 0 : first.seq < other.seq ? -1 : 1) ||
+      compareIds(first.event_id, other.event_id);
+    if (order !== 0) return order;
+  }
+  return compareIds(a.operation, b.operation);
+}
+
+/**
  * The run/operation pair a receipt file name records, or `null` if the name isn't
  * one this module writes.
  *
@@ -307,7 +340,7 @@ function readReceiptIfPresent(path: string): Receipt | null {
 }
 
 /**
- * Every receipt in `dir`, sorted by run then operation.
+ * Every receipt in `dir`, sorted by run, then by when each operation started.
  *
  * An absent directory — or a path that is not one — reads as an empty store
  * rather than an error: a project that has not built yet has no receipts, which
@@ -348,8 +381,7 @@ export function listReceipts(dir: string): StoredReceipts {
 
   return {
     receipts: receipts.sort(
-      (a, b) =>
-        compareIds(a.run, b.run) || compareIds(a.operation, b.operation),
+      (a, b) => compareIds(a.run, b.run) || compareOperations(a, b),
     ),
     unreadable: unreadable.sort(
       (a, b) =>
@@ -375,8 +407,27 @@ export function latestRun(stored: StoredReceipts): string | null {
   return latest;
 }
 
+/** What looking one receipt up by run and operation turned into. */
+export interface ReceiptLookup {
+  /** The receipt the id named, or `null` when no operation — or several — matched. */
+  entry: StoredReceipt | null;
+  /**
+   * The receipts a prefix matched when it matched more than one. Empty in every
+   * other case, so it is also what tells "several" apart from "none".
+   */
+  ambiguous: StoredReceipt[];
+}
+
 /**
- * One stored receipt by the pair that names it, or `null` if the store has none.
+ * One stored receipt by the pair that names it, matching an operation exactly or
+ * by an unambiguous prefix of it.
+ *
+ * The prefix is what keeps the command usable: an operation id is an adapter's
+ * own string, and x402's is a 36-character uuid that nobody types from memory.
+ * The exact match is tried first, so a prefix can never shadow an id that is
+ * genuinely in the store — and an ambiguous one resolves to nothing rather than
+ * to whichever receipt happened to sort first, since showing the wrong payment's
+ * verdict is worse than asking for more characters.
  *
  * Deliberately a search over `listReceipts` rather than a direct read of
  * `receiptPath(dir, run, operation)`. Going straight to the file would be cheaper,
@@ -392,10 +443,19 @@ export function findReceipt(
   stored: StoredReceipts,
   run: string,
   operation: string,
-): StoredReceipt | null {
-  return (
-    stored.receipts.find(
-      (entry) => entry.run === run && entry.operation === operation,
-    ) ?? null
+): ReceiptLookup {
+  const inRun = stored.receipts.filter((entry) => entry.run === run);
+  const exact = inRun.find((entry) => entry.operation === operation);
+  if (exact !== undefined) return { entry: exact, ambiguous: [] };
+
+  // An empty argument prefixes every id, which would make "show me nothing"
+  // ambiguous rather than absent — and it is never an operation id, since
+  // `parseReceiptName` refuses a name with an empty half.
+  if (operation === "") return { entry: null, ambiguous: [] };
+
+  const prefixed = inRun.filter((entry) =>
+    entry.operation.startsWith(operation),
   );
+  if (prefixed.length === 1) return { entry: prefixed[0]!, ambiguous: [] };
+  return { entry: null, ambiguous: prefixed };
 }

@@ -19,10 +19,10 @@
  * block, which the receipt model does not carry yet.
  *
  * More than one run is more than one *build*, never one merged event set: events
- * carry no run id and `context_id` is only unique within a run, so concatenating
- * two runs would fold two unrelated payments that both happen to be called `op-1`
- * into a single receipt. Every run is therefore read, assembled and reported on
- * its own, and its receipts are stored under its run id.
+ * carry no run id and `context_id` is only guaranteed unique within a run, so
+ * concatenating two runs could fold two unrelated payments that happen to share
+ * an id into a single receipt. Every run is therefore read, assembled and
+ * reported on its own, and its receipts are stored under its run id.
  */
 
 import { resolve } from "node:path";
@@ -104,9 +104,9 @@ export interface BuildResult {
   /**
    * One entry per run built — explicitly named files in the order they were
    * given, runs taken from the events directory oldest first. Receipts are
-   * nested per run rather than flattened because `operation_id` is only unique
-   * within its run: a flat list can hold two different payments both called
-   * `op-1`.
+   * nested per run rather than flattened because `operation_id` is only
+   * guaranteed unique within its run: a flat list can hold two different
+   * payments under one id.
    */
   runs: BuiltRun[];
   /**
@@ -326,7 +326,7 @@ export function runBuild(
 
   for (const built of runs) {
     // And which run produced it, for the same reason: two runs of one program
-    // yield receipts with identical operation ids and different contents.
+    // can yield receipts with identical operation ids and different contents.
     //
     // The run *id* leads, with the file after it. `receipt show --run` takes the
     // id, so the label that reads like an answer to "which run?" has to print the
