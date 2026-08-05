@@ -11,6 +11,7 @@ import { resetTraceSession, trace } from "../index.js";
 import {
   fakeInstance,
   memoryWriter,
+  paymentAdapter,
   paymentPayload,
   paymentRequired,
   payments,
@@ -266,7 +267,7 @@ describe("trace() operation grouping", () => {
       method: "GET",
       path: "/report",
       routePattern: "/report",
-      paymentHeader: btoa(JSON.stringify(payload)),
+      adapter: paymentAdapter(btoa(JSON.stringify(payload))),
     });
     handlers.get("onBeforeVerify")!({
       paymentPayload: payload,
@@ -291,7 +292,11 @@ describe("trace() operation grouping", () => {
     const { writer, events } = memoryWriter();
     trace(instance, { writer });
 
-    handlers.get("onProtectedRequest")!({ method: "GET", path: "/report" });
+    handlers.get("onProtectedRequest")!({
+      method: "GET",
+      path: "/report",
+      adapter: paymentAdapter(),
+    });
 
     const [request] = payments(events);
     expect(request!.payload.paid).toBe(false);
