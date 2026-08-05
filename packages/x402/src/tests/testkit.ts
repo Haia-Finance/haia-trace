@@ -80,6 +80,19 @@ export function recordOne(
   return event;
 }
 
+/**
+ * The adapter `onProtectedRequest` reaches the payment header through — the
+ * context's own `paymentHeader` field stays unset, as the SDK leaves it.
+ */
+export const paymentAdapter = (header?: string) => ({
+  // Exactly the two spellings capture.ts asks for — a looser match would hide
+  // a casing drift the SDK's real adapters do not forgive.
+  getHeader: (name: string) =>
+    name === "payment-signature" || name === "PAYMENT-SIGNATURE"
+      ? header
+      : undefined,
+});
+
 // Protocol fixtures. Each carries at least one field outside the allowlist
 // (`extra`, `iconUrl`, the signed `payload`), so any suite that records them
 // also proves the redaction held.

@@ -9,6 +9,7 @@ import type { TraceInstanceKind } from "../capture/spec.js";
 import { resetTraceSession } from "../index.js";
 import {
   capture,
+  paymentAdapter,
   paymentPayload,
   paymentRequired,
   payments,
@@ -80,7 +81,7 @@ function firings(): Record<string, { context: unknown; event: string }> {
         method: "GET",
         path: "/report",
         routePattern: "/report",
-        paymentHeader: btoa(JSON.stringify(payload)),
+        adapter: paymentAdapter(btoa(JSON.stringify(payload))),
       },
       event: "x402.request.protected",
     },
@@ -310,12 +311,26 @@ describe("what a server records", () => {
     });
   });
 
+  it("prefers the context's own paymentHeader over the adapter", () => {
+    // The SDK leaves the field unset today, but a transport that does fill it
+    // must win over the adapter read.
+    const event = recordOne("httpResourceServer", "onProtectedRequest", {
+      method: "GET",
+      path: "/report",
+      paymentHeader: btoa(JSON.stringify(paymentPayload("0x01"))),
+      adapter: paymentAdapter(),
+    });
+
+    expect(event.payload).toMatchObject({ paid: true });
+    expect(event.context_id).toBeDefined();
+  });
+
   it("still records a protected request whose payment header will not parse", () => {
     // The request is a fact either way; only its grouping is lost.
     const event = recordOne("httpResourceServer", "onProtectedRequest", {
       method: "GET",
       path: "/report",
-      paymentHeader: btoa("not json at all"),
+      adapter: paymentAdapter(btoa("not json at all")),
     });
 
     expect(event.payload).toMatchObject({ paid: true });
@@ -331,7 +346,7 @@ describe("what a server records", () => {
       const event = recordOne("httpResourceServer", "onProtectedRequest", {
         method: "GET",
         path: "/report",
-        paymentHeader: "irrelevant-without-a-decoder",
+        adapter: paymentAdapter("irrelevant-without-a-decoder"),
       });
 
       expect(event.payload).toMatchObject({ method: "GET", paid: true });
