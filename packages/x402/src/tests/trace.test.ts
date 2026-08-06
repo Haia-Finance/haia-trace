@@ -302,6 +302,41 @@ describe("trace() operation grouping", () => {
     expect(request!.payload.paid).toBe(false);
     expect(request!.context_id).toBeUndefined();
   });
+
+  it("captures a protected request handed out without an adapter", () => {
+    // The gateway shape: `getHeader` on the context itself, no `adapter`.
+    // Reading the adapter through the SDK's type throws here, which costs the
+    // request event and leaves a `trace.capture_failed` in its place — on every
+    // protected request, for the whole run.
+    const { instance, handlers } = fakeInstance([
+      ...SERVER_HOOKS,
+      "onProtectedRequest",
+    ]);
+    const { writer, events } = memoryWriter();
+    trace(instance, { writer });
+
+    const payload = paymentPayload("0x01");
+    handlers.get("onProtectedRequest")!({
+      method: "GET",
+      path: "/report",
+      ...paymentAdapter(btoa(JSON.stringify(payload))),
+    });
+    handlers.get("onBeforeVerify")!({
+      paymentPayload: payload,
+      requirements: REQUIREMENTS,
+    });
+
+    expect(events.map((event) => event.event_type)).not.toContain(
+      "trace.capture_failed",
+    );
+    const [request, verifying] = payments(events);
+    expect(request!.payload).toEqual({
+      method: "GET",
+      path: "/report",
+      paid: true,
+    });
+    expect(verifying!.context_id).toBe(request!.context_id);
+  });
 });
 
 describe("the off switch", () => {

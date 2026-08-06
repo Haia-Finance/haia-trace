@@ -14,19 +14,67 @@ import {
 import { VERIFY_SETTLE_MAPPERS } from "../verify-settle.js";
 import type { HttpResourceServerHooks, ResourceServerHooks } from "./hooks.js";
 
-// The SDK's HTTP resource server declares `paymentHeader` but never sets it, so
-// the header is read off the adapter, under the two spellings the SDK itself
-// tries. Unguarded: a throwing adapter surfaces as `trace.capture_failed` in
-// `attach.ts`, which beats recording a confident `paid: false` that may be wrong.
-function readPaymentHeader({
-  paymentHeader,
-  adapter,
-}: HttpResourceServerHooks["onProtectedRequest"]): string | undefined {
+/** Whatever the context offers to read a request header through. */
+interface HeaderSource {
+  getHeader(name: string): string | undefined;
+}
+
+/** What a context was able to say about the payment header. */
+interface PaymentHeaderRead {
+  /** The header, when the request carried one. */
+  header: string | undefined;
+  /** False when the context exposed no way to read a header at all. */
+  readable: boolean;
+}
+
+/**
+ * The header reader a context exposes: the SDK's own `adapter`, or — for a
+ * gateway that implements this hook itself — the method on the context.
+ *
+ * Probed as the foreign object it is, rather than trusted to match the type the
+ * SDK declares: a third-party gateway may hand out a context with no `adapter`
+ * on it at all, and reading through the type's promise would throw on every
+ * protected request. That surfaces as one `trace.capture_failed` per request
+ * with the request event itself lost — a whole hook silently unobserved because
+ * of a shape the type did not describe.
+ */
+function headerSource(
+  context: HttpResourceServerHooks["onProtectedRequest"],
+): HeaderSource | undefined {
+  // One view of the context as the foreign object it is; both fields are read
+  // off it as optional, whatever the SDK's type promises about them.
+  const probe = context as {
+    adapter?: Partial<HeaderSource>;
+    getHeader?: HeaderSource["getHeader"];
+  };
+  if (typeof probe.adapter?.getHeader === "function") {
+    return probe.adapter as HeaderSource;
+  }
+  // Returned as the context itself, so a method that reads `this` still works.
+  if (typeof probe.getHeader === "function") return probe as HeaderSource;
+  return undefined;
+}
+
+/**
+ * The SDK's HTTP resource server declares `paymentHeader` but never sets it, so
+ * the header is read off the context's header source, under the two spellings
+ * the SDK itself tries. A source that *throws* is still left unguarded: a broken
+ * adapter is a fault worth surfacing as `trace.capture_failed`, where an absent
+ * one is merely a shape the SDK's type does not cover.
+ */
+function readPaymentHeader(
+  context: HttpResourceServerHooks["onProtectedRequest"],
+): PaymentHeaderRead {
+  const { paymentHeader } = context;
+  if (paymentHeader) return { header: paymentHeader, readable: true };
+
+  const source = headerSource(context);
+  if (source === undefined) return { header: undefined, readable: false };
+
   const header =
-    paymentHeader ||
-    adapter.getHeader("payment-signature") ||
-    adapter.getHeader("PAYMENT-SIGNATURE");
-  return header || undefined;
+    source.getHeader("payment-signature") ||
+    source.getHeader("PAYMENT-SIGNATURE");
+  return { header: header || undefined, readable: true };
 }
 
 /**
@@ -92,16 +140,19 @@ export const HTTP_RESOURCE_SERVER_SPEC = defineCapture<HttpResourceServerHooks>(
       // The paid retry does, and opens the operation the verify/settle events
       // then join.
       onProtectedRequest: (context) => {
-        const paymentHeader = readPaymentHeader(context);
+        const { header, readable } = readPaymentHeader(context);
         return {
           event_type: "x402.request.protected",
           payload: compact({
             method: context.method,
             path: context.path,
             route_pattern: context.routePattern,
-            paid: paymentHeader !== undefined,
+            // Omitted rather than recorded as `false` when the context offered
+            // nothing to read the header through: unpaid and unknown are
+            // different facts, and only one of them is safe to assert.
+            paid: readable ? header !== undefined : undefined,
           }),
-          unique: paymentAttemptKey(decodePaymentHeader(paymentHeader)),
+          unique: paymentAttemptKey(decodePaymentHeader(header)),
         };
       },
     },
