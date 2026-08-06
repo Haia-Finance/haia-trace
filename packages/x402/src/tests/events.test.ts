@@ -325,6 +325,33 @@ describe("what a server records", () => {
     expect(event.context_id).toBeDefined();
   });
 
+  it("reads the payment header off a context that carries getHeader itself", () => {
+    // A gateway that implements `onProtectedRequest` on top of the SDK may hand
+    // out a context with the header reader on it and no `adapter` at all —
+    // a shape the SDK's own type does not describe, but a real one.
+    const event = recordOne("httpResourceServer", "onProtectedRequest", {
+      method: "GET",
+      path: "/report",
+      ...paymentAdapter(btoa(JSON.stringify(paymentPayload("0x01")))),
+    });
+
+    expect(event.payload).toMatchObject({ paid: true });
+    expect(event.context_id).toBeDefined();
+  });
+
+  it("records a protected request whose context offers no header reader", () => {
+    // Nothing to read the header through: the request is a fact either way, but
+    // whether it was paid is not one this event may assert, so `paid` is left
+    // off rather than recorded as a confident `false`.
+    const event = recordOne("httpResourceServer", "onProtectedRequest", {
+      method: "GET",
+      path: "/report",
+    });
+
+    expect(event.payload).toEqual({ method: "GET", path: "/report" });
+    expect(event.context_id).toBeUndefined();
+  });
+
   it("still records a protected request whose payment header will not parse", () => {
     // The request is a fact either way; only its grouping is lost.
     const event = recordOne("httpResourceServer", "onProtectedRequest", {
