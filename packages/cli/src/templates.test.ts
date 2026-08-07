@@ -30,23 +30,50 @@ describe("template loading", () => {
     expect(template.template).toBe("escrow-arc");
     expect(template.stages.map((s) => s.id)).toEqual([
       "agreement",
-      "terms_accepted",
       "deposit",
       "delivery",
       "criteria",
       "review",
       "disposition",
-      "record",
     ]);
-    // The optional stages: review is conditional, record is bookkeeping.
-    expect(template.stages.filter((s) => !s.required).map((s) => s.id)).toEqual(
-      ["review", "record"],
-    );
+    // Required = the stages common to BOTH closings (release and refund), so
+    // that a refunded escrow assembles as FULL. delivery/criteria are the
+    // release path's evidence; review is conditional.
+    expect(template.stages.filter((s) => s.required).map((s) => s.id)).toEqual([
+      "agreement",
+      "deposit",
+      "disposition",
+    ]);
     expect(template.exceptions).toEqual([
       "circle.transaction.outbound.failed",
       "circle.transaction.inbound.failed",
       "escrow.criteria.evaluation_failed",
     ]);
+  });
+
+  it("keeps the escrow explanations free of claims about other stages", () => {
+    // An explanation renders on any incomplete receipt, including paths where
+    // the surrounding stages are absent too (a refund reaches disposition with
+    // no delivery; a stray transfer reaches nothing at all). A text that
+    // asserts "funds are locked but…" on such a receipt is the receipt
+    // inventing a fact. Each text may speak only of its own stage's absence.
+    const template = loadTemplate("escrow-arc");
+    const asserted = [
+      /agreement exists/i,
+      /terms were accepted/i,
+      /funds are locked/i,
+      /deliverable was submitted/i,
+      /criteria were evaluated/i,
+      /review was requested/i,
+    ];
+    for (const stage of template.stages) {
+      for (const claim of asserted) {
+        expect(
+          stage.missing_explanation ?? "",
+          `stage ${stage.id} asserts another stage happened`,
+        ).not.toMatch(claim);
+      }
+    }
   });
 
   it("witnesses escrow money stages by contract events, not wallet transactions", () => {

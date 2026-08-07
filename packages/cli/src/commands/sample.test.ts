@@ -49,16 +49,19 @@ describe("haia-trace sample", () => {
     expect(out).toContain("x402.verify.failed");
   });
 
-  it("assembles three escrow receipts — full, dangerous partial, failed deposit", () => {
+  it("assembles four escrow receipts — released, refunded, stuck, failed funding", () => {
     const out = sampleOutput("escrow-arc");
 
-    // One fully resolved escrow...
-    expect(out).toContain("FULL");
-    // ...one where money moved while the obligation was never evaluated —
-    // the culmination case: disposition confirmed, criteria missing...
+    // TWO fulls, because the operation has two legitimate closings: work
+    // delivered and released to the provider, and the deal called off with the
+    // deposit refunded to the client. Both leave no money in limbo, and the
+    // refund path must not read as incomplete for never reaching delivery.
+    expect(out.match(/FULL/g)).toHaveLength(2);
+    // The stuck escrow: funds locked, then nothing — the one verdict that
+    // means money is actually in limbo.
     expect(out).toContain("PARTIAL");
-    expect(out).toContain("release authority cannot be established");
-    // ...and one whose funding attempt failed on chain.
+    expect(out).toContain("neither a release nor a refund was observed");
+    // And one whose funding attempt failed on chain.
     expect(out).toContain("circle.transaction.outbound.failed");
   });
 

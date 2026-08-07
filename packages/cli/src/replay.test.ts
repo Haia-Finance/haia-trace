@@ -179,11 +179,15 @@ describe("replay: webhook fixtures → handler → NDJSON → escrow-arc receipt
     );
     expect(state.deposit).toBe("confirmed"); // PaymentCreated
     expect(state.disposition).toBe("confirmed"); // inbound arrival from the contract
-    // ...obligation half honestly open: webhooks cannot witness it.
+    // ...obligation half honestly open: webhooks cannot witness it. delivery
+    // and criteria are optional stages (a refund path never reaches them), so
+    // they stay not_confirmed without appearing in `missing` — the required
+    // gap that keeps this receipt partial is the agreement itself, which only
+    // the escrow backend can attest and no webhook replay contains.
     expect(state.delivery).toBe("not_confirmed");
     expect(state.criteria).toBe("not_confirmed");
     expect(receipt.completeness).toBe("partial");
-    expect(receipt.missing.map((m) => m.stage)).toContain("criteria");
+    expect(receipt.missing.map((m) => m.stage)).toEqual(["agreement"]);
 
     // The failed funding attempt surfaces as a fault, not as progress.
     expect(receipt.exceptions.map((e) => e.event_type)).toEqual([
