@@ -1,36 +1,36 @@
 ---
 title: sample
-description: "Assemble receipts from bundled fixtures — the zero-setup first taste."
+description: "Assemble receipts from bundled fixtures — no setup required."
 ---
 
 ```sh
 haia-trace sample [template]
 ```
 
-`sample` replays a bundled fixture run through the *real* assembler, so you see a
-Receipt with no setup. It defaults to the `x402-buyer` template (the paying
-agent's view); `x402-seller` shows the resource server's view, and
-`x402-facilitator` the verify/settle service's. The template
-name selects both the template and its fixture set, so a new scenario is data — a
-template file plus a fixture file — never a code change.
+Replays a bundled fixture run through the *real* assembler. It is
+[`build`](/cli/build) with the events coming from a file that ships with the CLI
+instead of from a capture — nothing is mocked, and nothing is written to disk.
 
-The template is resolved exactly as [`build`](/cli/build) resolves it, so a name
-means the same file in both commands: editing `.trace/templates/x402-buyer.yaml`
-changes what you sample too, and `sample` prints the path when the template isn't
-the shipped one. `--dir` and `--templates-dir` work here for the same reason —
-they have to reach the same file `build` would. Only the *events* are always
-built-in — a template with no bundled fixture set has nothing to replay and says
-so.
+## Arguments and options
+
+| Argument / option        | Meaning                                                     |
+| ------------------------ | ----------------------------------------------------------- |
+| `[template]`             | Template to sample, which also selects its fixture set. Default: `x402-buyer`. |
+| `--dir <path>`           | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`. |
+| `--templates-dir <path>` | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
+
+All four shipped templates have a fixture set: `x402-buyer`, `x402-seller`,
+`x402-facilitator` and `escrow-arc`.
 
 ## Example
 
 ```sh
-haia-trace sample x402-buyer
+haia-trace sample
 ```
 
-Each fixture contains three operations, showing the whole model at once:
-
 ```text
+Sampling x402-buyer · 3 operations from bundled fixtures
+
 🧾 x402-buyer · op-1 · FULL
 
   ✔ challenge   confirmed
@@ -38,6 +38,7 @@ Each fixture contains three operations, showing the whole model at once:
   ✔ settlement  confirmed
 
   operation completed
+
   ────────────────────────────
 🧾 x402-buyer · op-2 · PARTIAL
 
@@ -49,6 +50,7 @@ Each fixture contains three operations, showing the whole model at once:
     settlement — the payment was submitted, but no settlement response was observed
 
   operation not complete
+
   ────────────────────────────
 🧾 x402-buyer · op-3 · PARTIAL
 
@@ -65,12 +67,93 @@ Each fixture contains three operations, showing the whole model at once:
   operation not complete
 ```
 
-Note the difference between op-2 and op-3: the same unclosed milestone, but op-2
-is *unknown* (nothing was observed) while op-3 carries an *observed fault* — the
-server reported the settlement failed.
+Each x402 fixture set holds three operations, so one command shows the whole
+model. Note the difference between `op-2` and `op-3`: the same unclosed
+milestone, but `op-2` is simply *unobserved*, while `op-3` carries an *observed
+fault* — the server reported that settlement failed.
+
+`sample escrow-arc` shows a longer operation — and four of them, because an
+escrow has two ways to end. Its first two are both `FULL`: one released to the
+provider after the work was delivered and evaluated, one refunded to the client
+with the deal called off before either happened.
+
+```text
+🧾 escrow-arc · 0x7e5c1a000000000000000000000000000000000001 · FULL
+
+  ✔ agreement    confirmed
+  ✔ deposit      confirmed
+  ✔ delivery     confirmed
+  ✔ criteria     confirmed
+  ✖ review       not confirmed  optional
+  ✔ disposition  confirmed
+
+  operation completed
+
+  ────────────────────────────
+🧾 escrow-arc · 0x7e5c1a000000000000000000000000000000000002 · FULL
+
+  ✔ agreement    confirmed
+  ✔ deposit      confirmed
+  ✖ delivery     not confirmed  optional
+  ✖ criteria     not confirmed  optional
+  ✖ review       not confirmed  optional
+  ✔ disposition  confirmed
+
+  operation completed
+```
+
+`FULL` there means **resolved**, not succeeded: both closings leave no money in
+limbo, so `delivery` and `criteria` are optional — the refund path never reaches
+them and must not read as incomplete for it. Which closing happened is on the
+receipt regardless, in the event that closed `disposition`.
+
+The third operation is the one that *is* limbo — funds locked and then nothing:
+
+```text
+🧾 escrow-arc · 0x7e5c1a000000000000000000000000000000000003 · PARTIAL
+
+  ✔ agreement    confirmed
+  ✔ deposit      confirmed
+  ✖ delivery     not confirmed  optional
+  ✖ criteria     not confirmed  optional
+  ✖ review       not confirmed  optional
+  ✖ disposition  not confirmed  required
+
+  missing
+    disposition — neither a release nor a refund was observed — nothing shows the escrowed funds were settled either way
+
+  operation not complete
+```
+
+The fourth is a funding attempt that failed on chain: `agreement` closed,
+`deposit` never did, and `circle.transaction.outbound.failed` is on the receipt
+as an exception.
+
+## Which template you are seeing
+
+The template is resolved exactly as [`build`](/cli/build) resolves it — your own
+`.trace/templates/` first, the shipped set second — so a name means the same file
+in both commands. Editing `.trace/templates/x402-buyer.yaml` changes what you
+sample, and `sample` then prints the path it loaded:
+
+```text
+Sampling x402-buyer · 3 operations from bundled fixtures
+
+  template: .trace/templates/x402-buyer.yaml
+```
+
+That is also why `--dir` and `--templates-dir` exist here: they have to reach the
+same file `build` would.
+
+Only the *events* are always built-in. A template with no bundled fixture set —
+one of your own, say — has nothing to replay, and says so rather than showing an
+empty run:
+
+```text
+error: no sample fixtures for template: my-op
+```
 
 <Tip>
-  `sample` and [`build`](/cli/build) run the identical assembler — the only
-  difference is where the events come from. See [what a Receipt
-  is](/concepts/operation-receipt).
+  What the stages, gaps and faults above mean is the
+  [Operation Receipt](/concepts/operation-receipt) model.
 </Tip>

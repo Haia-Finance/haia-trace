@@ -3,23 +3,38 @@ title: Operation Receipt
 description: "The model behind the verdict — stages, evidence, missing, and exceptions."
 ---
 
-An **Operation Receipt** is the verdict on one payment operation. It's assembled
-by the core from two inputs — the events observed, and a **template** describing
-the operation's expected shape.
+An **Operation Receipt** is the verdict on one payment operation. It is assembled
+from two inputs: the events that were actually observed, and a **template**
+describing the shape that operation is expected to take.
+
+## Verdict, not log
+
+A log hands you what happened and leaves the conclusion to you. Two people
+reading the same lines can disagree about whether the payment settled, and a
+missing line looks identical to a line nobody thought to write.
+
+A receipt states the conclusion. For every milestone of the operation it says
+confirmed or not, points at the events behind that call, and names what is
+missing in plain language. Absence is a first-class part of the answer, not a
+gap in the output — so the receipt never quietly implies a milestone it did not
+observe.
+
+It is built from your own observations, not handed to you by the counterparty.
+That is what makes it usable when the two of you disagree.
 
 ## Templates and stages
 
 A template describes an operation as an ordered sequence of milestone **stages**.
-Templates are per-role — each side of a payment sees only its half of the flow.
-For the buyer (`x402-buyer`), the milestones are `challenge → payment →
-settlement`; for the seller (`x402-seller`), `request → verification →
-settlement`; for the facilitator (`x402-facilitator`), `verification →
-settlement`.
+It is scoped to what a single observer can witness: in the x402 flow each side
+gets its own template, since the buyer, the resource server, and the facilitator
+each see only their half. The buyer's milestones are `challenge → payment →
+settlement`; the seller's, `request → verification → settlement`; the
+facilitator's, `verification → settlement`.
 
 Each stage's `match` is a **match-set**: any one of its events closes the stage.
-This is deliberate — different client kinds witness the same milestone
-differently, so the buyer's payment milestone can be closed by a signed payment
-leaving an HTTP client *or* by an MCP client initiating payment for a tool call:
+That is deliberate — different clients witness the same milestone differently, so
+the buyer's payment milestone can be closed by a signed payment leaving an HTTP
+client *or* by an MCP client initiating payment for a tool call:
 
 ```yaml
 - id: payment
@@ -61,7 +76,7 @@ change to the assembler.
   </Step>
   <Step title="Faults surface as exceptions">
     An event whose type is in the template's `exceptions` (e.g.
-    `x402.settle.failed`) does not close a stage — it's recorded on the
+    `x402.settle.failed`) does not close a stage — it is recorded on the
     operation as a fault.
   </Step>
   <Step title="Completeness is decided">
@@ -70,12 +85,36 @@ change to the assembler.
   </Step>
 </Steps>
 
-## Deterministic by design
+The last clause is why an all-optional template with an empty capture reads as
+`partial`: a run that observed nothing is a gap, not a clean completion of
+nothing.
 
-The assembler is a **pure function** — no LLM, no randomness. The same events and
-template always yield the same Receipt, byte for byte. That's the evidence-chain
-guarantee: a Receipt states absence rather than guessing, so it never invents a
-milestone it didn't observe.
+## One receipt per operation
+
+Recording is per **run** — one start of your service, one recorder's lifetime,
+one file of events; a session and a run are the same unit. A run
+usually holds many payments, interleaved. What separates them is the `context_id`
+each event carries, set from the runtime context of the request it belongs to, so
+a run splits into one receipt per operation.
+
+Some events belong to no single operation — an attestation that capture attached,
+or an out-of-band signal such as a chain confirmation arriving later. They are
+kept aside rather than attributed to whichever payment was nearby. Guessing would
+put evidence behind a verdict that never earned it.
+
+## Deterministic and reproducible
+
+The assembler is a pure function — no model, no randomness, no clock. The same
+events and template always yield the same receipt, byte for byte.
+
+That has a practical consequence: the receipt is not a rendering of a run, it is
+a *derivation* from it. Keep the events and the template version, and anyone can
+rebuild the identical receipt and check it against yours. Feed the same events in
+a different order, or merge two capture sessions covering one payment, and the
+result does not change.
+
+Reproducibility is also why the template's `version` travels on the receipt.
+Templates evolve; a verdict is only meaningful against the one that produced it.
 
 ## The Receipt object
 
@@ -83,7 +122,7 @@ Every surface — terminal, `receipt.json`, markdown — renders the same object
 
 ```jsonc
 {
-  "operation": { "template": "x402-buyer", "version": 1, "operation_id": "op-2" },
+  "operation": { "template": "x402-buyer", "version": 2, "operation_id": "op-2" },
   "completeness": "partial",
   "stages": [
     { "id": "challenge", "required": true, "state": "confirmed", "events": ["evt…"] },
@@ -100,5 +139,26 @@ Every surface — terminal, `receipt.json`, markdown — renders the same object
 }
 ```
 
+`events` is the full set the receipt was built from, in a deterministic order —
+including events no stage matched. The receipt is self-contained provenance, so
+what was seen and not used is visible too.
+
 For an agent, `completeness: "partial"` plus `missing: [settlement]` is a
 machine-readable basis to stop a chain of spending.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Assemble one" icon="gear" href="/cli/build">
+    Turn a run file into receipts with `haia-trace build`.
+  </Card>
+  <Card title="Write a template" icon="file-code" href="/cli/template">
+    Describe an operation of your own, stage by stage.
+  </Card>
+  <Card title="Record x402" icon="plug" href="/sdk/x402">
+    Capture a payment's lifecycle with one line.
+  </Card>
+  <Card title="Record Circle" icon="webhook" href="/sdk/circle">
+    Capture verified webhook v2 deliveries.
+  </Card>
+</CardGroup>

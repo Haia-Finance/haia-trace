@@ -3,13 +3,15 @@ title: "@usehaia/trace-core"
 description: "Contracts and the deterministic receipt assembler."
 ---
 
-The contracts and deterministic receipt assembler at the heart of Haia Trace.
-Most users reach for the [CLI](/cli/overview) or the [x402
-adapter](/sdk/x402) instead — depend on `trace-core` directly when you're
-**building your own capture adapter** or **embedding the assembler**.
+The contracts and the deterministic receipt assembler behind Haia Trace. Most
+people reach for the [CLI](/cli/overview) or a capture adapter
+([x402](/sdk/x402), [Circle](/sdk/circle)) instead. Depend on this package
+directly when you are **writing your own capture adapter** or **embedding the
+assembler**.
 
-Zero runtime dependencies. ESM only, Node ≥ 22 (the assembler is also
-runtime-agnostic; the file-backed store lives behind the `/file` subpath).
+Zero runtime dependencies, ESM only, Node ≥ 22. The root export touches no
+`node:*` API and runs in any runtime; the file-backed sink lives behind the
+`/file` subpath and the Control Plane sink behind `/cp`.
 
 ## Install
 
@@ -19,44 +21,120 @@ npm install @usehaia/trace-core
 
 ## The three contracts
 
-- **Event** — the normalized shape every capture adapter emits: a namespaced
-  `event_type`, an `occurred_at`, an optional `context_id` grouping one
-  operation's events, a `seq`, the observing `role`, and a redacted `payload`.
-  Written append-only as NDJSON.
-- **Template** — a declarative description of an operation as a sequence of
-  milestone stages. Each stage's `match` is a match-set: any one of its events
-  closes the stage, optionally only when a named `role` observed it.
-- **Receipt** — the verdict from `(events, template)`. See [Operation
-  Receipt](/concepts/operation-receipt).
+### Event
+
+What a capture adapter emits — one normalized observation. Persisted append-only
+as NDJSON, one event per line, so field names are snake_case and values are plain
+JSON.
+
+| Field | | |
+| --- | --- | --- |
+| `event_id` | required | Unique id. Not the ordering key. |
+| `event_type` | required | Namespaced `<domain>.<subject>.<outcome>`, e.g. `x402.payment.submitted`. |
+| `occurred_at` | required | When the fact occurred. ISO-8601 UTC, millisecond precision. |
+| `seq` | required | Capture order within the session; monotonic. |
+| `adapter` | required | Id of the adapter that produced it, e.g. `trace-x402`. |
+| `payload` | required | Normalized, redacted fields. Never keys, signatures, or credentials. |
+| `context_id` | optional | Groups one operation's events. Absent when there is no request context. |
+| `role` | optional | The observing side, e.g. `client`, `server`, `facilitator`. |
+
+`event_type` and `role` are open strings: the vocabulary belongs to the adapter,
+not to core.
+
+### Template
+
+The expected shape of an operation, as data. A stage's `match` is a match-set —
+any one of its events closes the stage — and a witness may name the `role` that
+has to have observed it.
+
+```yaml
+template: x402-buyer
+version: 2
+stages:
+  - id: payment
+    required: true
+    match:
+      - event: x402.payment.submitted
+        role: client
+      - event: x402.payment.requested
+        role: client
+    missing_explanation: "the challenge was observed, but no payment was initiated"
+exceptions:
+  - x402.settle.failed
+```
+
+Core defines the shape (`OperationTemplate`) and the validator; reading YAML off
+disk is the caller's job. The CLI ships its own templates and its own loader —
+see [`haia-trace template`](/cli/template).
+
+### Receipt
+
+The verdict `(events, template)` produces. See
+[Operation Receipt](/concepts/operation-receipt) for the model, and
+[`haia-trace receipt`](/cli/receipt) for reading one back.
 
 ## Assemble a receipt
 
 ```ts
-import { assembleReceipts, type TraceEvent } from "@usehaia/trace-core";
+import {
+  assembleReceipt,
+  assembleReceipts,
+  assertOperationTemplate,
+  type OperationTemplate,
+  type TraceEvent,
+} from "@usehaia/trace-core";
 
-const events: TraceEvent[] = [ /* ... one run's events ... */ ];
-const template = /* an OperationTemplate */;
+// `parsed` is whatever your YAML/JSON parser produced — validated here.
+const template: OperationTemplate = assertOperationTemplate(parsed, "x402-buyer.yaml");
+const events: TraceEvent[] = readRunEvents();
 
-const { receipts } = assembleReceipts(events, template);
+// A whole run: one receipt per operation, grouped by `context_id`.
+const { receipts, unassigned } = assembleReceipts(events, template);
+
+// A single operation whose events you already scoped yourself.
+const receipt = assembleReceipt(events, template, { title: "checkout" });
 ```
 
-The assembler is a **pure, deterministic function**: no LLM, no randomness. The
-same events and template always yield the same Receipt, byte for byte. Events are
-split into operations by `context_id`, and one Receipt is produced per operation.
-
-`assembleReceiptsProgressively(events, template)` yields the same result as an
-iterator of progress snapshots, for streaming a live count over a large run.
+`unassigned` holds the events with no `context_id` — session attestations, or
+out-of-band signals such as a chain confirmation added later. They belong to no
+single operation, so they are handed back rather than attributed or dropped.
 
 <Tip>
-  An `OperationTemplate` is plain data; validate an untrusted one (e.g. parsed
-  from YAML) with `assertOperationTemplate` before assembling against it.
+  An `OperationTemplate` is plain data. Validate one you did not author with
+  `assertOperationTemplate`, which throws a sourced `Error` on the first
+  mismatch — a malformed template must fail loudly, not produce a wrong receipt.
 </Tip>
 
-## Mint events (building an adapter)
+### Determinism
 
-`createRecorder` is the one place an adapter mints events — it owns the session's
-`seq` counter and stamps `event_id`, `occurred_at`, and `adapter`, so you supply
-only the meaningful fields:
+The assembler is pure: no wall clock, no random id, no I/O, no model. Given the
+same events and template it returns a byte-identical receipt, which is what lets
+one be reproduced or hashed. Receipt identity and timestamps are the caller's
+concern; nothing is stamped here.
+
+Events are put into a total order before folding — by `occurred_at`, then `seq`,
+then `event_id` — so shuffled input, or events merged from two capture sessions,
+yield the same receipt.
+
+<Warning>
+  Two things that order relies on. `occurred_at` is compared lexically, which is
+  chronological only because the Event Contract fixes the format to ISO-8601 UTC
+  at millisecond precision — an adapter emitting an offset instead of `Z` breaks
+  it. And each event must be fed in at most once: there is no dedupe by
+  `event_id`, so reading the same run file twice counts its events twice.
+</Warning>
+
+### Streaming
+
+`assembleProgressively` and `assembleReceiptsProgressively` are generators over
+the same inputs, yielding a snapshot after each event — a baseline at `0`, then
+`processed` counting to `total`. The last snapshot equals the eager result. This
+is what backs the progress indicator in [`haia-trace build`](/cli/build).
+
+## Record events
+
+`createRecorder` is the one place an adapter mints events. It owns the session's
+`seq` counter and stamps `event_id`, `occurred_at`, `seq`, and `adapter`:
 
 ```ts
 import { createRecorder } from "@usehaia/trace-core";
@@ -71,72 +149,112 @@ const event = recorder.event({
 });
 ```
 
-An adapter that records straight to one sink binds it at construction and uses
-`record` — stamp and write in one call, no way to mint an event and forget to
-persist it. It returns the writer's verdict (see the sink contract below):
+`context_id` is never generated for you: it groups the events of one operation,
+so it has to come from your runtime context or a protocol request id.
+
+An adapter that records straight to one sink binds it at construction and calls
+`record` instead — stamp and write in one call, with no way to mint an event and
+forget to persist it. It returns the [sink's verdict](#sinks):
 
 ```ts
-const recorder = createRecorder({ adapter: "my-backend", writer });
+const recorder = createRecorder({ adapter: "trace-x402", writer });
 
-recorder.record({ event_type: "my.fact.observed", payload: {} }); // boolean
+recorder.record({ event_type: "x402.payment.required", payload: {} }); // boolean
 ```
 
-## Persist events (the `/file` subpath)
+`record` on a recorder built without a `writer` throws a `TypeError` naming the
+fix — a wiring bug that fails on the first call, before any event is at stake.
 
-The event sink is a runtime-agnostic contract in the root export (`EventWriter` /
-`EventReader`, plus the NDJSON codec `encodeEventLine` / `decodeEventLines`). The
-concrete file-backed implementation — the only place `node:fs` is imported —
-lives behind the `/file` subpath:
+<Note>
+  Pass `occurred_at` when your source learns about a fact after it happened — a
+  webhook delivery, a chain query. Deliveries retry and arrive out of order, so
+  capture time is not fact time, and stamping the clock would order the operation
+  by delivery accidents. In-process adapters omit it and get the recorder's
+  clock. `now` and `newId` are injectable too, which is how tests stay
+  deterministic.
+</Note>
+
+## Sinks
+
+A sink is where a recorder puts events. The contract lives in the root export and
+is runtime-agnostic — `EventWriter`, `EventReader`, `SinkErrorHandler` and the
+NDJSON codec (`encodeEventLine`, `decodeEventLine`, `decodeEventLines`) — so a
+browser or edge adapter can implement it without pulling in `node:fs`.
+
+`write(event)` never throws, and returns whether the sink **accepted** the event.
+Ignore the verdict and you get plain fail-open capture; read it and a caller with
+real delivery semantics — a webhook receiver that must answer 500 for the source
+to redeliver — can act on a refusal without any sink ever throwing.
+
+Three ship with the package:
+
+| Sink | Import from | What it is for |
+| --- | --- | --- |
+| [**File**](#file) | `@usehaia/trace-core/file` | the local run file the assembler reads — the source of truth |
+| [**Control Plane**](#control-plane) | `@usehaia/trace-core/cp` | a mirror of the same events in a [Haia Control Plane](https://haia.finance) project |
+| [**Multicast**](#multicast) | `@usehaia/trace-core` | several sinks behind one writer |
+
+### File
+
+The file-backed sink is behind the `/file` subpath — the only module in the
+package that imports `node:*`:
 
 ```ts
-import { createRunEventWriter, readLatestRun } from "@usehaia/trace-core/file";
+import { assembleReceipts } from "@usehaia/trace-core";
+import {
+  createFileEventReader,
+  createFileEventWriter,
+  createRunEventWriter,
+  listRunFiles,
+  readLatestRun,
+  runIdFromPath,
+} from "@usehaia/trace-core/file";
 
 const RUNS = ".trace/events";
 
-// Producing: one run file per session, named for its start time.
-const writer = createRunEventWriter(RUNS);   // .trace/events/<run>.ndjson
+// One run file per session, named for its start time: .trace/events/<run>.ndjson
+const writer = createRunEventWriter(RUNS, {
+  onError: (err) => console.warn("[trace]", err),
+});
 writer.write(event);
 
-// Reading it back: the newest run in that directory.
+// Read the newest run back.
 const events = readLatestRun(RUNS)?.read() ?? [];
+
+// Or every run, oldest first — one at a time, never concatenated.
+for (const path of listRunFiles(RUNS)) {
+  assembleReceipts(createFileEventReader(path).read(), template);
+  runIdFromPath(path); // e.g. "1721709600000"
+}
 ```
 
-Every path is an argument — this package holds no directory of its own. Core
-describes events and assembles receipts; where those live is the caller's
-decision, and a default here would be a filesystem convention two packages had to
-keep agreeing on. So the producer and whoever reads the runs back must be pointed
-at the same directory. `haia-trace` reads and writes `.trace/events` unless its
-[`--dir`](/cli/overview) says otherwise, which is what the example above matches.
-A relative path resolves against the working directory — what an app started from
-its own project root wants; pass an absolute one when the cwd is not fixed.
+`createRunEventWriter(dir, opts)` owns the naming — one file per session. When
+you need a fixed path instead, `createFileEventWriter(path, onError)` appends to
+exactly that file. Both store inside `write`, so a `true` from either means the
+line is on disk — which is what lets [`@usehaia/trace-circle`](/sdk/circle) hand
+one straight to a webhook route.
 
-`createRunEventWriter` is fail-open about the run file: if the directory or the
-file cannot be created for a reason no later write can clear — a container whose
-working directory the process may not write to is the usual cause — the error
-goes to `onError` and the writer it returns accepts events and drops them. You
-get one report of the real cause rather than one per captured event, and a
-handler that throws is absorbed rather than surfacing in your code. A failure
-that may pass, such as the open-file limit, is reported and then recorded through
-once it clears. Passing no directory at all is a caller mistake rather than a
-disk condition, and still throws.
+Runs are a list rather than a reader over all of them at once on purpose. Events
+carry no run id, and `context_id` is only unique within a run — an adapter may
+number operations per session — so concatenating two runs and grouping by
+`context_id` would fold unrelated operations into one receipt.
 
-<Note>
-  Recording nothing is the correct outcome when the disk refuses, but it is only
-  a *visible* one if you ask for it — so wire `onError` on any producer whose run
-  file matters. Without a handler the refusal has nowhere to go, and the run is
-  simply absent.
-</Note>
+Every path is an argument; this package owns no directory. The producer and
+whoever reads the runs back must be pointed at the same one. `haia-trace` uses
+`.trace/events` unless [`--dir`](/cli/overview) says otherwise, which is what the
+example matches. A relative path resolves against the working directory; pass an
+absolute one when the cwd is not fixed.
 
-## Mirror events to the Control Plane
+### Control Plane
 
-The run file is where a receipt is assembled from, and it stays the source of
-truth. `createCpEventWriter` — behind the `/cp` subpath — uploads the same events to a
+`createCpEventWriter`, behind the `/cp` subpath, uploads the same events to a
 [Haia Control Plane](https://haia.finance) project, so a run can also be looked
-at in the dashboard. It reaches the network through `fetch` alone: no `node:*`,
-no dependency, so it runs wherever your recorder does.
+at in the dashboard. It is a **mirror**, not a replacement: the local run file
+stays what the assembler reads, and nothing here reads back. It reaches the
+network through `fetch` alone — no `node:*`, no dependency — so it runs wherever
+your recorder does.
 
 ```ts
-import { createMulticastEventWriter } from "@usehaia/trace-core";
 import { createCpEventWriter } from "@usehaia/trace-core/cp";
 import { createRunEventWriter, runIdFromPath } from "@usehaia/trace-core/file";
 
@@ -149,10 +267,6 @@ const cpWriter = createCpEventWriter({
   runId: runIdFromPath(runWriter.path), // provenance, recorded in `meta`
   onError: (err) => console.warn("[trace] cp:", err),
 });
-
-// Record to both. The result is an ordinary EventWriter, so the producer that
-// receives it never learns there is more than one sink.
-const writer = createMulticastEventWriter(runWriter, cpWriter);
 ```
 
 Where an event lands:
@@ -164,7 +278,7 @@ Where an event lands:
 | `session_id` | `context_id` — one logical operation, the same unit a receipt covers |
 | `anonymous_id` | the `agentId` you passed |
 | `properties` | the event's `payload`, plus `seq`, `adapter`, `role`, `context_id` |
-| `meta` | `run_id`, plus `source: "haia-trace"` |
+| `meta` | `run_id`, plus `source: "haia-trace"` and `trace_schema: "v1"` |
 
 Note what `session_id` is *not*: the run. One run is one start of your service
 and can hold many unrelated payments, so grouping by it would merge them.
@@ -174,24 +288,70 @@ a *capture*, not a payer, so events from one agent across restarts would land as
 different subjects, and nothing on the outside would show that the identity was
 invented.
 
-Delivery is batched, so settle it before the process ends:
-
-```ts
-await writer.flush?.();
-writer.close();
-```
-
 `write()` queues and returns; a batch goes out when it fills (100 events by
 default) or the flush interval elapses (2s). `flush()` settles what has been
-queued and never rejects.
+queued and never rejects — await it before a process exits, or the last batch
+leaves with it. Configuration is validated eagerly and throws: a bad URL or a
+missing key is a wiring bug, not a per-event fault.
 
-Like every sink, this one is fail-open: an upload that fails is reported to
-`onError`, never thrown into the payment path. What it will not do is stay quiet
-— a dropped batch and an event the Control Plane refused to store are both
-reported, so "the Control Plane has nothing" is never forged from a failure.
+<Warning>
+  `true` from this sink means **buffered**, not delivered — it hands events to
+  the network later, so a delivery fault reaches `onError`, never the return.
+  Only what is knowable synchronously answers `false`: a closed writer, an
+  unsendable event, a full queue.
+</Warning>
 
 <Tip>
   Nothing here reads the environment: the writer is configured through its
   constructor only. Read your own config and pass the values, so a run's
   destination is decided in one visible place rather than by ambient state.
 </Tip>
+
+### Multicast
+
+`createMulticastEventWriter(...writers)` fans one stream out to several sinks and
+is itself an ordinary `EventWriter`, so the producer never learns there is more
+than one. Recording to disk *and* to the Control Plane is the usual reason:
+
+```ts
+import { createMulticastEventWriter } from "@usehaia/trace-core";
+
+const writer = createMulticastEventWriter(runWriter, cpWriter);
+
+// Delivery is batched, so settle it before the process ends.
+await writer.flush?.();
+writer.close();
+```
+
+Every writer is offered every event, whatever the others do — one sink that fails
+does not deny the events to the rest. `flush()` settles all of them and resolves
+however each one went.
+
+`write` returns the **AND** of the writers' verdicts: `true` only when every sink
+accepted. That is the reading a caller acting on the result needs, since "all
+sinks have it" is the only answer that lets a webhook receiver acknowledge a
+delivery. A sink you treat as best-effort belongs outside the multicast, called
+separately — the fan-out will not guess which failures matter.
+
+### Fail-open
+
+A producer sits in a payment path, so a sink failure must degrade to "capture
+stopped", never "payment broke". `write` does not throw on any of the three —
+faults go to `onError`, and a refusal comes back as `false`.
+
+For the file sink: if the run file cannot be created for a reason no later write
+can clear (usually a directory the process may not write to), you get one report
+and a writer that accepts events and drops them, rather than one identical error
+per event. A transient failure such as the open-file limit is reported and then
+recorded through once it clears. Calling `createRunEventWriter` with no directory
+is a caller mistake and still throws.
+
+The Control Plane sink is fail-open but not quiet: dropped batches and events the
+ingest API refused are both reported, so "the Control Plane has nothing" is never
+forged from a failure.
+
+<Note>
+  Wire `onError` on any producer whose capture matters. Recording nothing is the
+  right outcome when the disk or the network refuses, but without a handler that
+  refusal has nowhere to go and the run is simply absent.
+</Note>

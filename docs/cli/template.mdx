@@ -4,18 +4,37 @@ description: "List the operation templates you can build against, and scaffold y
 ---
 
 ```sh
-haia-trace template list
-haia-trace template new <name>
+haia-trace template list [options]
+haia-trace template new <name> [options]
 ```
 
-A template is the declarative description of an operation's expected shape, which
-[`build`](/cli/build) and [`sample`](/cli/sample) assemble against. Three ship
-with the CLI — `x402-buyer`, `x402-seller` and `x402-facilitator`, one per side
-of an x402 payment; any other operation needs one you write.
+A template is the declarative shape of one operation — the milestones that have
+to be witnessed for it to count as complete. [`build`](/cli/build) and
+[`sample`](/cli/sample) assemble receipts against one.
+
+Four ship with the CLI:
+
+| Template | The operation it describes | What captures it |
+| --- | --- | --- |
+| `x402-buyer` | an x402 payment as the paying client saw it — `challenge → payment → settlement` | [`@usehaia/trace-x402`](/sdk/x402) on a client |
+| `x402-seller` | the same payment as the resource server saw it — `request → verification → settlement` | `@usehaia/trace-x402` on a resource server |
+| `x402-facilitator` | the same payment as the verify/settle service saw it — `verification → settlement` | `@usehaia/trace-x402` on a facilitator |
+| `escrow-arc` | an escrow on Arc — `agreement → deposit → delivery → criteria → review → disposition` | [`@usehaia/trace-circle`](/sdk/circle) for the `circle.*` money stages, your own service for the `escrow.*` obligation stages |
+
+Anything else needs one you write.
+
+## Options
+
+| Option                   | Applies to    | Meaning                                                       |
+| ------------------------ | ------------- | ------------------------------------------------------------- |
+| `<name>`                 | `new`         | Name for the new template. Letters, digits, `-` and `_`.       |
+| `--dir <path>`           | `list`, `new` | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`. |
+| `--templates-dir <path>` | `list`, `new` | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
+| `--force`                | `new`         | Overwrite the file if it already exists.                       |
 
 ## `template list`
 
-Everything `build --template` will accept — the built-in templates and your
+Everything `build --template` will accept — the shipped templates and your
 project's own — each labelled with the file `build` would actually load.
 
 ```sh
@@ -25,18 +44,23 @@ haia-trace template list
 ```text
 📋 Operation templates
 
+  ✔ escrow-arc        built-in
   ✔ my-op             .trace/templates/my-op.yaml
   ✔ x402-buyer        built-in
   ✔ x402-facilitator  built-in
   ✔ x402-seller       built-in
 
-4 templates available.
+5 templates available.
 ```
+
+A local template is shown by path rather than by a label, because the path is
+also the answer to "which one is being used?" when it shadows a shipped template
+of the same name.
 
 ## `template new`
 
-Scaffold a new template into `.trace/templates/` — the same directory `build`
-searches first, so the two halves of the loop meet with no flags to configure.
+Scaffold a template into `.trace/templates/` — the directory `build` searches
+first, so the two halves of the loop meet with no flags to configure.
 
 ```sh
 haia-trace template new my-op
@@ -51,48 +75,52 @@ haia-trace template new my-op
 
 The file it writes is commented and already valid, but deliberately inert: its
 placeholder event types match nothing, so building against an unedited scaffold
-returns PARTIAL rather than a clean verdict on an operation nobody has described
+returns `PARTIAL` rather than a clean verdict on an operation nobody has described
 yet.
 
 ```yaml
+# my-op — the operation this template gives a verdict on.
+#
+# A template is the declarative shape of one operation: the milestones that have
+# to be witnessed for it to count as complete. `build` folds each operation's
+# events through this file and returns FULL when every required stage closed,
+# PARTIAL otherwise — with an explanation for each one that did not.
+#
+# Replace the placeholder event types below with the ones your recorder emits.
 template: my-op
 version: 1
 stages:
   # A stage closes the first time any event in its `match` list is observed. The
-  # list is an OR, not a sequence.
+  # list is an OR, not a sequence: one entry per witness that proves the same
+  # milestone, so a single template can cover several ways of doing the work.
   - id: request
     required: true
     match:
       - event: your.namespace.requested
+    # Shown on the receipt when a required stage never closed. Say what the gap
+    # means for the operation, not that an event was missing.
     missing_explanation: "the operation was never requested"
-  # `required: false` marks a progress marker rather than a milestone.
+
+  # `required: false` marks a progress marker rather than a milestone: it is
+  # reported when observed, but its absence never makes a receipt partial.
   - id: authorization
     required: false
     match:
       - event: your.namespace.authorized
+
   - id: settlement
     required: true
     match:
       - event: your.namespace.settled
     missing_explanation: "the operation was requested, but never settled"
+
+# Faults observed during the operation. An exception is surfaced on the receipt
+# even when every stage closed, so an operation that looks complete cannot hide
+# one that went wrong along the way.
 exceptions:
   - your.namespace.failed
   - your.namespace.canceled
 ```
-
-`new` refuses to overwrite an existing file unless you pass `--force`, so an
-edited template is never lost to a repeated command.
-
-## Options
-
-| Option                   | Applies to    | Meaning                                                       |
-| ------------------------ | ------------- | ------------------------------------------------------------- |
-| `--dir <path>`           | `list`, `new` | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`. |
-| `--templates-dir <path>` | `list`, `new` | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
-| `--force`                | `new`         | Overwrite the file if it already exists.                       |
-
-The command `new` prints when it's done carries whichever of the two flags you
-used, so the follow-up `build` resolves the file it just wrote.
 
 A witness may also name the `role` that has to have observed it:
 
@@ -107,18 +135,38 @@ roles record the same event type for the same operation, as a resource server an
 a facilitator do: the shipped `x402-seller` and `x402-facilitator` templates
 constrain every witness for exactly that reason.
 
-<Tip>
-  A local template shadows a built-in of the same name — writing
-  `.trace/templates/x402-buyer.yaml` is how you adapt a shipped template to a flow
-  that differs from the standard one. `template list` prints the path, so it stays
-  clear which of the two `build` is using. Templates are data, not code — see
-  [Operation Receipt](/concepts/operation-receipt) for how stages and match-sets
-  shape the verdict.
-</Tip>
+`new` refuses to overwrite an existing file unless you pass `--force`, so an
+edited template is never lost to a repeated command:
+
+```text
+error: template already exists: .trace/templates/my-op.yaml — pass --force to overwrite
+```
+
+Writing over a shipped name is allowed — it is how you adapt a template to a flow
+that differs from the standard one — but it is said out loud:
+
+```text
+✔ Created .trace/templates/x402-buyer.yaml
+
+⚠ This shadows the built-in x402-buyer template.
+```
 
 <Note>
+  The `build` line `new` prints carries whichever of `--dir` and `--templates-dir`
+  you used, so the follow-up command resolves the file that was just written
+  rather than reading a default root.
+</Note>
+
+<Tip>
+  Templates are data, not code: a new scenario is a new file plus, if the events
+  are new, a capture adapter — never a change to the assembler. See
+  [Operation Receipt](/concepts/operation-receipt) for how stages and match-sets
+  shape a verdict.
+</Tip>
+
+<Warning>
   `.trace/templates/` is **source you author**, unlike `.trace/events/` and
   `.trace/receipts/`, which are recorded and derived. Ignore those two
-  subdirectories in git rather than `.trace/` as a whole, or your templates won't
-  be committed.
-</Note>
+  subdirectories in git rather than `.trace/` as a whole, or your templates will
+  not be committed.
+</Warning>

@@ -29,27 +29,47 @@ The one artifact is the **Operation Receipt**. It is:
 ```mermaid
 flowchart LR
   A["your x402 app<br/>client · resource server<br/>facilitator · MCP"]
+  W["Circle webhook v2<br/>deliveries"]
 
   subgraph toolchain["the Trace toolchain"]
     direction TB
-    B["@usehaia/trace-x402<br/>capture adapter"]
+    B["@usehaia/trace-x402"]
+    B2["@usehaia/trace-circle"]
     C[".trace/events/*.ndjson<br/>append-only · source of truth"]
     D["@usehaia/trace-core<br/>deterministic assembler"]
-    E["haia-trace<br/>build · sample"]
+    E["haia-trace<br/>sample · build · receipt"]
   end
 
   A -->|lifecycle hooks| B
+  W -->|verified deliveries| B2
   B -->|Event Contract| C
+  B2 -->|Event Contract| C
   C --> D
   D -->|Receipt| E
 ```
 
-Events are the source of truth; a Receipt is derived and reproducible — the same
-NDJSON always assembles to the same Receipt.
+An adapter records what it observed. A **template** says which milestones the
+operation was expected to hit. The assembler folds the two into a Receipt.
+Events are the source of truth and the Receipt is derived — the same NDJSON
+always assembles to the same Receipt.
+
+## Start here
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="play" href="/quickstart">
+    One command, no install, a Receipt on screen.
+  </Card>
+  <Card title="What a Receipt is" icon="receipt" href="/concepts/operation-receipt">
+    Stages, evidence, missing, exceptions — the model behind the verdict.
+  </Card>
+  <Card title="Demo" icon="robot" href="/demo">
+    A real agent pays twice, reads its own verdict, and stops spending.
+  </Card>
+</CardGroup>
 
 ## The packages
 
-<CardGroup cols={3}>
+<CardGroup cols={2}>
   <Card title="@usehaia/trace-cli" icon="terminal" href="/cli/overview">
     The `haia-trace` command — assembles and renders receipts.
   </Card>
@@ -65,13 +85,7 @@ NDJSON always assembles to the same Receipt.
 </CardGroup>
 
 <Note>
-  Haia Trace is pre-1.0. The `trace-core` contracts and assembler and the
-  `haia-trace` CLI (`sample`, `build`, `templates`) are in place, and the
-  `trace-x402` adapter records the x402 lifecycle hooks passively as normalized,
-  redacted events into `.trace/events`. Receipts assemble against the per-role
-  `x402-buyer` / `x402-seller` / `x402-facilitator` templates — a clean payment
-  assembles as `full`.
-  See [Connect x402](/sdk/x402).
+  Haia Trace is pre-1.0. All four packages are published and versioned together;
+  expect the contracts to still move before 1.0. Pin an exact version if a
+  receipt has to keep assembling identically.
 </Note>
-
-Ready to see a Receipt? Head to the [Quickstart](/quickstart).

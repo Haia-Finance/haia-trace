@@ -7,45 +7,90 @@ description: "Assemble one receipt per operation from a run's events."
 haia-trace build [file...] [options]
 ```
 
-The core command. Read a run's events and produce **one Receipt per operation**.
-
-Events are grouped into operations by their `context_id`; each group is folded
-through the assembler independently. Every assembled receipt is written to
-`.trace/receipts/<run>~<context_id>.json`, and [`receipt`](/cli/receipt) reads them
-back afterwards.
+Read a run's events and produce **one Receipt per operation**. Events are grouped
+by `context_id`, each group is folded through the assembler on its own, and every
+receipt is written to `.trace/receipts/<run>~<operation>.json`, where
+[`receipt`](/cli/receipt) reads it back.
 
 ## Usage
 
 ```sh
-haia-trace build                          # build the latest run in .trace/events/
-haia-trace build --all                    # build every run in .trace/events/
-haia-trace build ./run.ndjson             # build a specific run file
+haia-trace build                              # the latest run in .trace/events/
+haia-trace build --all                        # every run in .trace/events/
+haia-trace build ./run.ndjson                 # a specific run file
 haia-trace build .trace/events/17217*.ndjson  # or a few of them
-haia-trace build --template x402-seller   # apply a specific template
-haia-trace build --template my-op         # apply one of your own
-haia-trace build --dir .my-trace          # read and write a different root
-haia-trace build --status partial         # write everything, show only the gaps
-haia-trace build --json                   # machine-readable output for agents
+haia-trace build --template x402-seller       # a different shipped template
+haia-trace build --template my-op             # one of your own
+haia-trace build --dir .my-trace              # read and write a different root
+haia-trace build --status partial             # write everything, show only the gaps
+haia-trace build --json                       # machine-readable output for agents
 ```
 
 ## Arguments and options
 
-| Argument / option         | Meaning                                                                 |
-| ------------------------- | ----------------------------------------------------------------------- |
-| `[file...]`               | NDJSON run files to build from. Default: the latest in the events directory. |
-| `--all`                   | Build every run in the events directory. Not combinable with `[file...]`. |
-| `--template <name\|path>` | Operation template applied to every operation. Default: `x402-buyer`.    |
-| `--dir <path>`            | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`.  |
-| `--templates-dir <path>`  | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
-| `--status <full\|partial>` | Show only receipts with this verdict. A display filter: every receipt is still written to the store. |
-| `--json`                  | Emit `{ runs: [{ run, path, assembled, receipts, unassigned }], template }` as JSON instead of a terminal summary. `--status` narrows `receipts` here too. |
+| Argument / option          | Meaning                                                                 |
+| -------------------------- | ----------------------------------------------------------------------- |
+| `[file...]`                | NDJSON run files to build from, in the order given. Default: the latest in the events directory. |
+| `--all`                    | Build every run in the events directory. Not combinable with `[file...]`. |
+| `--template <name\|path>`  | Operation template applied to every operation. Default: `x402-buyer`.    |
+| `--dir <path>`             | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`.  |
+| `--templates-dir <path>`   | Where your own templates live. Overrides `--dir`. Default: `<dir>/templates/`. |
+| `--status <full\|partial>` | Show only receipts with this verdict. A display filter — every receipt is still written. |
+| `--json`                   | Emit the build result as JSON instead of a terminal summary.             |
+
+## Example
+
+```sh
+haia-trace build
+```
+
+```text
+Assembled 3 receipts from 11 events
+
+  template: /usr/local/lib/node_modules/@usehaia/trace-cli/templates/x402-buyer.yaml
+  run: 1721709600000  .trace/events/1721709600000.ndjson
+
+🧾 x402-buyer · op-1 · FULL
+
+  ✔ challenge   confirmed
+  ✔ payment     confirmed
+  ✔ settlement  confirmed
+
+  operation completed
+
+  ────────────────────────────
+🧾 x402-buyer · op-2 · PARTIAL
+
+  ✔ challenge   confirmed
+  ✔ payment     confirmed
+  ✖ settlement  not confirmed  required
+
+  missing
+    settlement — the payment was submitted, but no settlement response was observed
+
+  operation not complete
+```
+
+The template file and the run id are printed on every build, not as decoration: a
+receipt records the template's declared *name*, never the file that declared it,
+and two runs of one program can yield receipts with identical operation ids and
+different verdicts. The run id is the value [`receipt show --run`](/cli/receipt)
+takes.
+
+Events that carry no `context_id` — capture attestations, a chain confirmation
+added out of band — belong to no single operation, so they are reported
+separately rather than attributed or dropped:
+
+```text
+  1 run-level event not attributed to any operation
+```
 
 ## One build per run
 
 Several runs mean several builds, never one merged event set. An event carries no
 run id — the run *is* its file name — and `context_id` is only guaranteed unique
 within a run, since an adapter may number operations per session. Folding two
-runs together would merge two unrelated payments that happen to share an id, so
+runs together would merge two unrelated payments that happen to share an id. So
 each run is read, assembled and reported on its own, and its receipts are stored
 under its run id.
 
@@ -56,64 +101,112 @@ under its run id.
   or rename one.
 </Warning>
 
+If an error interrupts a multi-run build, the message says how many earlier runs
+were already written — a store that was half updated must not look untouched.
+
 ## How a template is resolved
 
-A `--template` **name** is looked up in `.trace/templates/` first and then in the
-templates shipped with the CLI, so a template written by
+A `--template` **name** is looked up in `.trace/templates/` first, then in the
+templates shipped with the CLI. So a template written by
 [`haia-trace template new`](/cli/template) is found with no extra flags, and a
 local `x402-buyer.yaml` deliberately shadows the built-in one.
 
-Anything that isn't a bare name — `./ops/refund.yaml`, an absolute path — is read
-as a path to a template file instead.
+Anything that is not a bare name — `./ops/refund.yaml`, an absolute path — is
+read as a path to a template file instead. A name that resolves nowhere names
+both places searched:
 
-Because a receipt records the template's declared *name* and not the file that
-declared it, two machines can produce different verdicts from the same run and the
-same command — one has a `.trace/templates/` override, the other doesn't. `build`
-therefore always prints the file it loaded, and `--json` carries it as
-`template: { name, path, origin }` (`origin` is `local`, `builtin`, or `file`).
+```text
+error: template not found: my-op (looked in .trace/templates, then the templates shipped with the CLI)
+```
 
 <Warning>
-  A template that exists but doesn't parse always fails the build. It never falls
+  A template that exists but does not parse always fails the build. It never falls
   back to a built-in of the same name, because silently substituting a different
-  template would produce a verdict on a shape you didn't write.
+  template would produce a verdict on a shape you did not write.
 </Warning>
 
-Run-level events that carry no `context_id` (chain confirmations, capture
-attestations) belong to no single operation, so they're reported separately as
-`unassigned` rather than attributed or dropped.
+## Filtering the view
 
-`--status` filters what is *shown*, never what is *written*: receipts are derived
+`--status` narrows what is *shown*, never what is *written*. Receipts are derived
 and reproducible, so the store stays complete for
-[`receipt list` and `receipt show`](/cli/receipt) whichever verdict a build chose
-to look at. The summary line still reports everything assembled, with the shown
-subset noted after it.
+[`receipt list` and `receipt show`](/cli/receipt) whichever verdict one build
+chose to look at.
+
+The summary line reports everything assembled first, with the filtered subset
+after it, so a narrowed screen never understates the run:
+
+```text
+Assembled 3 receipts from 11 events — showing 2 partial
+```
+
+A filter that excludes everything is a positive verdict on the run, and says so
+rather than leaving an empty screen:
+
+```text
+  all 3 receipts in this run are full
+```
 
 ## JSON output for agents
 
-`--json` prints the full [Receipt](/concepts/operation-receipt) objects — the
+`--json` emits the full [Receipt](/concepts/operation-receipt) objects — the
 machine-readable basis an agent reads (`completeness`, `missing`) to decide
-whether to continue a chain of spending. They are nested per run
-(`runs[].receipts`) rather than in one flat list, because `operation_id` is only
-guaranteed unique within its run: a flat list can hold two different payments
-under one id. `--status` applies here too — `runs[].receipts` holds only the matching
-receipts — while the store on disk keeps every one. Each run also carries
-`assembled`, the count before filtering: an agent gating on "no partial
-receipts" must tell a run whose every receipt is full (`assembled > 0`,
-`receipts` empty) apart from a run that captured nothing (`assembled: 0`).
+whether to continue a chain of spending.
+
+```json
+{
+  "runs": [
+    {
+      "run": "1721709600000",
+      "path": ".trace/events/1721709600000.ndjson",
+      "assembled": 3,
+      "receipts": [ /* the 3 Receipt objects */ ],
+      "unassigned": []
+    }
+  ],
+  "template": {
+    "name": "x402-buyer",
+    "path": "/usr/local/lib/node_modules/@usehaia/trace-cli/templates/x402-buyer.yaml",
+    "origin": "builtin"
+  }
+}
+```
+
+- Receipts are nested **per run** rather than flattened, because `operation_id` is
+  only unique within its run: a flat list can hold two different payments under
+  one id.
+- `assembled` is the count before `--status` narrowed `receipts`. An agent gating
+  on "no partial receipts" has to tell a run whose every receipt is full
+  (`assembled > 0`, `receipts` empty) from a run that captured nothing
+  (`assembled: 0`).
+- `template.origin` is `builtin`, `local` or `file` — which of the two same-named
+  templates won is invisible in the receipt itself.
+
+The command still exits `0` on a partial receipt: a verdict is an answer, not a
+failure. Branch on `completeness` yourself.
 
 ## Producing a run file
 
-`build` needs an `events/*.ndjson` run file under the root. Today you can point it
-at any NDJSON file whose lines match the [Event
-Contract](/sdk/core) — the CLI ships a working example fixture.
+`build` needs an `events/*.ndjson` run file under the root. Any NDJSON whose
+lines match the [Event Contract](/sdk/core) works, and two adapters write one for
+you:
+
+- [`@usehaia/trace-x402`](/sdk/x402) — attach it to a live x402 client, resource
+  server or facilitator with
+  `trace(instance, { writer: createRunEventWriter(".trace/events") })`.
+- [`@usehaia/trace-circle`](/sdk/circle) — record verified Circle webhook v2
+  deliveries into the same directory, for the `escrow-arc` flow.
+
+The recorder names its directory explicitly, so that is the one thing that has to
+agree with the CLI: point it at `events/` under whatever root you build with.
+
+Build a capture against the template for the side that recorded it — `x402-buyer`
+(the default) for a client, `--template x402-seller` for a resource server,
+`--template x402-facilitator` for a facilitator, `--template escrow-arc` for an
+escrow. A run that traced two sides in one process assembles into an honest buyer
+receipt or an honest seller receipt, one build each, never a merge of the two.
 
 <Note>
-  For automatic capture from a live x402 app, point
-  [`@usehaia/trace-x402`](/sdk/x402) at `.trace/events` with
-  `createRunEventWriter(".trace/events")` — `trace(...)` then feeds `build` directly.
-  The recorder names its directory explicitly, so it's the one thing that has to
-  agree with the CLI: point it at `events/` under whatever root you build with.
-  Pick the template matching the side you traced: `x402-buyer` (the default) for a
-  client capture, `--template x402-seller` for a resource server, `--template
-  x402-facilitator` for a facilitator.
+  An empty events directory is an error that names the path. A directory holding
+  runs from an *earlier* session is not: `build` assembles the newest of those
+  without complaint, so clear out a root you have stopped recording into.
 </Note>

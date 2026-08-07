@@ -4,11 +4,12 @@ description: "Capture adapter for the x402 payment SDK."
 ---
 
 The capture adapter for the [x402](https://docs.x402.org) payment SDK. Attach it
-to an x402 instance and it records every lifecycle-hook firing as a normalized
-Trace event — **strictly passively**, so it can observe a payment but never alter
-it.
+to an x402 instance and every
+[lifecycle-hook](https://docs.x402.org/advanced-concepts/lifecycle-hooks) firing
+becomes a normalized, redacted [Trace event](/sdk/core). Capture is strictly
+passive: it observes a payment, never steers one.
 
-Zero runtime dependencies beyond `@usehaia/trace-core`.
+ESM only, Node ≥ 22, no runtime dependencies beyond `@usehaia/trace-core`.
 
 ## Install
 
@@ -16,77 +17,89 @@ Zero runtime dependencies beyond `@usehaia/trace-core`.
 npm install @usehaia/trace-x402
 ```
 
-## Connect it
+## Attach it
 
-Call `trace()` once, passing your x402 instance — a client, resource server,
-facilitator, or MCP client:
+One call, anywhere after you construct the instance:
 
 ```ts
-import { trace } from "@usehaia/trace-x402";
 import { createRunEventWriter } from "@usehaia/trace-core/file";
+import { trace } from "@usehaia/trace-x402";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 
-const client = new x402HTTPClient(new x402Client());
+const agent = new x402HTTPClient(new x402Client());
 
-// Attach the recorder and write the run to disk. One line, idempotent per instance.
-trace(client, { writer: createRunEventWriter(".trace/events") });
+trace(agent, { writer: createRunEventWriter(".trace/events") });
 ```
 
-`.trace/events` is where [`haia-trace build`](/cli/build) reads from unless its
-[`--dir`](/cli/overview) says otherwise, so naming it here is what makes the two
-sides meet. The writer takes the directory explicitly rather than defaulting to
-one — a default would be a filesystem convention two packages had to keep
-agreeing on. That path is relative to the working directory, which is what an app
-started from its own project root wants; a process whose cwd is not fixed should
-pass an absolute path. Without a `writer`, events go to stdout as NDJSON — the
-same encoding, so it can simply be piped into a file. A run can also be mirrored to a Haia
-Control Plane project while it is written locally — see
-[Mirror events to the Control Plane](/sdk/core#mirror-events-to-the-control-plane).
+That is the whole integration. `trace()` is idempotent per instance, and with no
+`writer` it prints NDJSON to stdout — the same encoding the file sink writes, so
+it can be piped into a file.
 
-`trace()` inspects the instance's method set to resolve its **kind**, attaches to
-that kind's lifecycle hooks — following into the instance a wrapper holds, so one
-call covers the whole kind — and records each firing tagged with the observing
-**role** (`client` / `server` / `facilitator`).
-
-It works the same on either side of a payment:
+The same call works on the other side of a payment:
 
 ```ts
 import { x402HTTPResourceServer, x402ResourceServer } from "@x402/core/server";
 
-const server = new x402HTTPResourceServer(new x402ResourceServer(), routes);
-trace(server); // role: "server"
+trace(new x402HTTPResourceServer(new x402ResourceServer(), routes));
 ```
 
-Detection is pure duck-typing — no `@x402` value is imported at runtime — so
-API-compatible forks are covered too.
+<Note>
+  `.trace/events` is where [`haia-trace build`](/cli/build) reads from unless
+  [`--dir`](/cli/overview) says otherwise — naming the same directory on both
+  sides is what makes recording and assembly meet. The path is resolved against
+  the working directory; pass an absolute one when your cwd is not fixed. A run
+  can also be mirrored to a Haia Control Plane project while it is written
+  locally — see [the Control Plane sink](/sdk/core#control-plane).
+</Note>
 
-## Passivity — the load-bearing guarantee
+## What it attaches to
 
-<Warning>
-  x402 lifecycle hooks can steer the payment flow through their return value
-  (`{ abort }`, `{ skip }`, `{ recovered }`, …). Every handler this adapter
-  registers is wrapped in `try`/`catch` and **always returns `undefined`**, and
-  hooks are chainable, so the recorder runs *alongside* your own hooks and never
-  displaces them. The worst case of a recorder bug is "capture stopped", never
-  "payment blocked".
-</Warning>
+`trace()` resolves the instance's **kind** by duck-typing its method set — no
+`@x402` value is imported at runtime, so API-compatible forks work too — and
+stamps every event with the observing **role**.
 
-Set `HAIA_TRACE_DISABLE=1` in the environment to make `trace()` a no-op.
+| Kind                 | Role          | x402 instance                  |
+| -------------------- | ------------- | ------------------------------ |
+| `client`             | `client`      | `x402Client`                   |
+| `httpClient`         | `client`      | `x402HTTPClient`               |
+| `mcpClient`          | `client`      | `x402MCPClient`                |
+| `resourceServer`     | `server`      | `x402ResourceServer`           |
+| `httpResourceServer` | `server`      | `x402HTTPResourceServer`       |
+| `facilitator`        | `facilitator` | `x402Facilitator`              |
+| `unknown`            | `unknown`     | unplaceable — nothing attached |
 
-## What gets recorded
+`x402HTTPClient` and `x402HTTPResourceServer` are wrappers that expose one hook
+each; the rest live on the `x402Client` / `x402ResourceServer` they hold.
+`trace()` follows into that instance, so one call still covers the whole kind.
 
-Each firing becomes one `TraceEvent`:
+<Tip>
+  Inference is most-specific-first, and a resource server is told apart from a
+  facilitator by `onVerifiedPaymentCanceled` — a fork that drops it reads as a
+  facilitator. Pass `kind` to correct that.
+</Tip>
+
+## What it records
+
+Every event carries `adapter: "trace-x402"` and the observing `role`; the ones
+belonging to a payment also carry a `context_id` grouping it.
+
+### Client — `role: "client"`
+
+| hook                       | kinds      | `event_type`                   |
+| -------------------------- | ---------- | ------------------------------ |
+| `onPaymentRequired`        | HTTP, MCP  | `x402.payment.required`        |
+| `onBeforePaymentCreation`  | bare, HTTP | `x402.payment.creating`        |
+| `onAfterPaymentCreation`   | bare, HTTP | `x402.payment.submitted`       |
+| `onPaymentCreationFailure` | bare, HTTP | `x402.payment.creation_failed` |
+| `onPaymentResponse`        | bare, HTTP | the outcome — see below        |
+| `onBeforePayment`          | MCP        | `x402.payment.requested`       |
+| `onAfterPayment`           | MCP        | the outcome — see below        |
+
+### Resource server — `role: "server"`
 
 | hook                        | `event_type`                            |
 | --------------------------- | --------------------------------------- |
-| `onPaymentRequired`         | `x402.payment.required`                 |
-| `onBeforePaymentCreation`   | `x402.payment.creating`                 |
-| `onAfterPaymentCreation`    | `x402.payment.submitted`                |
-| `onPaymentCreationFailure`  | `x402.payment.creation_failed`          |
-| `onPaymentResponse`         | the outcome — see below                 |
-| `onBeforePayment` (MCP)     | `x402.payment.requested`                |
-| `onAfterPayment` (MCP)      | the outcome — see below                 |
-| `onProtectedRequest`        | `x402.request.protected`                |
+| `onProtectedRequest`        | `x402.request.protected` (HTTP only)    |
 | `onBeforeVerify`            | `x402.verify.started`                   |
 | `onAfterVerify`             | `x402.verify.ok` / `x402.verify.failed` |
 | `onVerifyFailure`           | `x402.verify.failed`                    |
@@ -95,85 +108,95 @@ Each firing becomes one `TraceEvent`:
 | `onSettleFailure`           | `x402.settle.failed`                    |
 | `onVerifiedPaymentCanceled` | `x402.payment.canceled`                 |
 
-No hook the SDK hands an outcome has a fixed event type. The `onAfter*` hooks
-fire on success and rejection alike — `onVerifyFailure` / `onSettleFailure` are
-reserved for a *thrown* fault, while a clean "not valid" or "settlement rejected"
-arrives as a result — so the outcome is read off the context rather than assumed.
+### Facilitator — `role: "facilitator"`
 
-The client's response hook is the same: it fires for every ending a paid request
-can have, and reports what it observed, following the discriminant `@x402/core`
-documents on its context.
+The same six verify/settle hooks as a resource server, with the same event types.
+It has no request gate and no cancellation hook. Only `role` separates the two
+sides, which is why templates constrain on it.
 
-| what the context says            | `event_type`             |
-| -------------------------------- | ------------------------ |
-| settlement, `success: true`      | `x402.payment.responded` |
-| settlement, `success: false`     | `x402.settle.failed`     |
-| a fresh 402 and no settlement    | `x402.verify.failed`     |
-| neither — no settlement was seen | `x402.payment.failed`    |
+The adapter also records its own state: `trace.attached` /
+`trace.attach_partial` / `trace.attach_failed` once per traced instance, and
+`trace.capture_failed` when a firing could not be mapped. None belongs to a
+payment, so none carries a `context_id` and the assembler reports them as
+`unassigned`.
 
-Only a settlement that actually succeeded may report `x402.payment.responded` —
+### Outcomes are read, not assumed
+
+The `onAfter*` hooks fire on success and rejection alike. `onVerifyFailure` /
+`onSettleFailure` are reserved for a *thrown* fault, while a clean "not valid" or
+"settlement rejected" arrives as a result — so the outcome is read off the
+context.
+
+The client's response hooks (`onPaymentResponse`, and MCP's `onAfterPayment`)
+fire for every ending a paid request can have:
+
+| what the context carries           | `event_type`             |
+| ---------------------------------- | ------------------------ |
+| a settlement with `success: true`  | `x402.payment.responded` |
+| a settlement with `success: false` | `x402.settle.failed`     |
+| a fresh 402 and no settlement      | `x402.verify.failed`     |
+| neither                            | `x402.payment.failed`    |
+
+The 402 is on `onPaymentResponse` only. MCP's `onAfterPayment` is handed no
+offer, so a tool call that came back unsettled always reads as
+`x402.payment.failed` there.
+
+Only a settlement that actually succeeded reports `x402.payment.responded` —
 that is the client-side witness a template reads as "the payment settled".
 
 <Warning>
-  A paid request that ends with no settlement in sight is reported as
+  A paid request that ends with no settlement in sight becomes
   `x402.payment.failed`, which templates list as a fault. That covers a transport
   error, but also a server that settles out of band or answers 200 without a
-  settlement header: the run cannot tell those apart, and an over-reported fault
-  is visible while an over-reported settlement is a lie. The same holds for MCP's
-  `onAfterPayment` when it is handed a `null` settlement.
+  settlement header: the client cannot tell those apart, and an over-reported
+  fault is visible where an over-reported settlement is a lie.
 </Warning>
+
+A resource server and a facilitator both report a decline as
+`x402.verify.failed`, but not in the same field: the SDK hands the facilitator
+its "not valid" through the failure hook, so the reason lands in `error.message`,
+while a resource server gets it as a result and the reason lands in
+`verify.invalid_reason`.
 
 ### Redaction
 
-The payload is an **allowlist**, not a copy of the hook context — a field the
-x402 SDK adds later is dropped by default rather than silently recorded. Two
-things are never written:
+Payloads are built from an allowlist, never copied from the hook context — a
+field the x402 SDK adds later is dropped by default rather than silently
+recorded. Two things are never written:
 
 - `PaymentPayload.payload` — the scheme-specific signed authorization. This is
   the credential that moves the money.
 - `extra` / `extensions` — open-ended bags defined by schemes and third-party
-  extensions, whose contents can't be reasoned about here.
+  extensions.
 
 What is recorded is the payment's public facts: the resource, the payment
 requirements (scheme, network, asset, amount, `pay_to`, timeout), the verify and
-settle results (including the transaction hash and payer), and, for a fault, the
-error's name and message.
+settle results including the transaction hash and payer, and, for a fault, the
+error's `name` and `message`. Stacks are dropped.
 
-### `context_id` — telling concurrent payments apart
+### Grouping concurrent payments
 
-Every event of one request carries the same `context_id`, which is how the
-assembler produces one receipt per payment instead of merging them. x402 hands
-hooks no request id, and the adapter has to work where `AsyncLocalStorage` does
-not exist, so the grouping is derived from the contexts themselves, through two
-keys that are both identifying:
+x402 hands hooks no request id, and the adapter has to run where
+`AsyncLocalStorage` does not exist, so the `context_id` is derived from the
+contexts themselves, through two keys that both identify a payment:
 
-- the **nonce** inside the payment payload, which identifies one payment attempt
-  and travels with the payment;
-- for the hooks that fire before a payload exists, the **identity of the
-  `PaymentRequired` object** the SDK threads from the 402 response through
-  payment creation.
+- the **nonce** in the signed payload (falling back to its signature), which
+  travels with the payment;
+- for the hooks that fire before a payload exists, the **object identity** of the
+  `PaymentRequired` the SDK threads from the 402 response through payment
+  creation.
 
 Identity, not content, is what separates two concurrent purchases of the same
-resource — their offers are byte-identical.
+resource — their offers are byte-identical. A firing that offers neither key —
+an unpaid protected request, say — is recorded without a `context_id` rather than
+guessed into an operation.
 
-Because the key comes from the payment itself, a client and a server traced in
-the same process resolve the same payment to the same `context_id` — both sides
-of one operation assemble into one receipt.
-
-The value itself is a `crypto.randomUUID()` uuid, so it is unique beyond the run
-it was minted in. A run file is assembled on its own, where a per-run counter
-would do — but if you also [mirror the events to a Control Plane
-project](/sdk/core#mirror-events-to-the-control-plane), that project holds many
-runs side by side and groups them by `context_id`, and there ids that restarted
-with each run would fold unrelated payments into one operation.
-
-<Note>
-  Some events deliberately carry no `context_id`: the `trace.attached` /
-  `trace.attach_partial` / `trace.attach_failed` attestation, a protected request
-  that arrived without a payment header, and `trace.capture_failed`. None belongs
-  to a payment, and the assembler keeps them out of every receipt rather than
-  guessing.
-</Note>
+The id itself is a `crypto.randomUUID()`, unique beyond the run it was minted in,
+so events [mirrored to a Control Plane
+project](/sdk/core#control-plane) — which holds many runs
+side by side — still group correctly. Because the key comes from the payment, a
+client and a server traced in the same process resolve one payment to the same
+`context_id`.
 
 ## Options
 
@@ -191,72 +214,62 @@ trace(instance, {
   // payment path.
   onError: (err) => myLogger.warn(err),
 
-  // Force the instance kind instead of inferring it. Use when a fork's shape is
-  // ambiguous — e.g. a resource server that doesn't expose the hook Trace keys on.
+  // Force the kind instead of inferring it. An unrecognized value falls back to
+  // inference, and it only takes effect on the first trace() for an instance.
   kind: "resourceServer",
 });
 ```
 
+The package also exports its types — `TraceOptions`, `TraceAttestation`,
+`TraceKind`, `TraceInstanceKind`, `TraceRole` — and `resetTraceSession()`, which
+drops the process-wide recorder and correlator for test isolation.
+
+## Passivity
+
+<Warning>
+  x402 lifecycle hooks steer the payment through their return value
+  (`{ abort }`, `{ skip }`, `{ recovered }`, …). Every handler this adapter
+  registers is wrapped in `try`/`catch` and **always returns `undefined`**, and
+  hooks are chainable, so the recorder runs alongside your own and never
+  displaces them. The worst case of a recorder bug is "capture stopped", never
+  "payment blocked".
+</Warning>
+
+Set `HAIA_TRACE_DISABLE=1` to make `trace()` a no-op.
+
 ## Attestation
 
-`trace()` returns a `TraceAttestation` describing what it connected to — so a
-caller can tell "no payment events happened" apart from "the recorder never wired
-up", and apart from "it wired up to only part of this instance":
+`trace()` returns what it connected to, so "no payment events happened" is
+distinguishable from "the recorder never wired up":
 
 ```ts
-const att = trace(client);
+const att = trace(agent);
 // { attached: string[], missing: string[], ok: boolean, complete: boolean,
 //   kind: TraceKind, role: TraceRole }
 if (!att.ok) console.warn("trace-x402 did not attach to this instance");
 if (!att.complete) console.warn("not observing:", att.missing);
 ```
 
-`complete` matters because the HTTP types are **wrappers**: `x402HTTPClient`
-exposes only `onPaymentRequired` and `x402HTTPResourceServer` only
-`onProtectedRequest`, while the payment-creation and verify/settle hooks live on
-the `x402Client` / `x402ResourceServer` each holds. `trace()` follows into that
-instance, so one call covers the whole kind; if a fork keeps it somewhere the
-adapter can't reach, the hooks it could not register are listed in `missing`
-instead of the run quietly losing them.
+`attached` labels a hook by where it registered, so a hook found on a wrapped
+instance reads `client.onPaymentResponse` or `server.onAfterSettle`. `missing`
+lists the hooks of the kind that registered nowhere — the firings this run will
+not have. The same fact is recorded as an event on every run.
 
-The adapter records the same thing as an event on every run — `trace.attached`,
-`trace.attach_partial`, or `trace.attach_failed`.
+## From a run to receipts
 
-## Recognized kinds
+The events are the input to [`haia-trace build`](/cli/build), which groups them
+by `context_id` and assembles one
+[Operation Receipt](/concepts/operation-receipt) per payment:
 
-| Kind                 | Role          | x402 instance                         |
-| -------------------- | ------------- | ------------------------------------- |
-| `client`             | `client`      | x402Client                            |
-| `httpClient`         | `client`      | x402HTTPClient                        |
-| `mcpClient`          | `client`      | x402MCPClient                         |
-| `resourceServer`     | `server`      | x402ResourceServer                    |
-| `httpResourceServer` | `server`      | x402HTTPResourceServer                |
-| `facilitator`        | `facilitator` | x402Facilitator                       |
-| `unknown`            | `unknown`     | unrecognized shape — nothing attached |
+```sh
+haia-trace build                            # a client capture (x402-buyer)
+haia-trace build --template x402-seller     # a resource server
+haia-trace build --template x402-facilitator
+```
 
-`httpClient` and `httpResourceServer` are wrappers; `trace()` also attaches to
-the `x402Client` / `x402ResourceServer` they hold, and `attached` labels those
-hooks by where they registered (`server.onAfterSettle`).
+Templates are per-role, and every witness in them names the role that has to have
+observed it. Apply the one matching the side you traced — one build per side,
+even when a single run captured two ([`build`](/cli/build) covers why).
 
-## Status
-
-<Note>
-  Capture is in place end to end: firings become normalized, redacted events, a
-  run file feeds [`haia-trace build`](/cli/build), and concurrent payments come
-  out as separate receipts.
-
-  The shipped templates are per-role — assemble a capture with the one for the
-  side that recorded it: `x402-buyer` for a client, `x402-seller` for a resource
-  server, `x402-facilitator` for a facilitator. Each matches only events that
-  side's hooks record *and* only when its own `role` observed them, so a run
-  that traced two sides still yields one honest receipt per side. Every buyer
-  stage has a witness in each client kind's flow (HTTP, MCP, and the bare
-  `x402Client`), so a clean payment assembles as `full` whichever side you look
-  from.
-
-  The server and the facilitator share the verify/settle vocabulary exactly,
-  which is why the role constraint matters — but not how a decline reads. The
-  SDK hands a facilitator its clean "not valid" through the failure hook, so the
-  reason arrives in `error.message`; a resource server gets it as a result, so
-  the reason arrives in `verify.invalid_reason`. Both are `x402.verify.failed`.
-</Note>
+Every buyer stage has a witness in each client kind's flow — HTTP, MCP, and the
+bare `x402Client` — so a clean payment assembles as `full` from any of them.

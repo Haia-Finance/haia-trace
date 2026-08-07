@@ -8,7 +8,7 @@ description: "See your first Operation Receipt in under a minute."
 No install needed — replay a bundled fixture run through the real assembler:
 
 ```sh
-npx @usehaia/trace-cli sample x402-buyer
+npx @usehaia/trace-cli sample
 ```
 
 `sample` runs the same deterministic `(events, template) → receipt` core a live
@@ -33,8 +33,11 @@ and one carrying an observed fault:
 That gap — `payment ✓` but `settlement ✗` — is the product: your agent signed and
 sent the money, and nothing on your side witnessed what became of it. A log
 viewer shows a request with no answer; only the Receipt states the absence and
-what exactly is missing. (`x402-seller` shows the same model from the resource
-server's side, and `x402-facilitator` from the verify/settle service's.)
+what exactly is missing.
+
+`sample` takes any shipped template, so you can see the same model from another
+vantage point — `sample x402-seller`, `sample x402-facilitator`, or the longer
+`sample escrow-arc`. Run `npx @usehaia/trace-cli template list` for the set.
 
 ## Install the CLI
 
@@ -52,19 +55,39 @@ npx @usehaia/trace-cli <command>
 
 Both expose the `haia-trace` command. Requires **Node ≥ 22**.
 
-## Assemble receipts from a run
+## Record your own run
 
-Once you have a run of recorded events at `.trace/events/<run>.ndjson`, build one
-Receipt per operation:
+A Receipt needs events. Attach the capture adapter to the side of the payment you
+own — here an x402 client — and point it at `.trace/events`, the directory
+`haia-trace build` reads:
 
-```sh
-haia-trace build            # build the latest run in .trace/events/
-haia-trace build --json     # machine-readable output, for an agent to read
+```ts
+import { createRunEventWriter } from "@usehaia/trace-core/file";
+import { trace } from "@usehaia/trace-x402";
+
+trace(client, { writer: createRunEventWriter(".trace/events") });
 ```
 
-<Card title="CLI reference" icon="terminal" href="/cli/overview">
-  Every command, flag, and the `.trace/` layout.
-</Card>
+That is the whole integration. Capture is passive: it observes a payment, never
+steers one, and payloads are built from an allowlist, so no signature or key ever
+reaches the run file. The same call attaches to a resource server or a
+facilitator — see [Connect x402](/sdk/x402).
+
+Paying on Circle rather than through the x402 SDK? [`@usehaia/trace-circle`](/sdk/circle)
+records verified webhook v2 deliveries into the same directory.
+
+## Assemble the receipts
+
+With a run at `.trace/events/<run>.ndjson`, build one Receipt per operation:
+
+```sh
+haia-trace build                             # the latest run, against x402-buyer
+haia-trace build --template x402-seller      # the template for the side you traced
+haia-trace build --json                      # machine-readable, for an agent to read
+```
+
+`build` groups events by `context_id` and writes each receipt to
+`.trace/receipts/`. Re-building the same run yields a byte-identical receipt.
 
 ## Next steps
 
@@ -77,5 +100,8 @@ haia-trace build --json     # machine-readable output, for an agent to read
   </Card>
   <Card title="Connect x402" icon="plug" href="/sdk/x402">
     Record the x402 lifecycle from your own app.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/overview">
+    Every command, flag, and the `.trace/` layout.
   </Card>
 </CardGroup>

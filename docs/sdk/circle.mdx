@@ -5,22 +5,18 @@ description: "Capture adapter for Circle webhook v2 notifications."
 
 The capture adapter for [Circle webhook v2
 notifications](https://developers.circle.com/api-reference/webhooks) — Wallets
-transactions and Contracts event logs.
+transactions and Contracts event logs. Verified deliveries become normalized,
+redacted [Trace events](/sdk/core).
 
-Unlike an in-process adapter, this source is **external**: Circle POSTs signed
-notifications to an HTTPS endpoint, at-least-once and unordered. The package
-provides the pieces that physics requires — it hosts no HTTP server of its own,
-so the pieces embed into whatever server receives the POSTs.
+The source is external: Circle POSTs signed notifications to an HTTPS endpoint,
+at-least-once and unordered. This package hosts no server. It gives you the
+pieces — signature verification, envelope validation, deduplication,
+normalization — and one handler that composes them, so it embeds into whatever
+route already receives the POSTs.
 
-Zero runtime dependencies beyond `@usehaia/trace-core`.
-
-<Note>
-  **Status: early.** The full pipeline is implemented — verification, envelope
-  validation, deduplication, and a default `circle.*` event vocabulary — and
-  exercised end to end by replay tests. It has been run against live Arc testnet
-  traffic, and the shipped fixtures include captured deliveries alongside
-  synthetic ones; no capture of a *failed* transaction exists yet.
-</Note>
+ESM only, Node ≥ 22, no runtime dependencies beyond `@usehaia/trace-core`. The
+runtime code uses only platform globals (Web Crypto, `TextEncoder`, `atob`), so
+it also runs on edge runtimes.
 
 ## Install
 
@@ -28,125 +24,216 @@ Zero runtime dependencies beyond `@usehaia/trace-core`.
 npm install @usehaia/trace-circle
 ```
 
-## Handle a delivery
+## Receive a delivery
 
-`createWebhookHandler` composes the pieces and returns the HTTP decision; the
-surrounding server only relays it:
+`createWebhookHandler` runs the whole pipeline and returns the HTTP status your
+route should answer with:
 
 ```ts
-import { createWebhookHandler, createVerifier } from "@usehaia/trace-circle";
+import { mkdirSync } from "node:fs";
+import { createVerifier, createWebhookHandler } from "@usehaia/trace-circle";
 import { createFileEventWriter } from "@usehaia/trace-core/file";
 
+mkdirSync(".trace/events", { recursive: true });
+
 const handler = createWebhookHandler({
-  verifier: createVerifier({ resolveKey }), // see below
-  // The sink reports a refused event by returning false, and the handler
-  // answers 500 so Circle retries — no throwing error handler needed:
+  verifier: createVerifier({
+    // The publicKey endpoint needs your Circle API credentials, so the fetch is
+    // injected rather than built in. The verifier caches each key id.
+    resolveKey: async (keyId) => {
+      const res = await fetch(
+        `https://api.circle.com/v2/notifications/publicKey/${keyId}`,
+        { headers: { Authorization: `Bearer ${process.env.CIRCLE_API_KEY}` } },
+      );
+      if (res.status === 404) return null; // unknown key id → verification fails
+      if (!res.ok) throw new Error(`publicKey ${keyId}: HTTP ${res.status}`);
+      const { data } = (await res.json()) as { data: { publicKey: string } };
+      return data.publicKey; // base64 SPKI, exactly as returned
+    },
+  }),
+  // A refused event is reported by returning false, and the handler answers
+  // 500 so Circle retries. Core's file sink already does this.
   write: createFileEventWriter(".trace/events/webhooks.ndjson").write,
 });
 
-// In your route (any framework — the handler is structural about headers):
-const result = await handler.handle(rawBody, request.headers);
-return respond(result.status);
-```
-
-<Warning>
-  `createFileEventWriter` appends to the path it is given and does **not** create
-  directories — that is [`createRunEventWriter`](/sdk/core)'s job. Create the
-  parent directory yourself, or the first delivery fails with `ENOENT`, the
-  handler answers 500, and Circle refuses to even verify the endpoint when the
-  subscription is created.
-</Warning>
-
-The decision contract:
-
-| Status | Meaning |
-| --- | --- |
-| **400** | Not a valid Circle notification (bad signature, malformed envelope) — retrying cannot fix it |
-| **500** | Our side failed (key resolution, persistence) — Circle should retry |
-| **200** | Accepted, including retries of already-accepted deliveries |
-
-One handler serves any number of route paths: Circle requires a unique URL per
-subscription, but a delivery's source is identified by `notification_type`, not
-by the URL it arrived on.
-
-## The event vocabulary
-
-Events are recorded in the default `circle.*` vocabulary (see
-`normalizeNotification`). Terminal wallet transactions become
-`circle.transaction.{inbound|outbound}.{complete|failed}` — with `CONFIRMED` and
-`COMPLETE` folded together, since chains with instant finality can skip
-`CONFIRMED`. Monitored contract events become
-`circle.contract.{payment_created|withdrawal|refund}`.
-
-Payloads are strictly allowlisted, `occurred_at` is the fact's own time from the
-payload rather than the delivery time (a transaction's `updateDate`, a contract
-event's `firstConfirmDate`), and `context_id` is the escrow contract's address.
-
-A first verified delivery also records one session-level `trace.attached`
-attestation, so "no events" can never be mistaken for "the receiver was never
-wired up". Pass your own `normalize` to use a different vocabulary.
-
-The pieces below are what the handler composes — usable directly if you need a
-different pipeline.
-
-## Verify a notification
-
-Every v2 notification is signed (ECDSA P-256 / SHA-256) over the **raw** request
-body. Verification must run on the bytes exactly as received — re-serializing
-parsed JSON can change them and break a valid signature.
-
-```ts
-import { createVerifier } from "@usehaia/trace-circle";
-
-// The public-key endpoint needs your Circle API credentials, so the fetch is
-// injected rather than built in. The verifier caches each key id.
-const verifier = createVerifier({
-  resolveKey: async (keyId) => {
-    const res = await fetch(
-      `https://api.circle.com/v2/notifications/publicKey/${keyId}`,
-      { headers: { Authorization: `Bearer ${process.env.CIRCLE_API_KEY}` } },
-    );
-    if (res.status === 404) return null; // unknown key id → verifies false
-    const { data } = await res.json();
-    return data.publicKey; // base64 SPKI, exactly as returned
-  },
-});
-
-// In your route handler — rawBody is the body as received, not re-parsed:
-const ok = await verifier.verify(
-  rawBody,
-  request.headers["x-circle-signature"],
-  request.headers["x-circle-key-id"],
-);
-if (!ok) return respond(400); // not from Circle; a retry cannot fix it
-```
-
-## Validate the envelope and deduplicate
-
-```ts
-import {
-  createMemoryDedupeStore,
-  parseNotificationEnvelope,
-} from "@usehaia/trace-circle";
-
-const dedupe = createMemoryDedupeStore();
-
-const envelope = parseNotificationEnvelope(rawBody); // throws loudly on malformed input
-
-if (!dedupe.firstSeen(envelope.notification_id)) {
-  return respond(200); // a retry of an accepted delivery — acknowledge, skip
+// Any framework: `headers` may be a fetch `Headers` or a Node header record,
+// read case-insensitively either way.
+export async function POST(request: Request): Promise<Response> {
+  // The body exactly as received — the signature covers these bytes, and
+  // re-serializing parsed JSON can change them.
+  const rawBody = await request.text();
+  const result = await handler.handle(rawBody, request.headers);
+  return new Response(null, { status: result.status });
 }
-// … normalize and record, then respond(200).
-// If persisting fails, respond(500) so Circle retries — never swallow and 200.
 ```
 
-Circle delivers **at-least-once** (retries reuse the same `notificationId`) and
-**unordered** — so deduplicate before writing, and key any processing off the
-state inside the payload, never off arrival order.
+<Warning>
+  `write` must never report success for an event it did not keep. Answering 200
+  for an unpersisted delivery stops Circle's retries, which were the only way
+  that event could still be saved. Return `false` or throw — the handler treats
+  both as a persistence failure and answers 500. A writer that returns nothing
+  at all is read as success, so a custom sink has to be explicit about refusal.
+</Warning>
+
+One handler serves any number of route paths. Circle requires a unique URL per
+subscription, but a delivery's source is identified by `notification_type`, not
+by the URL it arrived on. One handler is also one capture session: it owns the
+`seq` counter, so everything it writes is one consistently ordered stream.
+
+Point the sink at the directory [`haia-trace build`](/cli/build) reads —
+`.trace/events` unless [`--dir`](/cli/overview) says otherwise.
+
+### The HTTP decision
+
+`handle` returns a discriminated `HandleResult` — the status, plus why:
+
+| Status | `outcome` | Meaning |
+| --- | --- | --- |
+| `200` | `recorded` | Verified and written. Carries the `envelope` and the stamped `events`. |
+| `200` | `duplicate` | A retry of an already-accepted `notification_id`; nothing written again. |
+| `400` | `missing_signature`, `invalid_signature`, `invalid_envelope` | Not a valid Circle notification. A retry cannot fix it, so do not invite one. |
+| `500` | `key_resolution_failed`, `record_failed` | Our side failed. Circle retries on non-2xx, which is what should happen. |
+
+A `400`/`500` result carries a `reason` string for your logs. Verification runs
+before parsing: nothing about an unauthenticated body is trusted, not even that
+it is JSON. A `record_failed` result also un-records the `notification_id`, so
+Circle's retry is processed as a fresh delivery instead of being acknowledged as
+a duplicate that never reached the sink.
+
+## What it records
+
+Every event carries `adapter: "trace-circle"`.
+
+| Notification | Condition | `event_type` |
+| --- | --- | --- |
+| `transactions.inbound` | `state` is `CONFIRMED` or `COMPLETE` | `circle.transaction.inbound.complete` |
+| `transactions.inbound` | `state` is `FAILED`, `DENIED` or `CANCELLED` | `circle.transaction.inbound.failed` |
+| `transactions.outbound` | same two conditions | `circle.transaction.outbound.complete` / `.failed` |
+| `contracts.eventLog` | `eventSignature` names `PaymentCreated` | `circle.contract.payment_created` |
+| `contracts.eventLog` | `eventSignature` names `Withdrawal` | `circle.contract.withdrawal` |
+| `contracts.eventLog` | `eventSignature` names `Refund` | `circle.contract.refund` |
+
+Direction is part of a transaction's name because a direction-less "transaction
+completed" cannot witness a milestone: money arriving from an escrow contract and
+money sent toward one are different facts. `CONFIRMED` and `COMPLETE` fold into
+one event because chains with instant finality can skip `CONFIRMED`.
+
+Anything else — an intermediate transaction state, a contract event outside the
+three above, an unknown notification type — is acknowledged with 200 and records
+nothing. Non-terminal states are delivery noise for a receipt; the terminal state
+arrives on its own.
+
+<Note>
+  The contract events are those of Circle's
+  [arc-escrow sample](https://github.com/circlefin/arc-escrow) and its
+  `RefundProtocol` contract, which is what the shipped `escrow-arc` template
+  reads. Pass your own
+  `normalize` for a different vocabulary.
+</Note>
+
+**`context_id`** is the escrow contract's address, lowercased. A contract event
+takes it from `contractAddress`. A wallet transaction prefers its
+`contractAddress` too and otherwise uses the counterparty — the `sourceAddress`
+of an inbound, the `destinationAddress` of an outbound. A transaction with
+neither is recorded without a `context_id` rather than guessed into an
+operation.
+
+**`occurred_at`** is the fact's own time, never the delivery time: a
+transaction's `updateDate`, a contract event's `firstConfirmDate`, falling back
+to the envelope `timestamp` and then to the recorder's clock. Values are
+re-canonicalized to ISO-8601 UTC, the form the assembler's ordering relies on.
+
+**Payloads are allowlisted**, never copied wholesale — a key Circle adds later is
+dropped by default. Every event carries `notification_id` and
+`notification_type`, plus:
+
+- a transaction: `transaction_id`, `tx_hash`, `blockchain`, `state`, `wallet_id`,
+  `source_address`, `destination_address`, `amounts`, `token_id`,
+  `transaction_type`, `error_reason`, `contract_address`;
+- a contract event: `contract_address`, `blockchain`, `tx_hash`, `user_op_hash`,
+  `event_signature`, `block_height`.
+
+The first delivery a handler accepts also writes one `trace.attached`
+attestation, so "no events" can never be mistaken for "the receiver was never
+wired up". It attests the session, not an operation, so it carries no
+`context_id` and the assembler reports it as `unassigned`.
+
+## Options
+
+```ts
+createWebhookHandler({
+  // Required. Verifies X-Circle-Signature against the raw body.
+  verifier: createVerifier({ resolveKey }),
+
+  // Required. Persists one stamped event. Return false (or throw) to refuse.
+  write: createFileEventWriter(path).write,
+
+  // Envelope → event inputs. Default: the circle.* vocabulary above.
+  // Return [] to acknowledge a notification type without recording anything.
+  normalize: (envelope) => [{ event_type: "my.event", payload: {} }],
+
+  // Deduplication backing. Default: createMemoryDedupeStore().
+  dedupe: myDurableStore,
+
+  // Injectable clock and id source, for deterministic tests.
+  now: () => "2026-07-28T12:00:00.000Z",
+  newId: () => "evt-1",
+});
+```
+
+## The pieces
+
+The handler composes these; use them directly if you need a different pipeline.
+
+**`createVerifier({ resolveKey })`** → `verify(rawBody, signature, keyId)`.
+Circle signs every v2 notification with ECDSA (P-256 / SHA-256) over the raw
+request body and sends `X-Circle-Signature` (base64 ASN.1 DER) and
+`X-Circle-Key-Id`; both header names are exported as `SIGNATURE_HEADER` and
+`KEY_ID_HEADER`. A malformed signature, key id or body is an invalid signature
+(`false`), not an error. Only a failing `resolveKey` throws — an unknown key id
+should return `null`. Imported keys are cached per key id.
+
+**`parseNotificationEnvelope(rawBody, source?)`** validates a raw body into a
+`NotificationEnvelope` (`subscription_id`, `notification_id`,
+`notification_type`, `notification`, `timestamp`, `version`), throwing a sourced
+`Error` on malformed JSON or a bad envelope. Only `version: 2` is accepted — a v1
+message has a different envelope and signature scheme.
+`assertNotificationEnvelope` does the same for an already-parsed value.
+
+**`createMemoryDedupeStore({ capacity })`** implements `DedupeStore`
+(`firstSeen`, `forget`), keyed on `notification_id`, which Circle reuses across
+retries. The event sink is append-only and the assembler does not dedupe, so
+exactly-once has to be enforced before anything is written.
 
 <Warning>
-  The in-memory store is bounded and **process-local**. Two instances behind a
-  load balancer, or one instance after a cold start, will each accept the same
-  redelivered notification. A deployment that is not a single long-lived process
-  should back the one-method `DedupeStore` interface with shared storage.
+  The default store holds 10 000 ids and is **process-local**. Two instances
+  behind a load balancer, or one instance after a cold start, will each accept
+  the same redelivered notification and the sink will hold it twice. A deployment
+  that is not one long-lived process should back the two-method `DedupeStore`
+  interface with shared storage.
 </Warning>
+
+**`normalizeNotification(envelope)`** is the default mapping, exported so you can
+wrap or replace it.
+
+The package also exports `ADAPTER_ID` and its types: `WebhookHandler`,
+`WebhookHandlerOptions`, `HandleResult`, `HeaderBag`, `NormalizeNotification`,
+`NotificationVerifier`, `VerifierOptions`, `PublicKeyResolver`,
+`NotificationEnvelope`, `DedupeStore`, `MemoryDedupeOptions`.
+
+## From deliveries to receipts
+
+The events are the input to [`haia-trace build`](/cli/build), which groups them
+by `context_id` and assembles one [Operation
+Receipt](/concepts/operation-receipt) per escrow contract:
+
+```sh
+haia-trace build --template escrow-arc
+```
+
+`escrow-arc` reads two witnesses. Circle's events close the money half — the
+`PaymentCreated` deposit, the withdrawal or refund disposition — and a failed
+wallet transaction surfaces as a fault. The obligation half (agreement, delivery,
+criteria) has no webhook witness, and `agreement` is one of the template's
+required stages, so a webhook-only run assembles as `partial` until your own
+service records its `escrow.*` events into the same run directory.

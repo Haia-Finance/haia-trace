@@ -1,26 +1,55 @@
 # Traced x402 agent
 
-A buyer agent that pays two APIs over x402. Only the agent is instrumented — the
-sellers are other people's services, and the agent has no access to their code,
-their logs or their hooks. That is the normal case: you own your side of a
-payment and nothing else.
+A buyer agent that pays two APIs over x402, records what it observed, and turns
+that into receipts it can act on.
 
 ```sh
 pnpm demo     # run the agent, then assemble the receipts
-pnpm policy   # the agent reads the verdict and decides whether to keep spending
+pnpm policy   # read the verdicts and decide whether to keep spending
+pnpm clean    # drop the recorded events and receipts
 ```
 
-The docs site shows this run as a recording at
-[developers.haia.finance/demo](https://developers.haia.finance/demo). That page
-is the short version; the details below are the source for it.
-
-## What you get
-
 The first call settles. The second is signed, sent, and never comes back with a
-settlement. `pnpm demo` records the run to `.trace/events/<run>.ndjson` and
-assembles one receipt per operation, against the `x402-buyer` template — the
-payment as the buyer's own client witnessed it — side by side here, and with the
-operation ids cut short to fit; the real ones are full uuids:
+settlement.
+
+## What is real and what is not
+
+**Real:** the `@x402/core` client, its hook registries, the adapter attached to
+it, the events written to disk, and the assembler that turns them into receipts.
+
+**Simulated:** the money and the sellers. There is no chain, no facilitator and
+no wallet, so `buyer.mjs` drives the lifecycle by invoking the hooks the SDK
+would invoke, with the context objects it would pass. The payment is faked; the
+trace is not.
+
+Only the buyer is instrumented. The sellers are other people's services — no
+access to their code, their logs or their hooks. That is the normal case: you own
+your side of a payment and nothing else.
+
+## The integration
+
+One line, plus the sink it writes to (`buyer.mjs`):
+
+```js
+const writer = createRunEventWriter(".trace/events");
+
+trace(agent, { writer });
+```
+
+The run directory is the producer's to choose; `.trace/events` is the one
+`haia-trace build` reads from unless `--dir` says otherwise, so naming it here is
+what makes recording and assembling meet.
+
+`trace()` returns an attestation (`kind`, `attached`, `missing`, `complete`),
+which the demo prints on startup — a run that recorded nothing is distinguishable
+from a recorder that never connected.
+
+## The receipts
+
+`pnpm demo` records the run to `.trace/events/<run>.ndjson` and assembles one
+receipt per operation against `x402-buyer`, the template covering the payment as
+the client witnesses it. Shown side by side, with the operation ids cut short —
+the real ones are full uuids:
 
 ```text
 🧾 x402-buyer · ed2b9682… · FULL      🧾 x402-buyer · fe5bc1b6… · PARTIAL
@@ -39,11 +68,10 @@ operation ids cut short to fit; the real ones are full uuids:
                                         operation not complete
 ```
 
-The second operation is the point. A signed authorization left the agent, and
-nothing came back that says what happened to it. The agent cannot tell a payment
-that never settled from one that settled silently — and instead of guessing
-either way, the receipt records the fault it saw and names the milestone that
-stayed open.
+The second operation is the point. A signed authorization left the agent and
+nothing came back saying what happened to it. The agent cannot tell a payment
+that never settled from one that settled silently — so instead of guessing, the
+receipt records the fault it saw and names the milestone that stayed open.
 
 `pnpm policy` then reads those receipts the way an agent would, and exits
 non-zero:
@@ -58,32 +86,28 @@ run 1785858302473
 ```
 
 Each `pnpm demo` is its own run, and receipts are keyed by run
-(`.trace/receipts/<run>~<operation>.json`), so a second demo adds two more
-receipts rather than replacing the first two. The run in the name is what keeps
-them apart on disk no matter what an adapter's operation ids look like. The
-policy judges the latest run, the one the demo just built, and — from the second
-demo on — says how many earlier runs are still on disk: old evidence is kept, but
-a payment that failed
-an hour ago is not what decides whether the agent may spend now.
+(`.trace/receipts/<run>~<operation>.json`), so a second demo adds two more rather
+than replacing the first two. The policy judges the latest run and, from the
+second demo on, reports how many earlier runs are still on disk: old evidence is
+kept, but a payment that failed an hour ago is not what decides whether the agent
+may spend now.
 
-## The integration
+## Redaction
 
-One line, plus the sink it writes to:
+The signed authorization in `buyer.mjs` carries a `signature` field on purpose.
+Grep the run file for it:
 
-```js
-const writer = createRunEventWriter(".trace/events");
-
-trace(agent, { writer });
+```sh
+grep -R SIGNATURE .trace/events/ || echo "the signature never reached the run file"
 ```
 
-The run directory is the producer's to choose; `.trace/events` is the one
-`haia-trace build` reads from unless its `--dir` says otherwise, so naming it here
-is what makes recording and assembling meet.
+Payloads are built from an allowlist — normalized public facts, never
+credentials.
 
-### Mirroring to the Control Plane
+## Mirroring to the Control Plane
 
 Give the demo an ingest key and the same events also go to a Haia Control Plane
-project, where the dashboard can show them:
+project:
 
 ```sh
 HAIA_INGEST_URL=https://<host> HAIA_INGEST_KEY=<key> pnpm demo
@@ -95,44 +119,18 @@ Nothing about the recording changes — two sinks compose into one writer:
 const writer = createMulticastEventWriter(runWriter, cpWriter);
 ```
 
-The local run file stays the source of truth the receipts are assembled from;
-the Control Plane is a mirror. Uploading is batched, so `buyer.mjs` awaits
+The local run file stays the source of truth the receipts are assembled from; the
+Control Plane is a mirror. Uploading is batched, so `buyer.mjs` awaits
 `writer.flush?.()` before it exits — the file sink writes inside `write` and has
-no `flush` to call, which is why the call is optional.
+no `flush`, which is why the call is optional.
 
 The environment variables belong to this script, not to the library: the sink
 takes its configuration through its constructor and never reads ambient state.
 With no key set, the demo runs entirely offline.
 
-`trace()` returns an attestation (`kind`, `attached`, `missing`, `complete`), so
-a run that recorded nothing is distinguishable from a recorder that never
-connected. The demo prints it on startup.
+## The other side
 
-Capture is passive: the handlers only record and always return `undefined`, so
-they can never steer a payment the way an x402 hook is allowed to. The worst case
-of a bug here is a missing event, never a broken payment.
-
-## The buyer's template
-
-`x402-buyer` — the template `haia-trace build` applies by default — covers the
-payment as the client sees it: the 402 challenge, the signed payment, the
-settlement response. It ends where the client's own evidence ends.
-
-A seller who wants their own side recorded attaches the same way, and assembles
-it against `x402-seller`. Nothing here depends on that, and this example
-deliberately does without it.
-
-## What is real and what is not
-
-Real: the `@x402/core` client, its hook registries, the recorder attached to it,
-the Event Contract written to disk, and the assembler that turns it into
-receipts.
-
-Simulated: the money and the sellers. There is no chain, no facilitator and no
-wallet, so the lifecycle is driven locally by invoking the hooks the SDK would
-invoke, with the context objects it would pass. This example fakes the payment,
-never the trace.
-
-The signed authorization carries a `signature` field on purpose: grep the run
-file for it and it is not there. Redaction is allowlist-based — payloads carry
-normalized fields, never credentials.
+`x402-buyer` ends where the client's own evidence ends. A seller who wants their
+own side recorded attaches `trace()` the same way and assembles against
+`x402-seller`. Nothing here depends on that, and this example deliberately does
+without it.

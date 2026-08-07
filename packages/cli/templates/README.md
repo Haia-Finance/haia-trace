@@ -1,20 +1,32 @@
 # templates/
 
-Declarative operation templates (yaml) that ship with `@usehaia/trace-cli` — they
-are packaged into the published tarball (see the `files` list in `package.json`),
-so every install carries them.
+The operation templates that ship with `@usehaia/trace-cli` — `x402-buyer`,
+`x402-seller`, `x402-facilitator` and `escrow-arc`. They ride into the published
+tarball via the `files` list in `package.json`, so every install can
+`haia-trace build --template <name>` with no network fetch.
 
-Each template describes the expected flow of an operation — its **stages**, which
-**events close each stage** (matched on `event_type`, and optionally on the
-observing `role`), and what an unclosed stage means (`missing_explanation`).
-Templates are **data, not code**: a new scenario is a new file here plus (if
-needed) a capture adapter, never a change to the core assembler.
+📖 What each one expects, stage by stage:
+**[developers.haia.finance/cli/template](https://developers.haia.finance/cli/template)**
 
-The three shipped here are the three sides of an x402 payment. `x402-seller` and
-`x402-facilitator` record the same verify/settle event types for the same
-payment, so every witness in both names its `role` — without that, a run tracing
-both would close one side's milestones on the other's events.
+Templates are **data, not code**: a new scenario is a new file here plus, if the
+events are new, a capture adapter — never a change to the assembler.
 
-Loaded via `loadTemplate(name)` from `../src/templates.ts`, which parses the yaml
-and validates it against the Template Contract (`assertOperationTemplate` in
-`@usehaia/trace-core`).
+## Writing your own
+
+Do it in your project, not here:
+
+```sh
+haia-trace template new my-op   # writes .trace/templates/my-op.yaml
+haia-trace build --template my-op
+```
+
+`build` searches `.trace/templates/` before this directory, so a project template
+also shadows a built-in of the same name.
+
+## Editing one here
+
+Files here are parsed by `../src/templates.ts` and validated against the Template
+Contract by `assertOperationTemplate` from `@usehaia/trace-core`, which throws on
+the first mismatch rather than producing a wrong receipt. `template:` must match
+the file name, and a change to a shipped template's stages usually means the
+fixtures under `../fixtures/` and the page linked above need updating with it.

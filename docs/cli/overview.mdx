@@ -3,8 +3,12 @@ title: Overview
 description: "The haia-trace command-line tool."
 ---
 
-`haia-trace` assembles **Operation Receipts** — one verdict per payment
-operation — from recorded events, and renders them in the terminal or as JSON.
+`haia-trace` reads a run of recorded events and assembles **Operation
+Receipts** — one verdict per payment operation — rendering them in the terminal
+or as JSON.
+
+Local-first: it reads and writes a project-local `.trace/` directory. No daemon,
+no database, no network.
 
 ## Install
 
@@ -24,72 +28,103 @@ Both expose the `haia-trace` command. Requires **Node ≥ 22**.
 
 ## Commands
 
-<CardGroup cols={3}>
+<CardGroup cols={2}>
   <Card title="sample" icon="flask" href="/cli/sample">
-    Assemble receipts from bundled fixtures — the zero-setup first taste.
+    Assemble receipts from bundled fixtures — no setup required.
   </Card>
   <Card title="build" icon="hammer" href="/cli/build">
     Assemble one receipt per operation from a run's events.
   </Card>
   <Card title="receipt" icon="receipt" href="/cli/receipt">
-    List the receipts build has written, and show one verdict in full.
+    List the receipts `build` has written; show one verdict in full.
   </Card>
   <Card title="template" icon="list" href="/cli/template">
-    List the templates you can build against, and scaffold your own.
+    List the templates you can build against; scaffold your own.
   </Card>
 </CardGroup>
 
-### Global flags
-
-| Flag             | Meaning                                            |
-| ---------------- | -------------------------------------------------- |
-| `-v, --version`  | Print the version and exit.                        |
-| `-h, --help`     | Help for the program or any command.               |
+| Global flag     | Meaning                                                     |
+| --------------- | ----------------------------------------------------------- |
+| `-v, --version` | Print the version and exit.                                  |
+| `-h, --help`    | Help for the program or any command (`haia-trace build --help`). |
 
 ## The `.trace/` directory
 
-The CLI reads and writes a project-local `.trace/` directory — no daemon, no
-database, no network:
-
 ```text
 .trace/
-  events/<run_id>.ndjson      # recorded events; one run = one file (the input)
-  receipts/<run>~<context_id>.json  # assembled receipts, one per operation (the output)
-  templates/<name>.yaml       # your own operation templates (yours to edit)
+  events/<run>.ndjson              # recorded events, one run per file — the input
+  receipts/<run>~<operation>.json  # assembled receipts, one per operation — the output
+  templates/<name>.yaml            # your own operation templates — source you author
 ```
 
-A run file is newline-delimited JSON — one event per line, append-only. It's the
-source of truth; a Receipt is a derived, reproducible artifact, so re-building
-the same run always yields the same Receipt.
+A run file is newline-delimited JSON, one event per line, append-only. It is the
+source of truth. A receipt is derived and reproducible: re-building the same run
+yields a byte-identical receipt, so [`build`](/cli/build) *is* "rebuild".
 
-`build` writes into `receipts/`, and [`receipt`](/cli/receipt) reads it back — so
-nothing outside the CLI needs to know how a receipt file is named.
+A receipt's file name carries **both** the run and the operation, because an
+operation id is only guaranteed unique within its run — an adapter is free to
+number operations per session. [`receipt`](/cli/receipt) reads the store back, so
+nothing outside the CLI needs to know how the name is built.
 
-### Moving the root with `--dir`
+### Moving the root
 
-`--dir` relocates the whole root — `haia-trace build --dir .my-trace` — for a
-second project in one checkout, or a scratch run that shouldn't touch the
-committed tree. What's *inside* the root never changes: `events/`, `receipts/`,
-`templates/`. That's what makes one flag enough, and what keeps a relocated
-directory readable by anyone who only knows the default one. Every command that
-touches these takes `--dir`, and `--templates-dir` still outranks it when you
-want templates alone somewhere else.
+`--dir <path>` relocates the whole root — `haia-trace build --dir .my-trace` —
+for a second project in one checkout, or a scratch run that should not touch the
+committed tree. What is *inside* the root never changes: `events/`, `receipts/`,
+`templates/`.
 
-The recorder is the one thing `--dir` can't reach: it names its own directory
-(`createRunEventWriter(".trace/events")`), so point it at `events/` under whatever
-root you build with.
+`--templates-dir <path>` moves templates alone and outranks `--dir`. Every
+command that resolves a template takes both; [`receipt`](/cli/receipt) reads the
+store only, so it takes `--dir` alone.
 
-<Warning>
-  A relocated root needs its own `.gitignore` entries — the ones below cover
-  `.trace/` only. Derived output under `.my-trace/` is untracked but *not*
-  ignored, so the next `git add -A` would commit it.
-</Warning>
+The recorder is the one thing `--dir` cannot reach: it names its own directory
+(`createRunEventWriter(".trace/events")`), so point it at `events/` under
+whatever root you build with.
 
-`events/` and `receipts/` are recorded and derived, so they belong in
-`.gitignore`. `templates/` is source you author — ignore the two subdirectories
-rather than `.trace/` as a whole:
+### git
+
+`events/` and `receipts/` are recorded and derived; `templates/` is source you
+author. Ignore the two subdirectories, not the root:
 
 ```gitignore
 .trace/events/
 .trace/receipts/
 ```
+
+<Warning>
+  A relocated root needs its own entries — the lines above cover `.trace/` only.
+  Derived output under `.my-trace/` would be untracked but *not* ignored, so the
+  next `git add -A` would commit it.
+</Warning>
+
+## Output formats
+
+Every command renders to the terminal by default. `build`, `receipt list` and
+`receipt show` also take `--json` and write a document to stdout instead;
+`template list` and `template new` do not.
+
+Diagnostics never go to stdout. A warning about receipt files that could not be
+read is written to **stderr**, so `haia-trace receipt list --json | jq .` stays
+valid and `> out.json` still shows the damage on your terminal.
+
+Colour and glyphs come from the terminal's own capabilities and degrade to ASCII
+where Unicode is unsupported. A spinner appears only on an interactive terminal
+and only while `build` is actually folding events.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The command produced its answer. |
+| `1` | It could not: an unreadable run file, an unknown template, an unknown run or operation, an invalid flag value. |
+
+A verdict is an answer, not a failure. `build` exits `0` on a `PARTIAL`
+receipt — read `--json` and branch on `completeness` to gate on one. `receipt
+list` on an empty store is an answer too and exits `0`, while `receipt show` with
+nothing to show is a failure and exits `1`.
+
+## Templates that ship
+
+Four: `x402-buyer`, `x402-seller` and `x402-facilitator` for the three sides of
+an x402 payment, and `escrow-arc` for an escrow on Arc. [`template`](/cli/template)
+lists what each one expects, and scaffolds your own for anything else.

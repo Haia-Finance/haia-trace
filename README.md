@@ -16,20 +16,23 @@ merchant receipt** (it's built from your own observations, so it holds up in a
 dispute), and **not a dashboard** (it's the full account of one operation, not
 trends across many).
 
+Docs: [developers.haia.finance](https://developers.haia.finance).
+
 ## Try it in 60 seconds
 
-No install needed — run the bundled sample through the real assembler:
+No install needed — replay a bundled fixture run through the real assembler:
 
 ```sh
-npx @usehaia/trace-cli sample x402-buyer        # the paying agent's view
-npx @usehaia/trace-cli sample x402-seller       # the resource server's view
-npx @usehaia/trace-cli sample x402-facilitator  # the verify/settle service's view
+npx @usehaia/trace-cli sample              # an x402 payment, as the paying client saw it
+npx @usehaia/trace-cli sample escrow-arc   # an escrow on Arc, agreement to release or refund
+npx @usehaia/trace-cli template list       # every template you can build against
 ```
 
-You'll see three operations from one fixture run: a **FULL** receipt, a
-**PARTIAL** one with an explained gap, and one with an observed fault — the
-product's whole spectrum, assembled by the same deterministic core a live run
-uses.
+Each x402 fixture set holds three operations: a **FULL** receipt, a **PARTIAL**
+one with an explained gap, and one carrying an observed fault. The escrow set
+holds four, because an escrow resolves two ways — released or refunded, both
+**FULL**. Same deterministic core a live run uses; only the events come from a
+file instead of a recorder.
 
 ## Then on a real agent
 
@@ -39,24 +42,26 @@ actual `@x402/core` client, traced by one line and assembled into receipts:
 ```sh
 cd examples/x402-agent
 pnpm demo     # the agent pays twice, then the receipts are built
-pnpm policy   # the agent reads the verdict and stops on the unresolved one
+pnpm policy   # the agent reads the verdicts and stops on the unresolved one
 ```
 
 Only the buyer is instrumented, because that is all you own: the sellers are
 other people's services. The money is simulated — there is no chain and no
-facilitator — and the README says exactly which parts are real.
+facilitator — and [its README](./examples/x402-agent) says exactly which parts
+are real.
 
 ## Packages
 
-| Package                                  | Version                                                                                                              | Role                                                                 |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [`@usehaia/trace-core`](./packages/core) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-core?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-core) | Contracts (Event / Template / Receipt) and the receipt assembler.    |
-| [`@usehaia/trace-x402`](./packages/x402) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-x402?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-x402) | Capture adapter for the x402 payment SDK — records lifecycle events. |
+| Package                                      | Version                                                                                                                              | Role                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| [`@usehaia/trace-core`](./packages/core)     | [![npm](https://img.shields.io/npm/v/@usehaia/trace-core?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-core)     | Contracts (Event / Template / Receipt) and the receipt assembler.    |
+| [`@usehaia/trace-x402`](./packages/x402)     | [![npm](https://img.shields.io/npm/v/@usehaia/trace-x402?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-x402)     | Capture adapter for the x402 payment SDK — records lifecycle hooks.  |
 | [`@usehaia/trace-circle`](./packages/circle) | [![npm](https://img.shields.io/npm/v/@usehaia/trace-circle?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-circle) | Capture adapter for Circle webhook v2 notifications.                 |
-| [`@usehaia/trace-cli`](./packages/cli)   | [![npm](https://img.shields.io/npm/v/@usehaia/trace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-cli)   | The `haia-trace` command-line tool and renderers.                    |
+| [`@usehaia/trace-cli`](./packages/cli)       | [![npm](https://img.shields.io/npm/v/@usehaia/trace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@usehaia/trace-cli)       | The `haia-trace` command-line tool and renderers.                    |
 
-The adapters and the CLI all depend on `trace-core`. Each package has its own
-README with full usage.
+Both adapters and the CLI depend on `trace-core`. Each package README gets you
+running; the full reference lives at
+[developers.haia.finance](https://developers.haia.finance).
 
 ## Install
 
@@ -65,8 +70,8 @@ README with full usage.
 npm install -g @usehaia/trace-cli      # or run ad hoc with `npx @usehaia/trace-cli`
 
 # A capture adapter — add to the app whose payments you want to record
-npm install @usehaia/trace-x402      # in-process, for the x402 payment SDK
-npm install @usehaia/trace-circle    # webhook receiver, for Circle notifications
+npm install @usehaia/trace-x402        # in-process, for the x402 payment SDK
+npm install @usehaia/trace-circle      # in a webhook route, for Circle notifications
 ```
 
 ## How it fits together
@@ -74,40 +79,37 @@ npm install @usehaia/trace-circle    # webhook receiver, for Circle notification
 ```mermaid
 flowchart LR
   A["your x402 app<br/>client · resource server<br/>facilitator · MCP"]
+  W["Circle webhook v2<br/>deliveries"]
 
   subgraph toolchain["the Trace toolchain"]
     direction TB
-    B["@usehaia/trace-x402<br/>capture adapter"]
+    B["@usehaia/trace-x402"]
+    B2["@usehaia/trace-circle"]
     C[".trace/events/*.ndjson<br/>append-only · source of truth"]
     D["@usehaia/trace-core<br/>deterministic assembler"]
-    E["haia-trace<br/>build · sample"]
+    E["haia-trace<br/>sample · build · receipt"]
   end
 
   A -->|lifecycle hooks| B
+  W -->|verified deliveries| B2
   B -->|Event Contract| C
+  B2 -->|Event Contract| C
   C --> D
   D -->|Receipt| E
 ```
 
 Events are the source of truth; a Receipt is derived and reproducible — the same
-NDJSON always assembles to the same Receipt.
+NDJSON always assembles to the same Receipt. A **template** says which milestones
+an operation is expected to hit; four ship with the CLI (`x402-buyer`,
+`x402-seller`, `x402-facilitator`, `escrow-arc`) and `haia-trace template new`
+scaffolds your own.
 
-## Status
+## Maturity
 
-Early and pre-1.0. What's wired today:
-
-- **`trace-core`** — the Event / Template / Receipt contracts and the
-  deterministic assembler are complete.
-- **`trace-cli`** — `sample`, `build`, and `template` all work. `build`
-  assembles receipts from a `.trace/events/*.ndjson` run file, against a built-in
-  template or one you scaffold with `haia-trace template new`. `--dir` moves the
-  whole `.trace/` root; the layout inside it stays fixed.
-- **`trace-x402`** — attaches to the x402 v2 lifecycle hooks and records each
-  firing, strictly passively, as a normalized and redacted event. Point it at
-  `.trace/events` and `trace(...)` → `haia-trace build` produces a receipt per
-  payment, assembled with the per-role `x402-buyer` / `x402-seller` /
-  `x402-facilitator` templates — a clean payment assembles as `full`. See its
-  [README](./packages/x402).
+Pre-1.0, published and usable. The contracts, the assembler, both adapters and
+every CLI command work today, and the packages are versioned together. Expect
+the contracts to still move before 1.0 — pin an exact version if a receipt has
+to keep assembling identically.
 
 ## Develop from source
 
@@ -121,7 +123,8 @@ pnpm check-types   # build, then tsc --noEmit
 ```
 
 `pnpm test` and `pnpm check-types` build first automatically, so they work on a
-fresh checkout. See [CLAUDE.md](./CLAUDE.md) for engineering conventions.
+fresh checkout. See [CLAUDE.md](./CLAUDE.md) for engineering conventions and
+[docs/README.md](./docs/README.md) for the documentation site.
 
 ## License
 

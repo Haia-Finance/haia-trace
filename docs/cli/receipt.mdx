@@ -4,14 +4,14 @@ description: "Read the receipts build has assembled — list the store, or show 
 ---
 
 ```sh
-haia-trace receipt list
-haia-trace receipt show [operation]
+haia-trace receipt list [options]
+haia-trace receipt show [operation] [options]
 ```
 
-[`build`](/cli/build) assembles receipts and writes them under the Trace root;
-these two read them back. `list` answers *what is in the store?* with one line per
-receipt, and `show` answers *what happened in this operation?* by rendering the
-stored verdict in full.
+[`build`](/cli/build) writes receipts under the `.trace/` root; these two read them
+back. `list` answers *what is in the store?* with one line per receipt, `show`
+answers *what happened in this operation?* by rendering the stored verdict in
+full.
 
 <Note>
   Both are read-only. A receipt is **derived** from a run's events, so `build` is
@@ -19,102 +19,6 @@ stored verdict in full.
   [`template new`](/cli/template). To change a verdict, change the template or the
   events and build again.
 </Note>
-
-## `receipt list`
-
-Every receipt in the store, grouped by the run it came from, oldest run first.
-
-```sh
-haia-trace receipt list
-```
-
-```text
-🧾 Receipts
-
-  run 1721709600000
-    ✔ op-1  FULL     x402-buyer
-    ✖ op-2  PARTIAL  x402-buyer
-
-  run 1721712000000
-    ✔ op-1  FULL     x402-buyer
-
-3 receipts across 2 runs.
-```
-
-Each line carries the operation, its verdict, and the template the verdict was
-assembled against — two receipts in one run can be judged against different shapes,
-and a verdict means nothing without knowing which. The stages behind the verdict are
-what `show` is for. A run's operations are listed in the order they started, the
-same order `build` reports them in.
-
-<Note>
-  Operation ids come from the adapter that recorded the events, so what you see
-  depends on it: the x402 adapter mints a uuid per payment, while the ids in these
-  examples are shortened to keep the samples readable.
-</Note>
-
-Narrow it with either filter:
-
-```sh
-haia-trace receipt list --run 1721709600000   # one run
-haia-trace receipt list --status partial      # only the unresolved operations
-```
-
-A `--run` that matches nothing is refused and names the runs the store does hold: it
-means you asked for something absent, and silence would read as "that run went
-fine". A `--status` that matches nothing is a real answer about the store, so it
-prints one and exits 0.
-
-An empty store is the state every project starts in, so `list` points at `build`
-rather than failing.
-
-## `receipt show`
-
-With no operation named, the whole of the **most recent** run — the "how did the run
-I just built go?" question, which needs no ids to hand.
-
-```sh
-haia-trace receipt show
-```
-
-```text
-  run: 1721712000000
-
-🧾 x402-buyer · op-1 · FULL
-
-  ✔ challenge   confirmed
-  ✔ payment     confirmed
-  ✔ settlement  confirmed
-
-  operation completed
-```
-
-Name an operation for one receipt, and add `--run` to reach an older one:
-
-```sh
-haia-trace receipt show 9b5e7013-2b5e-4f1e-89b3-4287bb321412
-haia-trace receipt show 9b5e7013 --run 1721709600000   # a prefix is enough
-```
-
-Any leading part of the id works, as long as it names one operation in the run —
-handy when the adapter mints uuids. A prefix that matches several is refused, and
-says which, rather than picking one for you.
-
-The run is printed either way, because it is implicit unless you gave `--run` — and
-two runs of one program can yield receipts with identical operation ids and
-different verdicts.
-
-Unlike `list`, having nothing to show is a **failure**: the caller asked for a
-verdict and there is none, so an empty store or an unknown operation exits non-zero
-rather than printing nothing. An unknown operation names what the run does hold.
-
-<Tip>
-  `show` is more than `cat`. An operation id that isn't a bare slug — a URL-ish
-  `context_id` — is escaped into the receipt's file name, so the file is not
-  nameable by hand. Looking a receipt up by the ids it was written under is the only
-  reliable way to it, and it is what both commands do — by reading the directory, so
-  that every lookup can also report any damage it passed over.
-</Tip>
 
 ## Options
 
@@ -126,10 +30,115 @@ rather than printing nothing. An unknown operation names what the run does hold.
 | `--dir <path>`             | `list`, `show` | Root holding `events/`, `receipts/` and `templates/`. Default: `.trace`. |
 | `--json`                   | `list`, `show` | Machine-readable output instead of a terminal rendering.              |
 
+## `receipt list`
+
+Every receipt in the store, grouped by run, oldest run first, and within a run in
+the order the operations started — the same order `build` reports them in.
+
+```sh
+haia-trace receipt list
+```
+
+```text
+🧾 Receipts
+
+  run 1721709600000
+    ✔ op-1  FULL     x402-buyer
+    ✖ op-2  PARTIAL  x402-buyer
+    ✖ op-3  PARTIAL  x402-buyer
+
+  run 1721712000000
+    ✔ op-1  FULL     x402-seller
+    ✖ op-2  PARTIAL  x402-seller
+    ✖ op-3  PARTIAL  x402-seller
+
+6 receipts across 2 runs.
+```
+
+Each line carries the operation, its verdict, and the template the verdict was
+assembled against — two receipts in one run can be judged against different
+shapes, and a verdict means nothing without knowing which. The stages behind it
+are what `show` is for.
+
+```sh
+haia-trace receipt list --run 1721709600000   # one run
+haia-trace receipt list --status partial      # only the unresolved operations
+```
+
+The two filters differ in how they fail. A `--run` that matches nothing is a
+named thing that is not there, so it is refused and names the runs the store does
+hold:
+
+```text
+error: no receipts for run "nope" in .trace/receipts — runs in the store: 1721709600000, 1721712000000
+```
+
+A `--status` that matches nothing is a real answer about the store, so it prints
+one and exits `0`. An empty store is the state every project starts in, so `list`
+points at `build` rather than failing.
+
+<Note>
+  Operation ids come from the adapter that recorded the events: the x402 adapter
+  mints a uuid per payment, the Circle adapter uses the escrow contract's address.
+  The ids in these examples are short to keep the samples readable.
+</Note>
+
+## `receipt show`
+
+With no operation named, the whole of the **most recent** run — the "how did the
+run I just built go?" question, which needs no ids to hand. Name an operation for
+one receipt out of it:
+
+```sh
+haia-trace receipt show op-2
+```
+
+```text
+  run: 1721712000000
+
+🧾 x402-seller · op-2 · PARTIAL
+
+  ✔ request       confirmed
+  ✔ verification  confirmed
+  ✖ settlement    not confirmed  required
+
+  missing
+    settlement — settlement of the payment was not observed
+
+  operation not complete
+```
+
+Add `--run` to reach an older one:
+
+```sh
+haia-trace receipt show 9b5e7013-2b5e-4f1e-89b3-4287bb321412
+haia-trace receipt show 9b5e7013 --run 1721709600000   # a prefix is enough
+```
+
+Any leading part of the id works as long as it names exactly one operation in the
+run. A prefix matching several is refused and lists them, rather than showing you
+whichever sorted first. An id matching none names what the run does hold:
+
+```text
+error: no receipt for "zzz" in run "1721712000000" (.trace/receipts) — operations in that run: op-1, op-2, op-3
+```
+
+The run is printed either way, because it is implicit unless you gave `--run`.
+
+Unlike `list`, having nothing to show is a **failure**: the caller asked for a
+verdict and there is none, so an empty store or an unknown operation exits `1`.
+
+<Tip>
+  `show` is more than `cat`. An operation id that is not a bare slug — a URL-ish
+  `context_id` — is escaped into the receipt's file name, so the file is not
+  nameable by hand. Looking a receipt up by the ids it was written under is the
+  only reliable way to it, and it is what both commands do.
+</Tip>
+
 ## JSON output
 
-`list` emits an **index**, not whole receipts — it says what is in the store, so it
-carries the fields a reader scans or filters on:
+`list --json` emits an **index**, not whole receipts — it says what is in the
+store, so it carries only the fields a reader scans or filters on:
 
 ```json
 {
@@ -146,31 +155,33 @@ carries the fields a reader scans or filters on:
 }
 ```
 
-An entry in `unreadable` carries the `run` and `operation` its file name records
-alongside the `path` and the `reason`, so a consumer can tell whether the damage is
-in the run it just built or in an old one kept as evidence.
-
-That index carries the `completeness` an agent decides on, so a spend policy can
-read the store through one command rather than globbing the directory and
-re-deriving how receipts are named.
+It carries the `completeness` an agent decides on, so a spend policy can read the
+store through one command instead of globbing the directory and re-deriving how
+receipts are named.
 
 `show --json` emits the full [Receipt](/concepts/operation-receipt) objects as
 `{ run, receipts, unreadable }` — the same shape whether or not you named an
 operation, so a script consuming it never has to branch on the argument count.
 
-<Warning>
-  A file in `receipts/` that cannot be parsed — truncated mid-write, hand-edited,
-  written by an older CLI — is **reported**, not skipped: on stderr in every case,
-  and in the `unreadable` array of both commands' JSON. A store that is partly
-  damaged must never present as intact, so this holds even when a query is refused,
-  and a run whose receipts are *all* unreadable is still counted as the most recent
-  run rather than passed over for an older one. Files the CLI didn't write are passed
-  over in silence.
-</Warning>
+## Damaged files
 
-<Note>
-  The warning goes to **stderr**, never stdout. It is a diagnostic about the store
-  rather than part of the answer, so `receipt list --json | jq .` stays valid with a
-  damaged file present, and `receipt show --json > out.json` still shows the damage
-  on your terminal.
-</Note>
+A file in `receipts/` that cannot be parsed — truncated mid-write, hand-edited,
+written by an older CLI — is **reported**, never skipped. A store that is partly
+damaged must not present as intact.
+
+```text
+⚠ 1 file in the store could not be read:
+    invalid receipt (.trace/receipts/1721709600000~op-2.json): Unexpected end of JSON input
+```
+
+- It goes to **stderr** in every case, so `--json` stays parseable and a redirect
+  still shows the damage on your terminal.
+- It also appears in the `unreadable` array of both commands' JSON, carrying the
+  `run` and `operation` its file name records alongside the `path` and the
+  `reason` — enough to tell whether the damage is in the run you just built or in
+  an old one kept as evidence.
+- It still prints when a `--run` or `--status` query is refused.
+- A run whose receipts are *all* unreadable is still counted as the most recent
+  run, rather than passed over for an older one whose verdicts would look clean.
+
+Files the CLI did not write are passed over in silence.
