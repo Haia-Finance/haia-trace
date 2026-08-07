@@ -71,6 +71,16 @@ const event = recorder.event({
 });
 ```
 
+An adapter that records straight to one sink binds it at construction and uses
+`record` — stamp and write in one call, no way to mint an event and forget to
+persist it. It returns the writer's verdict (see the sink contract below):
+
+```ts
+const recorder = createRecorder({ adapter: "my-backend", writer });
+
+recorder.record({ event_type: "my.fact.observed", payload: {} }); // boolean
+```
+
 ## Persist events (the `/file` subpath)
 
 The event sink is a runtime-agnostic contract in the root export (`EventWriter` /

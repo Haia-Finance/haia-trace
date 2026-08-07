@@ -15,10 +15,13 @@
  * This is a deliberate inversion of the in-process adapters' fail-open
  * discipline: there, a capture failure must never break the payment path, so
  * sinks swallow errors. Here, swallowing a persistence error and answering 200
- * would stop Circle's retries and lose the event forever. The `write` option
- * must therefore THROW on failure — with core's file sink, that is
- * `createFileEventWriter(path, (err) => { throw err; })`, which turns its
- * fail-open error routing into the fail-loud behavior this pipeline needs.
+ * would stop Circle's retries and lose the event forever. The handler
+ * therefore treats `write` returning `false` — the sink contract's way of
+ * reporting a refused event without throwing — as a persistence failure, and
+ * answers 500. Core's writers pass as they are:
+ * `createFileEventWriter(path, onError).write`, no throwing error handler
+ * required. A `write` that throws instead is treated the same, so a fail-loud
+ * custom writer keeps working.
  *
  * Verification runs BEFORE parsing: nothing about an unauthenticated body is
  * trusted, not even that it is JSON. One handler serves any number of paths —
@@ -124,11 +127,13 @@ export interface WebhookHandlerOptions {
    *  `normalizeNotification` (`circle.*` vocabulary). */
   normalize?: NormalizeNotification;
   /**
-   * Persist one stamped event. MUST throw on failure — the handler answers 500
-   * so Circle retries — never swallow (see the module comment for the
-   * `createFileWriter` recipe).
+   * Persist one stamped event. Return `false` (or throw) on failure and the
+   * handler answers 500 so Circle retries; `true` — or no return at all, for a
+   * writer predating the boolean contract — acknowledges. What it must NEVER
+   * do is report success for an event it did not keep: that answers 200 and
+   * stops the retries that were the only way the event could still be saved.
    */
-  write: (event: TraceEvent) => void;
+  write: (event: TraceEvent) => boolean | void;
   /** Deduplication backing; defaults to the bounded in-memory store. */
   dedupe?: DedupeStore;
   /** Injectable clock/id source, passed to the recorder for deterministic tests. */
@@ -222,13 +227,24 @@ export function createWebhookHandler(
       }
 
       try {
+        // One funnel for both failure dialects: a sink-contract writer answers
+        // `false`, a fail-loud one throws. Either way the catch below forgets
+        // the dedupe claim and answers 500, so Circle redelivers.
+        const persist = (event: TraceEvent): void => {
+          if (write(event) === false) {
+            throw new Error(
+              `the event sink refused ${event.event_type} (${event.event_id})`,
+            );
+          }
+        };
+
         const events: TraceEvent[] = [];
         if (!attested) {
           const attestation = recorder.event({
             event_type: "trace.attached",
             payload: { source: "circle-webhook" },
           });
-          write(attestation);
+          persist(attestation);
           // Only after the write survives: a failed write leaves the session
           // unattested so the next delivery attests again.
           attested = true;
@@ -236,7 +252,7 @@ export function createWebhookHandler(
         }
         for (const input of normalize(envelope)) {
           const event = recorder.event(input);
-          write(event);
+          persist(event);
           events.push(event);
         }
         return { status: 200, outcome: "recorded", envelope, events };

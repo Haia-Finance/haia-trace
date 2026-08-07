@@ -99,7 +99,9 @@ function makeReplayRig(): { handler: WebhookHandler; lines: string[] } {
     verifier: createVerifier({
       resolveKey: async (keyId) => (keyId === "key-1" ? publicKeyBase64 : null),
     }),
-    write: (event) => lines.push(encodeEventLine(event)),
+    write: (event) => {
+      lines.push(encodeEventLine(event));
+    },
     // Deterministic ids; the clock is irrelevant — every fixture carries its
     // fact time, and the attestation's time does not affect any receipt.
     newId: () => `evt-${id++}`,

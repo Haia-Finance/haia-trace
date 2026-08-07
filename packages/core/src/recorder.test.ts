@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createRecorder } from "./index.js";
+import { createRecorder, type EventWriter, type TraceEvent } from "./index.js";
 
 describe("createRecorder", () => {
   it("stamps adapter and assigns seq monotonically from 0", () => {
@@ -90,5 +90,67 @@ describe("createRecorder", () => {
     expect(two.event({ event_type: "x402.settle.ok", payload: {} }).seq).toBe(
       0,
     );
+  });
+
+  describe("record", () => {
+    /** A minimal in-memory sink with a switchable verdict. */
+    function memoryWriter(accept = true) {
+      const events: TraceEvent[] = [];
+      return {
+        events,
+        writer: {
+          write(event: TraceEvent): boolean {
+            if (!accept) return false;
+            events.push(event);
+            return true;
+          },
+          close(): void {},
+        } satisfies EventWriter,
+      };
+    }
+
+    it("stamps and writes in one call, returning the writer's verdict", () => {
+      const sink = memoryWriter();
+      const rec = createRecorder({
+        adapter: "escrow-arc-app",
+        writer: sink.writer,
+      });
+
+      const accepted = rec.record({
+        event_type: "escrow.work.delivered",
+        context_id: "0xabc",
+        payload: { agreement_id: "agr-1" },
+      });
+
+      expect(accepted).toBe(true);
+      expect(sink.events).toHaveLength(1);
+      expect(sink.events[0]?.event_type).toBe("escrow.work.delivered");
+      expect(sink.events[0]?.adapter).toBe("escrow-arc-app");
+      expect(sink.events[0]?.seq).toBe(0);
+    });
+
+    it("passes the sink's refusal through", () => {
+      const sink = memoryWriter(false);
+      const rec = createRecorder({ adapter: "a", writer: sink.writer });
+      expect(rec.record({ event_type: "e", payload: {} })).toBe(false);
+    });
+
+    it("shares one seq counter with event(), so the stream stays ordered", () => {
+      const sink = memoryWriter();
+      const rec = createRecorder({ adapter: "a", writer: sink.writer });
+      const stamped = rec.event({ event_type: "first", payload: {} });
+      rec.record({ event_type: "second", payload: {} });
+      expect(stamped.seq).toBe(0);
+      expect(sink.events[0]?.seq).toBe(1);
+    });
+
+    it("throws a TypeError naming the fix when no writer was bound", () => {
+      // A caller mistake, deterministic on the first call — the same rule that
+      // lets createRunEventWriter throw on a missing directory.
+      const rec = createRecorder({ adapter: "a" });
+      expect(() => rec.record({ event_type: "e", payload: {} })).toThrow(
+        /createRecorder\(\{ adapter, writer \}\)/,
+      );
+    });
   });
 });

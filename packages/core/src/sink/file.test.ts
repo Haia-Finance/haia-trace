@@ -272,6 +272,26 @@ describe("createFileEventWriter", () => {
       writer.write(rec.event({ event_type: "a", payload: {} })),
     ).not.toThrow();
   });
+
+  it("answers true for a persisted event and false for a refused one", () => {
+    // The return is what lets a caller with delivery semantics — a webhook
+    // receiver answering Circle — act on a failure without the writer ever
+    // throwing into it. Same failure routing as before; one extra bit out.
+    const ok = createFileEventWriter(join(dir, "verdict.ndjson"));
+    expect(ok.write(rec.event({ event_type: "a", payload: {} }))).toBe(true);
+
+    const broken = createFileEventWriter(
+      join(dir, "missing", "run.ndjson"),
+      () => {},
+    );
+    expect(broken.write(rec.event({ event_type: "a", payload: {} }))).toBe(
+      false,
+    );
+    // Stopped after an unrecoverable path error — still false, not silence.
+    expect(broken.write(rec.event({ event_type: "b", payload: {} }))).toBe(
+      false,
+    );
+  });
 });
 
 describe("listRunFiles", () => {

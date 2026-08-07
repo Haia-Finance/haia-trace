@@ -80,10 +80,23 @@ export function decodeEventLines(text: string): TraceEvent[] {
  * implementation, one run file). `write` must not throw into the caller: a
  * producer may sit in a payment path, and a sink failure has to degrade to
  * "capture stopped", never "payment broke" (a fail-open guarantee).
+ *
+ * `write` RETURNS whether the sink accepted the event, so a caller with real
+ * delivery semantics — a webhook receiver that must answer 500 for the source
+ * to redeliver — can act on a failure without the writer ever throwing. A
+ * caller with no such semantics ignores the return and keeps the fail-open
+ * behavior unchanged; the fault still reaches the writer's error handler
+ * either way, so acting on `false` is opt-in, never required.
  */
 export interface EventWriter {
-  /** Append one event. Never throws; a backing-store failure is routed to the writer's error handler. */
-  write(event: TraceEvent): void;
+  /**
+   * Append one event. Never throws; a backing-store failure is routed to the
+   * writer's error handler. Returns `true` when the sink accepted the event —
+   * persisted it, for a sink that stores inside `write`; took it into the
+   * buffer, for one that delivers later (whose delivery faults go to the error
+   * handler, not this return) — and `false` when it was refused or dropped.
+   */
+  write(event: TraceEvent): boolean;
   /**
    * Settle everything `write` has accepted so far, for a writer that does not
    * hand the event to its store synchronously.

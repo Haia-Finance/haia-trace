@@ -104,15 +104,17 @@ export function createFileEventWriter(
 ): EventWriter {
   let stopped = false;
   return {
-    write(event: TraceEvent): void {
-      if (stopped) return;
+    write(event: TraceEvent): boolean {
+      if (stopped) return false;
       try {
         // `appendFileSync` opens with `O_APPEND` and closes per call, so writes
         // stay atomic per line and safe across processes sharing the run file.
         appendFileSync(path, `${encodeEventLine(event)}\n`);
+        return true;
       } catch (err) {
         stopped = isUnrecoverable(err);
         report(onError, err);
+        return false;
       }
     },
     close(): void {
@@ -199,8 +201,9 @@ export function createRunEventWriter(
     if (isUnrecoverable(err)) {
       return {
         path,
-        write(): void {
+        write(): boolean {
           /* nowhere to append; the reason went to `onError` at construction */
+          return false;
         },
         close(): void {
           /* nothing was opened */

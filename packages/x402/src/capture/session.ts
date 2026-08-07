@@ -51,8 +51,9 @@ export function openSession(recorder?: EventRecorder): {
 /** One NDJSON line per event on stdout — the encoding the file sink uses. */
 export function consoleWriter(): EventWriter {
   return {
-    write(event): void {
+    write(event): boolean {
       console.log(encodeEventLine(event));
+      return true;
     },
     close(): void {
       /* stdout is not ours to close */

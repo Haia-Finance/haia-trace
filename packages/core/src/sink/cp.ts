@@ -486,10 +486,14 @@ export function createCpEventWriter(
   };
 
   return {
-    write(event: TraceEvent): void {
+    // `true` here means "taken into the buffer", not "delivered" — this writer
+    // hands events to the network later, and a delivery fault goes to `onError`
+    // (and `flush`), never to this return. What IS knowable synchronously — a
+    // closed writer, an unsendable event, a full queue — answers `false`.
+    write(event: TraceEvent): boolean {
       if (closed) {
         report(new Error("haia-cp: writer is closed; dropped 1 event"));
-        return;
+        return false;
       }
 
       const mapped = toIngestEvent(event, identity);
@@ -501,7 +505,7 @@ export function createCpEventWriter(
             `haia-cp: cannot send event ${event.event_id} (${event.event_type}): ${reason}`,
           ),
         );
-        return;
+        return false;
       }
 
       if (queue.length + undelivered >= maxQueue) {
@@ -510,7 +514,7 @@ export function createCpEventWriter(
             `haia-cp: queue is full at ${maxQueue} events; dropped 1 event`,
           ),
         );
-        return;
+        return false;
       }
 
       queue.push(mapped);
@@ -519,6 +523,7 @@ export function createCpEventWriter(
       } else {
         scheduleFlush();
       }
+      return true;
     },
 
     flush,

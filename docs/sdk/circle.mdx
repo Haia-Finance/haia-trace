@@ -39,12 +39,9 @@ import { createFileEventWriter } from "@usehaia/trace-core/file";
 
 const handler = createWebhookHandler({
   verifier: createVerifier({ resolveKey }), // see below
-  // MUST throw on failure so the handler answers 500 and Circle retries.
-  // Core's file sink is fail-open by design; a throwing error handler turns it
-  // into the fail-loud write a webhook needs:
-  write: createFileEventWriter(".trace/events/webhooks.ndjson", (err) => {
-    throw err;
-  }).write,
+  // The sink reports a refused event by returning false, and the handler
+  // answers 500 so Circle retries — no throwing error handler needed:
+  write: createFileEventWriter(".trace/events/webhooks.ndjson").write,
 });
 
 // In your route (any framework — the handler is structural about headers):

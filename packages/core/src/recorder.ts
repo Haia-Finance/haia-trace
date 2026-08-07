@@ -13,6 +13,7 @@
  */
 
 import type { EventType, Role, TraceEvent } from "./event.js";
+import type { EventWriter } from "./sink/contract.js";
 
 /**
  * The Web Crypto `randomUUID`, a global in Node >= 20, browsers, and edge
@@ -52,11 +53,31 @@ export interface EventInput {
 export interface EventRecorder {
   /** Stamp a full TraceEvent from the adapter-supplied fields, advancing `seq`. */
   event(input: EventInput): TraceEvent;
+  /**
+   * Stamp AND persist in one call: `event()` followed by a write to the
+   * recorder's bound writer, returning the writer's verdict (see
+   * `EventWriter.write`). This is the whole producer API for an adapter that
+   * records straight to one sink — no writer at the call site, no way to stamp
+   * an event and forget to write it.
+   *
+   * Requires a `writer` in the recorder's options; calling it on a recorder
+   * constructed without one is a caller mistake and throws a `TypeError`
+   * naming the fix. A deliberate exception to fail-open: it fails on the FIRST
+   * call, deterministically, before any event is at stake — the same rule that
+   * lets `createRunEventWriter` throw on a missing directory.
+   */
+  record(input: EventInput): boolean;
 }
 
 export interface RecorderOptions {
   /** Id of the adapter that produced the events, e.g. `trace-x402`. */
   adapter: string;
+  /**
+   * The sink `record()` writes to. Optional because a recorder can also serve
+   * a caller that routes events itself via `event()` — but without it,
+   * `record()` has nowhere to write and throws when called.
+   */
+  writer?: EventWriter;
   /**
    * Wall clock, returning an ISO-8601 UTC timestamp. Injectable so assembler and
    * golden-file tests stay deterministic; defaults to `new Date().toISOString()`.
@@ -76,30 +97,40 @@ export interface RecorderOptions {
  * `seq`, starting from 0.
  */
 export function createRecorder(options: RecorderOptions): EventRecorder {
-  const { adapter } = options;
+  const { adapter, writer } = options;
   const now = options.now ?? (() => new Date().toISOString());
   const newId = options.newId ?? randomUUID;
 
   let seq = 0;
 
+  const event = (input: EventInput): TraceEvent => {
+    return {
+      event_id: newId(),
+      event_type: input.event_type,
+      // The adapter's fact time when it has one (after-the-fact sources);
+      // the session clock otherwise. See `EventInput.occurred_at`.
+      occurred_at: input.occurred_at ?? now(),
+      ...(input.context_id !== undefined
+        ? { context_id: input.context_id }
+        : {}),
+      seq: seq++,
+      adapter,
+      ...(input.role !== undefined ? { role: input.role } : {}),
+      // Shallow-copy so a caller that reuses and mutates one payload object
+      // across fires can't rewrite an already-recorded event's top-level fields.
+      payload: { ...input.payload },
+    };
+  };
+
   return {
-    event(input: EventInput): TraceEvent {
-      return {
-        event_id: newId(),
-        event_type: input.event_type,
-        // The adapter's fact time when it has one (after-the-fact sources);
-        // the session clock otherwise. See `EventInput.occurred_at`.
-        occurred_at: input.occurred_at ?? now(),
-        ...(input.context_id !== undefined
-          ? { context_id: input.context_id }
-          : {}),
-        seq: seq++,
-        adapter,
-        ...(input.role !== undefined ? { role: input.role } : {}),
-        // Shallow-copy so a caller that reuses and mutates one payload object
-        // across fires can't rewrite an already-recorded event's top-level fields.
-        payload: { ...input.payload },
-      };
+    event,
+    record(input: EventInput): boolean {
+      if (writer === undefined) {
+        throw new TypeError(
+          "record() needs a writer: createRecorder({ adapter, writer })",
+        );
+      }
+      return writer.write(event(input));
     },
   };
 }

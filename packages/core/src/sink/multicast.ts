@@ -13,6 +13,13 @@ import type { EventWriter } from "./contract.js";
  * is deliberate: one misbehaving sink must not deny the events to the rest, and
  * a writer that honours the contract already routes its failures to its own
  * error handler, where the caller configured them.
+ *
+ * `write` returns the AND of the writers' verdicts: `true` only when every
+ * sink accepted the event. This is the conservative reading a caller acting on
+ * the result needs — "all sinks have it" is the only answer that lets a
+ * webhook receiver acknowledge a delivery — and a caller that treats one sink
+ * as best-effort keeps that sink out of the multicast and calls it separately,
+ * rather than having this fan-out guess which failures matter.
  */
 export function createMulticastEventWriter(
   ...writers: readonly EventWriter[]
@@ -28,10 +35,19 @@ export function createMulticastEventWriter(
   };
 
   return {
-    write(event: TraceEvent): void {
-      each((writer) => {
-        writer.write(event);
-      });
+    write(event: TraceEvent): boolean {
+      // Not via `each`: a `write` that THROWS (a contract breaker) must land
+      // as a refusal, and the shared helper would absorb it out of sight of
+      // the accumulator.
+      let accepted = true;
+      for (const writer of writers) {
+        try {
+          accepted = writer.write(event) && accepted;
+        } catch {
+          accepted = false;
+        }
+      }
+      return accepted;
     },
     async flush(): Promise<void> {
       // `allSettled`, not `all`: a rejection from one writer must not skip the

@@ -101,7 +101,9 @@ function makeHandler(overrides: Partial<WebhookHandlerOptions> = {}) {
   const handler = createWebhookHandler({
     verifier: createVerifier({ resolveKey: resolver }),
     normalize: normalizeOne,
-    write: (event) => written.push(event),
+    write: (event) => {
+      written.push(event);
+    },
     ...overrides,
   });
   return { handler, written };
@@ -225,6 +227,34 @@ describe("createWebhookHandler", () => {
     ]);
   });
 
+  it("answers 500 when the sink refuses by returning false — the boolean dialect of the same failure", async () => {
+    // A sink-contract writer never throws; a refused event comes back as
+    // `false`. That must be indistinguishable from a thrown failure: 500, no
+    // dedupe claim left behind, and the retry records in full.
+    let refuse = true;
+    const written: TraceEvent[] = [];
+    const { handler } = makeHandler({
+      write: (event) => {
+        if (refuse) return false;
+        written.push(event);
+        return true;
+      },
+    });
+    const request = await signedRequest(envelopeFor("n-1"));
+
+    const failed = await handler.handle(request.body, request.headers);
+    expect(failed).toMatchObject({ status: 500, outcome: "record_failed" });
+    expect(written).toHaveLength(0);
+
+    refuse = false;
+    const retry = await handler.handle(request.body, request.headers);
+    expect(retry).toMatchObject({ status: 200, outcome: "recorded" });
+    expect(written.map((event) => event.event_type)).toEqual([
+      "trace.attached",
+      "test.transactions.inbound",
+    ]);
+  });
+
   it("acknowledges a type normalize maps to nothing — only the attestation is written", async () => {
     const { handler, written } = makeHandler({ normalize: () => [] });
     const { body, headers } = await signedRequest(envelopeFor("n-1"));
@@ -241,7 +271,9 @@ describe("createWebhookHandler", () => {
     const written: TraceEvent[] = [];
     const handler = createWebhookHandler({
       verifier: createVerifier({ resolveKey: resolver }),
-      write: (event) => written.push(event),
+      write: (event) => {
+        written.push(event);
+      },
     });
     const { body, headers } = await signedRequest(envelopeFor("n-1"));
 

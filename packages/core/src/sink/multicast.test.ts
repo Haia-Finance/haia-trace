@@ -13,7 +13,7 @@ const rec = createRecorder({
 
 describe("createMulticastEventWriter", () => {
   /** A writer that records what it was given, optionally failing on write. */
-  function spyWriter(options: { throws?: boolean } = {}) {
+  function spyWriter(options: { throws?: boolean; refuses?: boolean } = {}) {
     const events: TraceEvent[] = [];
     let closed = 0;
     let flushed = 0;
@@ -26,9 +26,11 @@ describe("createMulticastEventWriter", () => {
         return flushed;
       },
       writer: {
-        write(event: TraceEvent): void {
+        write(event: TraceEvent): boolean {
           if (options.throws) throw new Error("this writer is broken");
+          if (options.refuses) return false;
           events.push(event);
+          return true;
         },
         async flush(): Promise<void> {
           flushed++;
@@ -64,6 +66,34 @@ describe("createMulticastEventWriter", () => {
     expect(healthy.events).toHaveLength(1);
   });
 
+  it("answers true only when every writer accepted", () => {
+    const a = spyWriter();
+    const b = spyWriter();
+    expect(createMulticastEventWriter(a.writer, b.writer).write(event())).toBe(
+      true,
+    );
+  });
+
+  it("answers false when any writer refused, while the others still record", () => {
+    // The AND is what lets a caller with delivery semantics — a webhook
+    // receiver deciding between 200 and 500 — sit behind a multicast: "all
+    // sinks have it" is the only verdict that can be acknowledged.
+    const refusing = spyWriter({ refuses: true });
+    const healthy = spyWriter();
+    const writer = createMulticastEventWriter(refusing.writer, healthy.writer);
+
+    expect(writer.write(event())).toBe(false);
+    expect(healthy.events).toHaveLength(1);
+  });
+
+  it("counts a throwing writer as a refusal, not an accept", () => {
+    const broken = spyWriter({ throws: true });
+    const healthy = spyWriter();
+    const writer = createMulticastEventWriter(broken.writer, healthy.writer);
+
+    expect(writer.write(event())).toBe(false);
+  });
+
   it("flushes and closes every writer", async () => {
     const a = spyWriter();
     const b = spyWriter();
@@ -79,7 +109,9 @@ describe("createMulticastEventWriter", () => {
   it("settles even when one writer's flush rejects", async () => {
     const healthy = spyWriter();
     const rejecting: EventWriter = {
-      write(): void {},
+      write(): boolean {
+        return true;
+      },
       flush: () => Promise.reject(new Error("upload failed")),
       close(): void {},
     };
@@ -92,7 +124,9 @@ describe("createMulticastEventWriter", () => {
   it("settles when a writer's flush throws before returning a promise", async () => {
     const healthy = spyWriter();
     const throwing: EventWriter = {
-      write(): void {},
+      write(): boolean {
+        return true;
+      },
       flush(): Promise<void> {
         throw new Error("flush failed synchronously");
       },
@@ -105,7 +139,12 @@ describe("createMulticastEventWriter", () => {
   });
 
   it("tolerates a writer with no flush of its own", async () => {
-    const plain: EventWriter = { write(): void {}, close(): void {} };
+    const plain: EventWriter = {
+      write(): boolean {
+        return true;
+      },
+      close(): void {},
+    };
     await expect(
       createMulticastEventWriter(plain).flush?.(),
     ).resolves.toBeUndefined();

@@ -44,6 +44,7 @@ export function memoryWriter() {
   const writer: EventWriter = {
     write: (event) => {
       events.push(event);
+      return true;
     },
     close: () => {},
   };
