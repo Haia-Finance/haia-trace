@@ -210,7 +210,139 @@ describe("assertOperationTemplate", () => {
       exceptions: ["x402.settle.failed", ""],
     };
     expect(() => assertOperationTemplate(bad)).toThrow(
-      /`exceptions` must be a list of non-empty strings/,
+      /exception 1: `event` must be a non-empty string/,
+    );
+  });
+
+  it("rejects an exceptions value that is not a list", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+      exceptions: "x402.settle.failed",
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /`exceptions` must be a list/,
+    );
+  });
+
+  it("accepts a fault witness in either form, bare type or mapping", () => {
+    const template = assertOperationTemplate({
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+      exceptions: [
+        "x402.settle.failed",
+        { event: "$policy_decision", where: { verdict: "rejected" } },
+      ],
+    });
+
+    // Validation narrows; it never rewrites. A bare type stays a bare type, so
+    // a template read back is the template that was written.
+    expect(template.exceptions).toEqual([
+      "x402.settle.failed",
+      { event: "$policy_decision", where: { verdict: "rejected" } },
+    ]);
+  });
+
+  it("accepts a witness predicated on payload fields", () => {
+    const template = assertOperationTemplate({
+      template: "x",
+      version: 1,
+      stages: [
+        {
+          id: "decision",
+          required: true,
+          match: [
+            {
+              event: "$policy_decision",
+              where: { verdict: "approved", attempts: 2, cached: true },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(template.stages[0]?.match[0]?.where).toEqual({
+      verdict: "approved",
+      attempts: 2,
+      cached: true,
+    });
+  });
+
+  it("rejects an empty `where` (a condition that constrains nothing)", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [
+        { id: "decision", required: true, match: [{ event: "a", where: {} }] },
+      ],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /stage decision, match 0: `where` must be a non-empty mapping/,
+    );
+  });
+
+  it("rejects a `where` that is not a mapping", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [
+        {
+          id: "decision",
+          required: true,
+          match: [{ event: "a", where: ["verdict"] }],
+        },
+      ],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /stage decision, match 0: `where` must be a non-empty mapping/,
+    );
+  });
+
+  it("rejects a non-scalar `where` condition (nothing could equal it)", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [
+        {
+          id: "decision",
+          required: true,
+          match: [{ event: "a", where: { decision: { verdict: "ok" } } }],
+        },
+      ],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /stage decision, match 0: `where` values must be strings, numbers or booleans/,
+    );
+  });
+
+  it("rejects a null `where` condition", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [
+        {
+          id: "decision",
+          required: true,
+          match: [{ event: "a", where: { verdict: null } }],
+        },
+      ],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /stage decision, match 0: `where` values must be strings, numbers or booleans/,
+    );
+  });
+
+  it("holds a fault witness's `where` to the same rule", () => {
+    const bad = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+      exceptions: [{ event: "$policy_decision", where: {} }],
+    };
+    expect(() => assertOperationTemplate(bad)).toThrow(
+      /exception 0: `where` must be a non-empty mapping/,
     );
   });
 

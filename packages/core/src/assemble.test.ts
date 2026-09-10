@@ -647,3 +647,182 @@ describe("role-constrained witnesses", () => {
     expect(stage(receipt, "verification")?.state).toBe("confirmed");
   });
 });
+
+describe("payload-predicated witnesses", () => {
+  /**
+   * The motivating shape: one event type is the milestone under one outcome and
+   * a fault under another, told apart by a condition on its payload.
+   */
+  const policy: OperationTemplate = {
+    template: "policy",
+    version: 1,
+    stages: [
+      {
+        id: "decision",
+        required: true,
+        match: [{ event: "$policy_decision", where: { verdict: "approved" } }],
+      },
+    ],
+    exceptions: [{ event: "$policy_decision", where: { verdict: "rejected" } }],
+  };
+
+  /** Mint a run's events, each carrying the payload it was recorded with. */
+  function makePayloadEvents(
+    entries: Array<[string, Record<string, unknown>]>,
+  ): TraceEvent[] {
+    let n = 0;
+    const recorder = createRecorder({
+      adapter: "trace-x402",
+      now: () => "2026-01-01T00:00:00.000Z",
+      newId: () => `evt-${n++}`,
+    });
+    return entries.map(([event_type, payload]) =>
+      recorder.event({ event_type, payload }),
+    );
+  }
+
+  it("closes the stage when every condition holds", () => {
+    const receipt = assembleReceipt(
+      makePayloadEvents([["$policy_decision", { verdict: "approved" }]]),
+      policy,
+    );
+
+    expect(stage(receipt, "decision")?.state).toBe("confirmed");
+    expect(receipt.completeness).toBe("full");
+  });
+
+  it("leaves the stage open when a condition disagrees", () => {
+    // Without the predicate this event would close the stage, and a rejected
+    // decision would read as a reached milestone.
+    const receipt = assembleReceipt(
+      makePayloadEvents([["$policy_decision", { verdict: "rejected" }]]),
+      policy,
+    );
+
+    expect(stage(receipt, "decision")?.state).toBe("not_confirmed");
+    expect(receipt.exceptions.map((e) => e.event_type)).toEqual([
+      "$policy_decision",
+    ]);
+    expect(receipt.completeness).toBe("partial");
+  });
+
+  it("never matches a field the event does not carry", () => {
+    const receipt = assembleReceipt(
+      makePayloadEvents([["$policy_decision", { policy: "spend-cap" }]]),
+      policy,
+    );
+
+    expect(stage(receipt, "decision")?.state).toBe("not_confirmed");
+    expect(receipt.exceptions).toEqual([]);
+  });
+
+  it("compares strictly: no coercion across types", () => {
+    const strict: OperationTemplate = {
+      template: "strict",
+      version: 1,
+      stages: [
+        {
+          id: "a",
+          required: true,
+          match: [{ event: "e.one", where: { attempts: 1 } }],
+        },
+        {
+          id: "b",
+          required: true,
+          match: [{ event: "e.two", where: { cached: true } }],
+        },
+      ],
+    };
+
+    const receipt = assembleReceipt(
+      makePayloadEvents([
+        ["e.one", { attempts: "1" }],
+        ["e.two", { cached: 1 }],
+      ]),
+      strict,
+    );
+
+    expect(stage(receipt, "a")?.state).toBe("not_confirmed");
+    expect(stage(receipt, "b")?.state).toBe("not_confirmed");
+  });
+
+  it("requires every condition, not any", () => {
+    const both: OperationTemplate = {
+      template: "both",
+      version: 1,
+      stages: [
+        {
+          id: "a",
+          required: true,
+          match: [
+            {
+              event: "e.one",
+              where: { verdict: "approved", policy: "spend-cap" },
+            },
+          ],
+        },
+      ],
+    };
+
+    const half = assembleReceipt(
+      makePayloadEvents([["e.one", { verdict: "approved", policy: "other" }]]),
+      both,
+    );
+    const all = assembleReceipt(
+      makePayloadEvents([
+        ["e.one", { verdict: "approved", policy: "spend-cap" }],
+      ]),
+      both,
+    );
+
+    expect(stage(half, "a")?.state).toBe("not_confirmed");
+    expect(stage(all, "a")?.state).toBe("confirmed");
+  });
+
+  it("holds a role and a condition together", () => {
+    const constrained: OperationTemplate = {
+      template: "constrained",
+      version: 1,
+      stages: [
+        {
+          id: "verification",
+          required: true,
+          match: [
+            { event: "x402.verify.ok", role: "server", where: { ok: true } },
+          ],
+        },
+      ],
+    };
+    let n = 0;
+    const recorder = createRecorder({
+      adapter: "trace-x402",
+      now: () => "2026-01-01T00:00:00.000Z",
+      newId: () => `evt-${n++}`,
+    });
+    const events = (
+      [
+        ["facilitator", { ok: true }],
+        ["server", { ok: false }],
+        ["server", { ok: true }],
+      ] as Array<[string, Record<string, unknown>]>
+    ).map(([role, payload]) =>
+      recorder.event({ event_type: "x402.verify.ok", payload, role }),
+    );
+
+    const receipt = assembleReceipt(events, constrained);
+
+    // Only the server's own successful verification counts.
+    expect(stage(receipt, "verification")?.events).toEqual(["evt-2"]);
+  });
+
+  it("faults on a bare exception type however it was recorded", () => {
+    const receipt = assembleReceipt(
+      makePayloadEvents([["x402.settle.failed", { reason: "insufficient" }]]),
+      demoPayment,
+    );
+
+    expect(receipt.exceptions.map((e) => e.event_type)).toEqual([
+      "x402.settle.failed",
+    ]);
+  });
+});

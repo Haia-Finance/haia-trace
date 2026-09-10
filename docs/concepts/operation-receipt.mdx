@@ -59,6 +59,14 @@ vocabulary: a resource server and a facilitator both record `x402.verify.ok` for
 the same payment, so a seller's receipt would otherwise be closed by the
 facilitator's witness, claiming something the run does not support.
 
+A witness may also carry a `where`: top-level payload fields, compared for strict
+equality, all of which have to hold for the event to close the stage. It is what
+lets a single event type be the milestone under one outcome and a fault under
+another — a decision event whose payload says `approved` closes the stage, and
+the same type listed under `exceptions` with `where: { verdict: rejected }`
+faults instead. Without it a stage closes on either outcome, and moving the type
+to `exceptions` faults both.
+
 Templates are **data, not code** — a new scenario is a new template file, never a
 change to the assembler.
 
@@ -75,7 +83,7 @@ change to the assembler.
     plain-language explanation from the template's `missing_explanation`.
   </Step>
   <Step title="Faults surface as exceptions">
-    An event whose type is in the template's `exceptions` (e.g.
+    An event matching one of the template's `exceptions` (e.g.
     `x402.settle.failed`) does not close a stage — it is recorded on the
     operation as a fault.
   </Step>

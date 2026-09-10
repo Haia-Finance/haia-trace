@@ -22,9 +22,14 @@
  * (`assembleProgressively`), and the two provably agree.
  */
 
-import type { EventType, Role, TraceEvent } from "./event.js";
+import type { EventType, TraceEvent } from "./event.js";
 import type { Receipt, ReceiptException, ReceiptStage } from "./receipt.js";
-import type { OperationTemplate } from "./template.js";
+import type {
+  EventMatch,
+  ExceptionMatch,
+  OperationTemplate,
+  StageMatch,
+} from "./template.js";
 
 /** Optional operation identity, passed straight onto the receipt — never invented. */
 export interface AssembleOptions {
@@ -87,10 +92,42 @@ interface Draft {
   exceptions: ReceiptException[];
   /** Every event folded so far, already in `seq` order. */
   events: TraceEvent[];
-  /** `event_type` → the stages whose match-set contains it, and the role each requires. */
-  typeToStages: Map<EventType, { stage: number; role?: Role }[]>;
-  /** The template's exception event types, for O(1) fault detection. */
-  exceptionTypes: Set<EventType>;
+  /** `event_type` → the stages whose match-set contains it, and the witness each entry came from. */
+  typeToStages: Map<EventType, { stage: number; witness: StageMatch }[]>;
+  /** `event_type` → the template's fault witnesses of that type, for O(1) fault detection. */
+  faultsByType: Map<EventType, EventMatch[]>;
+}
+
+/**
+ * Whether an event satisfies a template predicate: the type is the one named,
+ * and every `where` condition holds against the event's payload.
+ *
+ * Conditions are ANDed and compared with `===`, so a string never equals a
+ * number and a field the event does not carry — `undefined` here — never
+ * matches a scalar condition.
+ */
+function eventMatches(match: EventMatch, event: TraceEvent): boolean {
+  if (match.event !== event.event_type) return false;
+  if (match.where === undefined) return true;
+  return Object.entries(match.where).every(
+    ([field, condition]) => event.payload[field] === condition,
+  );
+}
+
+/**
+ * Whether an event closes the stage a witness belongs to — the whole rule, type,
+ * role and conditions together. The one place that rule is written down.
+ */
+function witnessCloses(witness: StageMatch, event: TraceEvent): boolean {
+  // A witness with no role is closed by any observer; one with a role only by
+  // that side.
+  if (witness.role !== undefined && witness.role !== event.role) return false;
+  return eventMatches(witness, event);
+}
+
+/** A fault witness as a predicate: a bare event type is the shorthand for `{ event }`. */
+function faultMatch(entry: ExceptionMatch): EventMatch {
+  return typeof entry === "string" ? { event: entry } : entry;
 }
 
 /** Build the initial reducer state and precompute the match lookups. */
@@ -98,14 +135,26 @@ function startDraft(
   template: OperationTemplate,
   options: AssembleOptions,
 ): Draft {
-  const typeToStages = new Map<EventType, { stage: number; role?: Role }[]>();
+  const typeToStages = new Map<
+    EventType,
+    { stage: number; witness: StageMatch }[]
+  >();
   template.stages.forEach((stage, index) => {
-    for (const { event, role } of stage.match) {
-      const stages = typeToStages.get(event) ?? [];
-      stages.push({ stage: index, role });
-      typeToStages.set(event, stages);
+    for (const witness of stage.match) {
+      const stages = typeToStages.get(witness.event) ?? [];
+      stages.push({ stage: index, witness });
+      typeToStages.set(witness.event, stages);
     }
   });
+
+  const faultsByType = new Map<EventType, EventMatch[]>();
+  for (const entry of template.exceptions ?? []) {
+    const fault = faultMatch(entry);
+    faultsByType.set(fault.event, [
+      ...(faultsByType.get(fault.event) ?? []),
+      fault,
+    ]);
+  }
 
   return {
     template,
@@ -114,7 +163,7 @@ function startDraft(
     exceptions: [],
     events: [],
     typeToStages,
-    exceptionTypes: new Set(template.exceptions ?? []),
+    faultsByType,
   };
 }
 
@@ -127,11 +176,8 @@ function applyEvent(draft: Draft, event: TraceEvent): void {
     // Dedupe per stage: an event matching several of a stage's witnesses (e.g.
     // listed both with and without a role) still records once on that stage.
     const closed = new Set<number>();
-    for (const { stage, role } of stages) {
-      // A witness with no role is closed by any observer; one with a role only
-      // by that side.
-      if (role !== undefined && role !== event.role) continue;
-      if (closed.has(stage)) continue;
+    for (const { stage, witness } of stages) {
+      if (closed.has(stage) || !witnessCloses(witness, event)) continue;
       closed.add(stage);
       // Aligned with `template.stages`, so the entry always exists; the guard is
       // for `noUncheckedIndexedAccess`.
@@ -139,7 +185,9 @@ function applyEvent(draft: Draft, event: TraceEvent): void {
     }
   }
 
-  if (draft.exceptionTypes.has(event.event_type)) {
+  // One fault per event, however many exception entries it satisfies.
+  const faults = draft.faultsByType.get(event.event_type);
+  if (faults?.some((fault) => eventMatches(fault, event))) {
     draft.exceptions.push({
       event_type: event.event_type,
       event_id: event.event_id,
@@ -167,6 +215,8 @@ function finalize(draft: Draft): Receipt {
     return [
       {
         stage: stage.id,
+        // Roles and `where` conditions are dropped: this is what to look for,
+        // not who had to see it or under which outcome.
         expected_events: stage.match.map((m) => m.event),
         ...(stage.missing_explanation !== undefined
           ? { why: stage.missing_explanation }
