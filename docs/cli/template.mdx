@@ -135,6 +135,35 @@ roles record the same event type for the same operation, as a resource server an
 a facilitator do: the shipped `x402-seller` and `x402-facilitator` templates
 constrain every witness for exactly that reason.
 
+And a witness may name the payload fields the event has to carry:
+
+```yaml
+stages:
+  - id: decision
+    required: true
+    match:
+      - event: policy.decision.made
+        where: { verdict: approved }   # only this outcome closes the stage
+exceptions:
+  - event: policy.decision.made        # the same type, faulted on the
+    where: { verdict: rejected }       # outcome the stage does not accept
+```
+
+`where` is a mapping of top-level payload fields to scalars, **all** of which
+have to hold. Comparison is strict equality: `1` does not match `"1"`, `true`
+does not match `1`, and a field the event does not carry never matches. That is
+the whole grammar — no dotted paths, no comparison operators, no patterns, and an
+empty `where` is rejected rather than quietly matching everything.
+
+Reach for it where one event type carries the outcome in its payload. Without a
+condition the stage above closes on a *rejected* decision as readily as an
+approved one; listing the type in `exceptions` instead faults every decision the
+operation ever took.
+
+An `exceptions` entry is either a bare event type — how the shipped templates
+write them — or the same `{ event, where }` mapping, for a type that is a fault
+only under some outcomes.
+
 `new` refuses to overwrite an existing file unless you pass `--force`, so an
 edited template is never lost to a repeated command:
 

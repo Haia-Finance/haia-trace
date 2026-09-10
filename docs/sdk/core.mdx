@@ -45,7 +45,7 @@ not to core.
 
 The expected shape of an operation, as data. A stage's `match` is a match-set —
 any one of its events closes the stage — and a witness may name the `role` that
-has to have observed it.
+has to have observed it, or a `where` the event's payload has to satisfy.
 
 ```yaml
 template: x402-buyer
@@ -62,6 +62,13 @@ stages:
 exceptions:
   - x402.settle.failed
 ```
+
+`where` is a mapping of top-level payload fields to scalars, all of which must
+hold, compared with strict equality — a field the event does not carry never
+matches. An `exceptions` entry takes the same `{ event, where }` mapping, so one
+event type can be a milestone under one outcome and a fault under another; a bare
+event type faults on every occurrence. See
+[`haia-trace template`](/cli/template) for the shape in full.
 
 Core defines the shape (`OperationTemplate`) and the validator; reading YAML off
 disk is the caller's job. The CLI ships its own templates and its own loader —

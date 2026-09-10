@@ -14,14 +14,35 @@
 
 import type { EventType, Role } from "./event.js";
 
+/** A scalar a `where` condition compares against — the JSON values a payload field can hold. */
+export type MatchValue = string | number | boolean;
+
+/**
+ * A predicate over one event: the type it must have, and — through `where` — the
+ * payload it must carry.
+ */
+export interface EventMatch {
+  /** The event type this matches. Compared against `TraceEvent.event_type`. */
+  event: EventType;
+  /**
+   * Conditions on `TraceEvent.payload`, **all** of which must hold. Absent means
+   * the type alone decides.
+   *
+   * Deliberately the smallest thing that works: top-level field names compared
+   * for strict equality against scalars. No dotted paths, no comparison
+   * operators, no patterns — widening this later is cheap, narrowing it once
+   * templates depend on it is not. A field the event does not carry never
+   * matches, and `===` means `1` is not `"1"` and `true` is not `1`.
+   */
+  where?: Record<string, MatchValue>;
+}
+
 /**
  * One event-type witness in a stage's match-set. An object rather than a bare
- * string so a witness can gain conditions later (e.g. constrain by role) without
- * a breaking change to the template shape.
+ * string so a witness can gain conditions without a breaking change to the
+ * template shape — which is what `role` and `where` are.
  */
-export interface StageMatch {
-  /** The event type that, when observed, closes the stage. Matched against `TraceEvent.event_type`. */
-  event: EventType;
+export interface StageMatch extends EventMatch {
   /**
    * Restrict the witness to one observing side, matched against
    * `TraceEvent.role`; absent means any role closes the stage. Load-bearing
@@ -30,6 +51,13 @@ export interface StageMatch {
    */
   role?: Role;
 }
+
+/**
+ * One fault witness. A bare event type is the shorthand for `{ event: <type> }`:
+ * `exceptions` was a plain list of types before it could carry conditions, and
+ * every shipped template is still written that way.
+ */
+export type ExceptionMatch = EventType | EventMatch;
 
 /**
  * One milestone of an operation. Closed by ANY event in `match` — the match-set
@@ -67,11 +95,13 @@ export interface OperationTemplate {
   /** The operation's milestones, in canonical order. */
   stages: TemplateStage[];
   /**
-   * Event types that mark a stage `attention_required` rather than closing it —
-   * a failure or fault observed mid-flow (e.g. a verification or settlement
-   * failure), which the receipt must surface instead of treating as progress.
+   * Faults observed mid-flow (e.g. a verification or settlement failure), which
+   * the receipt must surface instead of treating as progress. A bare event type
+   * faults on every occurrence; the `{ event, where }` form faults only on the
+   * payloads it names, so one type can be a milestone under one outcome and a
+   * fault under another.
    */
-  exceptions?: EventType[];
+  exceptions?: ExceptionMatch[];
 }
 
 /**
@@ -95,6 +125,32 @@ export function assertOperationTemplate(
     return fail("expected a mapping at the top level");
   }
   const t = value as Record<string, unknown>;
+
+  // Shared by stage witnesses and fault witnesses: both carry the same `where`.
+  const checkWhere = (where: unknown, at: string): void => {
+    if (where === undefined) return;
+    // An empty mapping constrains nothing, which makes it indistinguishable
+    // from a half-written condition — it would silently widen the witness it
+    // was meant to narrow. Refused as loudly as an empty event type.
+    if (
+      typeof where !== "object" ||
+      where === null ||
+      Array.isArray(where) ||
+      Object.keys(where).length === 0
+    ) {
+      fail(`${at}: \`where\` must be a non-empty mapping`);
+    }
+    // Conditions are compared with `===` against a payload field, so anything
+    // that is not a scalar could never match.
+    const scalars = ["string", "number", "boolean"];
+    if (
+      Object.values(where as Record<string, unknown>).some(
+        (condition) => !scalars.includes(typeof condition),
+      )
+    ) {
+      fail(`${at}: \`where\` values must be strings, numbers or booleans`);
+    }
+  };
 
   if (typeof t.template !== "string" || t.template === "")
     fail("`template` must be a non-empty string");
@@ -149,6 +205,7 @@ export function assertOperationTemplate(
       if (role !== undefined && (typeof role !== "string" || role === "")) {
         fail(`${at}, match ${j}: \`role\` must be a non-empty string`);
       }
+      checkWhere(witness?.where, `${at}, match ${j}`);
     });
     if (
       s.missing_explanation !== undefined &&
@@ -159,14 +216,21 @@ export function assertOperationTemplate(
   });
 
   if (t.exceptions !== undefined) {
-    // Exceptions are event types too, matched the same way — an empty one is
-    // unmatchable noise, so hold them to the same non-empty rule.
-    if (
-      !Array.isArray(t.exceptions) ||
-      t.exceptions.some((e) => typeof e !== "string" || e === "")
-    ) {
-      fail("`exceptions` must be a list of non-empty strings");
-    }
+    if (!Array.isArray(t.exceptions)) fail("`exceptions` must be a list");
+    (t.exceptions as unknown[]).forEach((raw, i) => {
+      const at = `exception ${i}`;
+      // A bare event type is the shorthand for `{ event: <type> }`.
+      const fault =
+        typeof raw === "object" && raw !== null && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : { event: raw };
+      // Exceptions are matched by equality like witnesses are, so an empty
+      // type is unmatchable noise — the same non-empty rule applies.
+      if (typeof fault.event !== "string" || fault.event === "") {
+        fail(`${at}: \`event\` must be a non-empty string`);
+      }
+      checkWhere(fault.where, at);
+    });
   }
 
   return value as OperationTemplate;
