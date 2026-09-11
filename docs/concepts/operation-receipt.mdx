@@ -41,23 +41,17 @@ client *or* by an MCP client initiating payment for a tool call:
   required: true
   match:
     - event: x402.payment.submitted  # a signed payment left the client
-      role: client
+      where: { role: client }
     - event: x402.payment.requested  # MCP: payment for a tool call initiated
-      role: client
+      where: { role: client }
   missing_explanation: "the challenge was observed, but no payment was initiated"
 - id: settlement
   required: true
   match:
     - event: x402.payment.responded  # only a settlement that succeeded
-      role: client
+      where: { role: client }
   missing_explanation: "the payment was submitted, but no settlement response was observed"
 ```
-
-A witness may also name the `role` that has to have observed it. It is optional —
-without it, any role closes the stage — and it matters wherever two roles share a
-vocabulary: a resource server and a facilitator both record `x402.verify.ok` for
-the same payment, so a seller's receipt would otherwise be closed by the
-facilitator's witness, claiming something the run does not support.
 
 A witness may also carry a `where`: top-level payload fields, compared for strict
 equality, all of which have to hold for the event to close the stage. It is what
@@ -66,6 +60,13 @@ another — a decision event whose payload says `approved` closes the stage, and
 the same type listed under `exceptions` with `where: { verdict: rejected }`
 faults instead. Without it a stage closes on either outcome, and moving the type
 to `exceptions` faults both.
+
+The key `role` in a `where` is the one that reads the event's envelope rather
+than its payload: `where: { role: server }` accepts only the side that recorded
+the event. It matters wherever two roles share a vocabulary — a resource server
+and a facilitator both record `x402.verify.ok` for the same payment, so a
+seller's receipt would otherwise be closed by the facilitator's witness, claiming
+something the run does not support.
 
 Templates are **data, not code** — a new scenario is a new template file, never a
 change to the assembler.

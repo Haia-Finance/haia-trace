@@ -267,8 +267,8 @@ haia-trace build --template x402-seller     # a resource server
 haia-trace build --template x402-facilitator
 ```
 
-Templates are per-role, and every witness in them names the role that has to have
-observed it. Apply the one matching the side you traced — one build per side,
+Templates are per-role, and every witness in them names, through
+`where: { role: ... }`, the role that has to have observed it. Apply the one matching the side you traced — one build per side,
 even when a single run captured two ([`build`](/cli/build) covers why).
 
 Every buyer stage has a witness in each client kind's flow — HTTP, MCP, and the
