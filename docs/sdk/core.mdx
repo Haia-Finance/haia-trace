@@ -44,8 +44,8 @@ not to core.
 ### Template
 
 The expected shape of an operation, as data. A stage's `match` is a match-set —
-any one of its events closes the stage — and a witness may name the `role` that
-has to have observed it, or a `where` the event's payload has to satisfy.
+any one of its events closes the stage — and a witness may carry a `where` the
+event has to satisfy.
 
 ```yaml
 template: x402-buyer
@@ -55,9 +55,9 @@ stages:
     required: true
     match:
       - event: x402.payment.submitted
-        role: client
+        where: { role: client }
       - event: x402.payment.requested
-        role: client
+        where: { role: client }
     missing_explanation: "the challenge was observed, but no payment was initiated"
 exceptions:
   - x402.settle.failed
@@ -65,7 +65,9 @@ exceptions:
 
 `where` is a mapping of top-level payload fields to scalars, all of which must
 hold, compared with strict equality — a field the event does not carry never
-matches. An `exceptions` entry takes the same `{ event, where }` mapping, so one
+matches. The key `role` is the one exception: it reads the event's `role`, the
+observing side the adapter stamped on it, not a payload field. An `exceptions`
+entry takes the same `{ event, where }` mapping, so one
 event type can be a milestone under one outcome and a fault under another; a bare
 event type faults on every occurrence. See
 [`haia-trace template`](/cli/template) for the shape in full.

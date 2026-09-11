@@ -212,7 +212,7 @@ describe("template loading", () => {
     ] as const) {
       for (const stage of loadTemplate(name).stages) {
         for (const witness of stage.match) {
-          expect(witness.role, `${name} / ${stage.id}`).toBe(role);
+          expect(witness.where?.role, `${name} / ${stage.id}`).toBe(role);
         }
       }
     }

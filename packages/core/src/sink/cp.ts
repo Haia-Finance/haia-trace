@@ -183,8 +183,13 @@ export function toIngestEvent(
   event: TraceEvent,
   identity: CpIdentity = {},
 ): IngestEvent {
+  // The envelope's `role` is the only role the control plane may see: a
+  // template's `where: { role: x }` reads the envelope here and `properties`
+  // there, and the two must agree. A payload field of that name is dropped
+  // when the envelope carries none, rather than promoted to a role it never was.
+  const { role: _payloadRole, ...payload } = event.payload;
   const properties: Record<string, unknown> = {
-    ...event.payload,
+    ...payload,
     seq: event.seq,
     adapter: event.adapter,
     ...(event.role !== undefined ? { role: event.role } : {}),

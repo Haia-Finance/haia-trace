@@ -167,16 +167,89 @@ describe("assertOperationTemplate", () => {
     );
   });
 
-  it("rejects an empty-string role on a witness", () => {
+  it("rejects an empty-string role in a witness's where", () => {
     const blankRole = {
       template: "x",
       version: 1,
       stages: [
-        { id: "intent", required: true, match: [{ event: "a", role: "" }] },
+        {
+          id: "intent",
+          required: true,
+          match: [{ event: "a", where: { role: "" } }],
+        },
       ],
     };
     expect(() => assertOperationTemplate(blankRole)).toThrow(
-      /stage intent, match 0: `role` must be a non-empty string/,
+      /stage intent, match 0: `where.role` must be a non-empty string/,
+    );
+  });
+
+  it("rejects a role in where that is not a string, on a witness or a fault", () => {
+    const numberRole = {
+      template: "x",
+      version: 1,
+      stages: [
+        {
+          id: "intent",
+          required: true,
+          match: [{ event: "a", where: { role: 1 } }],
+        },
+      ],
+    };
+    expect(() => assertOperationTemplate(numberRole)).toThrow(
+      /stage intent, match 0: `where.role` must be a non-empty string/,
+    );
+    const faultRole = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+      exceptions: [{ event: "b", where: { role: true } }],
+    };
+    expect(() => assertOperationTemplate(faultRole)).toThrow(
+      /exception 0: `where.role` must be a non-empty string/,
+    );
+    // A null role is not a scalar at all, and that rule reports first.
+    const nullRole = {
+      template: "x",
+      version: 1,
+      stages: [
+        {
+          id: "intent",
+          required: true,
+          match: [{ event: "a", where: { role: null } }],
+        },
+      ],
+    };
+    expect(() => assertOperationTemplate(nullRole)).toThrow(
+      /stage intent, match 0: `where` values must be strings, numbers or booleans/,
+    );
+  });
+
+  it("rejects a role key on the witness itself and says where it went", () => {
+    // The shape templates had before `where` existed. Ignoring the key would
+    // silently drop the constraint and let any side close the stage.
+    const legacy = {
+      template: "x",
+      version: 1,
+      stages: [
+        {
+          id: "intent",
+          required: true,
+          match: [{ event: "a", role: "server" }],
+        },
+      ],
+    };
+    expect(() => assertOperationTemplate(legacy)).toThrow(
+      /stage intent, match 0: `role` is not a key of a witness — write `where: \{ role: \.\.\. \}`/,
+    );
+    const legacyFault = {
+      template: "x",
+      version: 1,
+      stages: [{ id: "intent", required: true, match: [{ event: "a" }] }],
+      exceptions: [{ event: "b", role: "server" }],
+    };
+    expect(() => assertOperationTemplate(legacyFault)).toThrow(
+      /exception 0: `role` is not a key of a witness/,
     );
   });
 

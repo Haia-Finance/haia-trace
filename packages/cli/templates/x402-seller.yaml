@@ -3,8 +3,9 @@
 # `request` is optional because only the HTTP resource server has a request
 # gate; the `*.started` events are progress markers, not milestones.
 #
-# Every witness names its role: a facilitator records the same verify/settle
-# vocabulary, and without the constraint its events would close these stages.
+# Every witness names its role in `where`: a facilitator records the same
+# verify/settle vocabulary, and without the constraint its events would close
+# these stages.
 # Assemble a facilitator capture with `x402-facilitator` instead.
 template: x402-seller
 version: 2
@@ -13,18 +14,18 @@ stages:
     required: false
     match:
       - event: x402.request.protected
-        role: server
+        where: { role: server }
   - id: verification
     required: true
     match:
       - event: x402.verify.ok
-        role: server
+        where: { role: server }
     missing_explanation: "the payment was never verified"
   - id: settlement
     required: true
     match:
       - event: x402.settle.ok
-        role: server
+        where: { role: server }
     missing_explanation: "settlement of the payment was not observed"
 exceptions:
   - x402.verify.failed

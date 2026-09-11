@@ -24,11 +24,11 @@
 
 import type { EventType, TraceEvent } from "./event.js";
 import type { Receipt, ReceiptException, ReceiptStage } from "./receipt.js";
-import type {
-  EventMatch,
-  ExceptionMatch,
-  OperationTemplate,
-  StageMatch,
+import {
+  type EventMatch,
+  type ExceptionMatch,
+  type OperationTemplate,
+  ROLE_KEY,
 } from "./template.js";
 
 /** Optional operation identity, passed straight onto the receipt — never invented. */
@@ -93,14 +93,15 @@ interface Draft {
   /** Every event folded so far, already in `seq` order. */
   events: TraceEvent[];
   /** `event_type` → the stages whose match-set contains it, and the witness each entry came from. */
-  typeToStages: Map<EventType, { stage: number; witness: StageMatch }[]>;
+  typeToStages: Map<EventType, { stage: number; witness: EventMatch }[]>;
   /** `event_type` → the template's fault witnesses of that type, for O(1) fault detection. */
   faultsByType: Map<EventType, EventMatch[]>;
 }
 
 /**
  * Whether an event satisfies a template predicate: the type is the one named,
- * and every `where` condition holds against the event's payload.
+ * and every `where` condition holds — against the event's payload, or for the
+ * `role` key against its envelope (see `subject`).
  *
  * Conditions are ANDed and compared with `===`, so a string never equals a
  * number and a field the event does not carry — `undefined` here — never
@@ -110,19 +111,19 @@ function eventMatches(match: EventMatch, event: TraceEvent): boolean {
   if (match.event !== event.event_type) return false;
   if (match.where === undefined) return true;
   return Object.entries(match.where).every(
-    ([field, condition]) => event.payload[field] === condition,
+    ([field, condition]) => subject(event, field) === condition,
   );
 }
 
 /**
- * Whether an event closes the stage a witness belongs to — the whole rule, type,
- * role and conditions together. The one place that rule is written down.
+ * What a `where` key is compared against. The role lives on the envelope, not
+ * in the payload, so `where: { role: x }` reads `TraceEvent.role` — and a
+ * payload that happens to carry a `role` field of its own is not consulted
+ * for it. Every other key reads the payload. The one place that rule is
+ * written down; see `ROLE_KEY` for why it exists.
  */
-function witnessCloses(witness: StageMatch, event: TraceEvent): boolean {
-  // A witness with no role is closed by any observer; one with a role only by
-  // that side.
-  if (witness.role !== undefined && witness.role !== event.role) return false;
-  return eventMatches(witness, event);
+function subject(event: TraceEvent, field: string): unknown {
+  return field === ROLE_KEY ? event.role : event.payload[field];
 }
 
 /** A fault witness as a predicate: a bare event type is the shorthand for `{ event }`. */
@@ -137,7 +138,7 @@ function startDraft(
 ): Draft {
   const typeToStages = new Map<
     EventType,
-    { stage: number; witness: StageMatch }[]
+    { stage: number; witness: EventMatch }[]
   >();
   template.stages.forEach((stage, index) => {
     for (const witness of stage.match) {
@@ -177,7 +178,7 @@ function applyEvent(draft: Draft, event: TraceEvent): void {
     // listed both with and without a role) still records once on that stage.
     const closed = new Set<number>();
     for (const { stage, witness } of stages) {
-      if (closed.has(stage) || !witnessCloses(witness, event)) continue;
+      if (closed.has(stage) || !eventMatches(witness, event)) continue;
       closed.add(stage);
       // Aligned with `template.stages`, so the entry always exists; the guard is
       // for `noUncheckedIndexedAccess`.

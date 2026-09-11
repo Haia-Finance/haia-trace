@@ -562,7 +562,7 @@ describe("role-constrained witnesses", () => {
       {
         id: "verification",
         required: true,
-        match: [{ event: "x402.verify.ok", role: "server" }],
+        match: [{ event: "x402.verify.ok", where: { role: "server" } }],
       },
     ],
   };
@@ -612,7 +612,7 @@ describe("role-constrained witnesses", () => {
           id: "verification",
           required: true,
           match: [
-            { event: "x402.verify.ok", role: "server" },
+            { event: "x402.verify.ok", where: { role: "server" } },
             { event: "x402.verify.ok" },
           ],
         },
@@ -625,6 +625,53 @@ describe("role-constrained witnesses", () => {
     );
 
     expect(stage(receipt, "verification")?.events).toEqual(["evt-0"]);
+  });
+
+  it("reads the role off the envelope, not the payload", () => {
+    // A payload that happens to carry a `role` field is not the observer's
+    // role: the recorder stamped that on the event itself, and `where.role`
+    // reads only that.
+    let n = 0;
+    const recorder = createRecorder({
+      adapter: "trace-x402",
+      now: () => "2026-01-01T00:00:00.000Z",
+      newId: () => `evt-${n++}`,
+    });
+    const events = [
+      recorder.event({
+        event_type: "x402.verify.ok",
+        payload: { role: "server" },
+        role: "facilitator",
+      }),
+      recorder.event({
+        event_type: "x402.verify.ok",
+        payload: { role: "facilitator" },
+        role: "server",
+      }),
+    ];
+
+    const receipt = assembleReceipt(events, sellerVerify);
+
+    expect(stage(receipt, "verification")?.events).toEqual(["evt-1"]);
+  });
+
+  it("scopes a fault to one side the same way", () => {
+    // A verification failure is the seller's fault only when the seller
+    // recorded it; the facilitator's copy of the same type is not.
+    const sellerFaults: OperationTemplate = {
+      ...sellerVerify,
+      exceptions: [{ event: "x402.verify.failed", where: { role: "server" } }],
+    };
+
+    const receipt = assembleReceipt(
+      makeRoleEvents([
+        ["facilitator", "x402.verify.failed"],
+        ["server", "x402.verify.failed"],
+      ]),
+      sellerFaults,
+    );
+
+    expect(receipt.exceptions.map((e) => e.event_id)).toEqual(["evt-1"]);
   });
 
   it("leaves an unconstrained witness open to any role", () => {
@@ -788,7 +835,7 @@ describe("payload-predicated witnesses", () => {
           id: "verification",
           required: true,
           match: [
-            { event: "x402.verify.ok", role: "server", where: { ok: true } },
+            { event: "x402.verify.ok", where: { role: "server", ok: true } },
           ],
         },
       ],

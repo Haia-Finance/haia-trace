@@ -18,15 +18,28 @@ import type { EventType, Role } from "./event.js";
 export type MatchValue = string | number | boolean;
 
 /**
+ * The one `where` key that does not read the payload. `TraceEvent.role` is a
+ * field of the envelope, not of the payload, yet a template needs to name it —
+ * an x402 resource server and a facilitator record the same event types for
+ * the same payment, and only the role says who did what. Rather than give the
+ * role a predicate of its own, `where` reserves this key: `where: { role: x }`
+ * compares against `TraceEvent.role`, every other key against the payload.
+ * One predicate, one rule, and a control plane that folds the role into the
+ * event's properties reads the same template with no special case at all.
+ */
+export const ROLE_KEY = "role";
+
+/**
  * A predicate over one event: the type it must have, and — through `where` — the
- * payload it must carry.
+ * payload (and role) it must carry. A stage witness and a fault witness are the
+ * same shape; only where they sit in the template gives them their meaning.
  */
 export interface EventMatch {
   /** The event type this matches. Compared against `TraceEvent.event_type`. */
   event: EventType;
   /**
    * Conditions on `TraceEvent.payload`, **all** of which must hold. Absent means
-   * the type alone decides.
+   * the type alone decides. The key `role` is the exception — see `ROLE_KEY`.
    *
    * Deliberately the smallest thing that works: top-level field names compared
    * for strict equality against scalars. No dotted paths, no comparison
@@ -34,23 +47,15 @@ export interface EventMatch {
    * templates depend on it is not. A field the event does not carry never
    * matches, and `===` means `1` is not `"1"` and `true` is not `1`.
    */
-  where?: Record<string, MatchValue>;
+  where?: Record<string, MatchValue> & { [ROLE_KEY]?: Role };
 }
 
 /**
  * One event-type witness in a stage's match-set. An object rather than a bare
  * string so a witness can gain conditions without a breaking change to the
- * template shape — which is what `role` and `where` are.
+ * template shape — which is what `where` was.
  */
-export interface StageMatch extends EventMatch {
-  /**
-   * Restrict the witness to one observing side, matched against
-   * `TraceEvent.role`; absent means any role closes the stage. Load-bearing
-   * where two roles record the same event type for the same payment, as a
-   * resource server and a facilitator do.
-   */
-  role?: Role;
-}
+export type StageMatch = EventMatch;
 
 /**
  * One fault witness. A bare event type is the shorthand for `{ event: <type> }`:
@@ -150,6 +155,26 @@ export function assertOperationTemplate(
     ) {
       fail(`${at}: \`where\` values must be strings, numbers or booleans`);
     }
+    // A role is compared against `TraceEvent.role`, which is a non-empty string
+    // when present: an empty one would match nothing, not every role, and a
+    // number could never equal it.
+    const role = (where as Record<string, unknown>)[ROLE_KEY];
+    if (role !== undefined && (typeof role !== "string" || role === "")) {
+      fail(`${at}: \`where.role\` must be a non-empty string`);
+    }
+  };
+
+  // The old shape, refused with the new one spelled out: silently ignoring
+  // the key would drop the constraint and let any side close the stage.
+  const checkNoRoleKey = (
+    witness: Record<string, unknown>,
+    at: string,
+  ): void => {
+    if (witness.role !== undefined) {
+      fail(
+        `${at}: \`role\` is not a key of a witness — write \`where: { role: ... }\``,
+      );
+    }
   };
 
   if (typeof t.template !== "string" || t.template === "")
@@ -200,11 +225,7 @@ export function assertOperationTemplate(
       if (typeof event !== "string" || event === "") {
         fail(`${at}, match ${j}: \`event\` must be a non-empty string`);
       }
-      const role = witness?.role;
-      // An empty role would match nothing, not every role.
-      if (role !== undefined && (typeof role !== "string" || role === "")) {
-        fail(`${at}, match ${j}: \`role\` must be a non-empty string`);
-      }
+      if (witness !== undefined) checkNoRoleKey(witness, `${at}, match ${j}`);
       checkWhere(witness?.where, `${at}, match ${j}`);
     });
     if (
@@ -229,6 +250,7 @@ export function assertOperationTemplate(
       if (typeof fault.event !== "string" || fault.event === "") {
         fail(`${at}: \`event\` must be a non-empty string`);
       }
+      checkNoRoleKey(fault, at);
       checkWhere(fault.where, at);
     });
   }
