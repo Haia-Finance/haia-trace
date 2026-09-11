@@ -108,6 +108,33 @@ describe("toIngestEvent", () => {
     expect(mapped.properties).not.toHaveProperty("context_id");
   });
 
+  it("never lets a payload field stand in for the envelope's role", () => {
+    // A template's `where: { role: x }` reads the envelope locally and
+    // `properties` on the control plane; the two agree only if a payload
+    // `role` never reaches `properties` on its own.
+    const withoutEnvelopeRole = rec.event({
+      event_type: "x402.verify.ok",
+      payload: { role: "server", ok: true },
+    });
+    expect(toIngestEvent(withoutEnvelopeRole).properties).not.toHaveProperty(
+      "role",
+    );
+    expect(toIngestEvent(withoutEnvelopeRole).properties).toHaveProperty(
+      "ok",
+      true,
+    );
+
+    const withBoth = rec.event({
+      event_type: "x402.verify.ok",
+      payload: { role: "server" },
+      role: "facilitator",
+    });
+    expect(toIngestEvent(withBoth).properties).toHaveProperty(
+      "role",
+      "facilitator",
+    );
+  });
+
   it("groups by the operation, not by the run", () => {
     const first = toIngestEvent(
       rec.event({ event_type: "a", payload: {}, context_id: "op-1" }),

@@ -100,7 +100,8 @@ interface Draft {
 
 /**
  * Whether an event satisfies a template predicate: the type is the one named,
- * and every `where` condition holds against the event's payload.
+ * and every `where` condition holds — against the event's payload, or for the
+ * `role` key against its envelope (see `subject`).
  *
  * Conditions are ANDed and compared with `===`, so a string never equals a
  * number and a field the event does not carry — `undefined` here — never

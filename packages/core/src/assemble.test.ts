@@ -655,6 +655,25 @@ describe("role-constrained witnesses", () => {
     expect(stage(receipt, "verification")?.events).toEqual(["evt-1"]);
   });
 
+  it("scopes a fault to one side the same way", () => {
+    // A verification failure is the seller's fault only when the seller
+    // recorded it; the facilitator's copy of the same type is not.
+    const sellerFaults: OperationTemplate = {
+      ...sellerVerify,
+      exceptions: [{ event: "x402.verify.failed", where: { role: "server" } }],
+    };
+
+    const receipt = assembleReceipt(
+      makeRoleEvents([
+        ["facilitator", "x402.verify.failed"],
+        ["server", "x402.verify.failed"],
+      ]),
+      sellerFaults,
+    );
+
+    expect(receipt.exceptions.map((e) => e.event_id)).toEqual(["evt-1"]);
+  });
+
   it("leaves an unconstrained witness open to any role", () => {
     const anyRole: OperationTemplate = {
       ...sellerVerify,

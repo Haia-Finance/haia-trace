@@ -12,7 +12,7 @@
  * follows for its on-disk NDJSON shape.
  */
 
-import type { EventType } from "./event.js";
+import type { EventType, Role } from "./event.js";
 
 /** A scalar a `where` condition compares against — the JSON values a payload field can hold. */
 export type MatchValue = string | number | boolean;
@@ -47,7 +47,7 @@ export interface EventMatch {
    * templates depend on it is not. A field the event does not carry never
    * matches, and `===` means `1` is not `"1"` and `true` is not `1`.
    */
-  where?: Record<string, MatchValue>;
+  where?: Record<string, MatchValue> & { [ROLE_KEY]?: Role };
 }
 
 /**
@@ -134,9 +134,6 @@ export function assertOperationTemplate(
   // Shared by stage witnesses and fault witnesses: both carry the same `where`.
   const checkWhere = (where: unknown, at: string): void => {
     if (where === undefined) return;
-    // Both are the same predicate; a `role` key on the witness itself is the
-    // shape templates had before `where` existed, and the message says where
-    // it went rather than pretending never to have heard of it.
     // An empty mapping constrains nothing, which makes it indistinguishable
     // from a half-written condition — it would silently widen the witness it
     // was meant to narrow. Refused as loudly as an empty event type.

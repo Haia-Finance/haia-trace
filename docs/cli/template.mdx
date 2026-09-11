@@ -142,6 +142,15 @@ does not match `1`, and a field the event does not carry never matches. That is
 the whole grammar — no dotted paths, no comparison operators, no patterns, and an
 empty `where` is rejected rather than quietly matching everything.
 
+Reach for it where one event type carries the outcome in its payload. Without a
+condition the stage above closes on a *rejected* decision as readily as an
+approved one; listing the type in `exceptions` instead faults every decision the
+operation ever took.
+
+An `exceptions` entry is either a bare event type — how the shipped templates
+write them — or the same `{ event, where }` mapping, for a type that is a fault
+only under some outcomes.
+
 One key is special: `role` reads the role that observed the event — the one the
 adapter stamped on it — rather than a payload field of that name.
 
@@ -155,15 +164,6 @@ Without it, any role closes the stage. Reach for it wherever two roles record
 the same event type for the same operation, as a resource server and a
 facilitator do: the shipped `x402-seller` and `x402-facilitator` templates
 constrain every witness for exactly that reason.
-
-Reach for it where one event type carries the outcome in its payload. Without a
-condition the stage above closes on a *rejected* decision as readily as an
-approved one; listing the type in `exceptions` instead faults every decision the
-operation ever took.
-
-An `exceptions` entry is either a bare event type — how the shipped templates
-write them — or the same `{ event, where }` mapping, for a type that is a fault
-only under some outcomes.
 
 `new` refuses to overwrite an existing file unless you pass `--force`, so an
 edited template is never lost to a repeated command:
